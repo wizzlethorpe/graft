@@ -124,6 +124,14 @@ game.items.fromCompendium(doc, { keepId: true })   // _id: 00BggOkChWztQx6R, sou
 
 `keepId` governs the id and nothing else. The staleness never came from that option; it came from adventure import not calling this function at all.
 
+That stamp is what makes adventure content referenceable at all. An adventure's contents are embedded data rather than documents, so they have no UUID and `fromUuid` cannot reach them, which is why anything out of an adventure could otherwise only ship as a copy. Knowing the adventure and the id, graft resolves one form of its own, written to read like the embedded UUIDs Foundry already uses:
+
+```
+Compendium.madv-fleshmountain.madv-fleshmountain-adventure.Adventure.CeteW6YgiNUi0Ykn.JournalEntry.azXUvCHjdm7k31my
+```
+
+This is the only source graft resolves itself instead of handing to `fromUuid`. The alternative was putting somebody's entire adventure text inside a patch.
+
 It only helps adventures imported *after* graft is installed. For anything already in your world the fallback below applies.
 
 So an unresolvable source splits two ways. If the package is **installed but disabled**, that is yours to fix and the export refuses until you enable it. If it is **not installed at all**, it may not be obtainable by anyone, so the export treats the document as having no recorded source: in a pack it references itself, and in the world it travels whole. Travelling whole puts the content in your `grafts.json`, which is visible in the file, and whether you may distribute it is your call.

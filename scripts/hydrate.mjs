@@ -6,7 +6,7 @@
 // UUID, unlocking a pack, writing a document.
 
 import { applyPatch, expandSources, folderPath, folderSegments } from "./patch.mjs";
-import { originOf } from "./origin.mjs";
+import { originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource } from "./origin.mjs";
 import { planOrder, entryUuid } from "./plan.mjs";
 
 /**
@@ -62,7 +62,10 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
  */
 async function resolveData(uuid) {
   const doc = await fromUuid(uuid);
-  return doc ? doc.toObject() : null;
+  if (doc) return doc.toObject();
+  // The one form Foundry cannot resolve, because an adventure's contents are
+  // embedded data rather than documents.
+  return resolveAdventureSource(uuid);
 }
 
 async function hydrateOne(entry, moduleId, touched) {
@@ -70,14 +73,14 @@ async function hydrateOne(entry, moduleId, touched) {
   // fetch and the patch is the document.
   let base = {};
   if (entry.source) {
-    const source = await fromUuid(entry.source);
+    const source = await resolveData(entry.source);
     if (!source) {
       // Almost always a dependency the reader has not installed. Foundry says
       // so better than we can, on the module's own listing, so name the UUID
       // and leave the diagnosis there.
       throw new Error(`source ${entry.source} did not resolve; is its module installed and enabled?`);
     }
-    base = source.toObject();
+    base = source;
   }
 
   const collection = `${moduleId}.${entry.pack}`;
@@ -109,7 +112,18 @@ async function hydrateOne(entry, moduleId, touched) {
   // Foundry's own provenance field, and the thing that makes the round trip
   // work later: an author who imports this and edits it can recover a patch
   // against what it was grafted from. Nothing to record for original content.
-  if (entry.source) foundry.utils.setProperty(data, "_stats.compendiumSource", entry.source);
+  if (entry.source) {
+    const inAdventure = parseAdventureSource(entry.source);
+    if (inAdventure) {
+      // Not `_stats.compendiumSource`: Foundry cannot resolve this form, and
+      // writing an unresolvable value there is the exact thing that started
+      // all of this. Our own namespace round-trips instead.
+      foundry.utils.setProperty(data, "flags.graft.origin",
+        { adventure: inAdventure.adventure, id: inAdventure.id });
+    } else {
+      foundry.utils.setProperty(data, "_stats.compendiumSource", entry.source);
+    }
+  }
 
   const existing = await pack.getDocument(entry.id);
   if (existing) {
@@ -223,7 +237,10 @@ export async function exportDiff(document) {
   // imported before graft was installed, and for the ordinary drag-from-a-pack
   // path where `fromCompendium` writes an accurate one anyway.
   const origin = originOf(document);
-  const sourceUuid = document._stats?.compendiumSource;
+  // Prefer what we recorded: it points into an adventure the reader can own,
+  // where the document's own claim points at a private work module.
+  const sourceUuid = adventureSourceUuid(origin, document.documentName)
+    ?? document._stats?.compendiumSource;
 
   // Asked before the pack check, and the order matters. A document that graft
   // itself built lives in a pack *and* records what it was grafted from, so
@@ -240,7 +257,7 @@ export async function exportDiff(document) {
   // pile of derivatives. It travels whole, with no source.
   if (!sourceUuid) return { ...base, patch: await withRefs(mine) };
 
-  const source = await fromUuid(sourceUuid);
+  const source = await resolveData(sourceUuid);
   if (!source) {
     // Two very different situations, and only one is the author's to fix.
     const pkg = sourceUuid.split(".")[1];
@@ -276,7 +293,7 @@ export async function exportDiff(document) {
     if (document.pack) return { ...base, source: document.uuid, patch: {} };
     return { ...base, patch: await withRefs(mine) };
   }
-  const before = stripVolatile(source.toObject());
+  const before = stripVolatile(source);
   delete before._id;
 
   // Only entries `diff` had no prior for are whole; the rest are deltas against
