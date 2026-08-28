@@ -32,6 +32,17 @@
       "label": "Graft Example: Scenes",
       "path": "packs/graft-example-scenes",
       "type": "Scene"
+    },
+    {
+      "name": "graft-example-adventures",
+      "label": "Graft Example: Adventures",
+      "path": "packs/graft-example-adventures",
+      "type": "Adventure",
+      "system": "dnd5e",
+      "ownership": {
+        "PLAYER": "NONE",
+        "ASSISTANT": "OWNER"
+      }
     }
   ],
   "relationships": {
@@ -59,6 +70,10 @@
       },
       {
         "id": "dc-maps",
+        "type": "module"
+      },
+      {
+        "id": "madv-fleshmountain",
         "type": "module"
       }
     ]
