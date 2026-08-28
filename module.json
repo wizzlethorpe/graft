@@ -1,0 +1,10 @@
+{
+  "id": "graft",
+  "title": "Graft",
+  "description": "Package your changes to somebody else's compendium content as a diff, and hydrate it on install. Ships pointers and patches, never the content itself.",
+  "version": "0.1.0",
+  "compatibility": { "minimum": "14", "verified": "14" },
+  "authors": [{ "name": "Wizzlethorpe Labs", "url": "https://wizzlethorpe.com" }],
+  "esmodules": ["scripts/main.mjs"],
+  "flags": {}
+}
