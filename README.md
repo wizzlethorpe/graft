@@ -87,6 +87,12 @@ Foundry's `SetField` serialises to an array, and dnd5e uses eleven of them (`sys
 
 Not currently handled, because the data does not say which arrays are Sets and guessing costs something either way: comparing every scalar array order-insensitively would silently drop a genuine reordering of a list that is meant to be ordered. Worth revisiting if spurious `properties` lines turn out to be common.
 
+### `null` on a schema field resets it, it does not remove it
+
+RFC 7386 says `null` deletes a key, and it does: the key leaves the patched data. But Foundry then loads that data against a schema, and a field the data omits takes its declared initial value. So `system.details.cr: null` does not produce an actor without a CR, it produces one with the schema's default CR.
+
+Deletion only truly removes a key where the schema does not describe it, which in practice means `flags` and other free-form objects. Worth knowing before writing a patch that expects a field to disappear.
+
 ### What it cannot say
 
 **Removing an entry from a keyed array.** Merge-by-id reads an omitted entry as "leave it alone", so there is nowhere to say "drop this one". Expressing it means RFC 6902 `remove` ops, which address positionally and break under exactly the reordering that keying by `_id` exists to survive. Documented rather than fixed, and there is a test asserting the round trip declines to represent it rather than silently shipping a patch that does nothing.
