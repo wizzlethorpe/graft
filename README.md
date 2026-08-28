@@ -109,6 +109,14 @@ Before diffing, at every depth:
 
 Nothing else, and in particular **no other module's flags**. A patch will carry whatever Scene Packer or anything else stamped on a document. That is noise, but a third-party flag is inert on apply if the reader lacks the module and possibly wanted if they have it. Tidying it would be an editorial judgement about somebody else's data, and would commit this to maintaining a list of other people's module names.
 
+### Whole documents and deltas look alike
+
+A merge patch is shaped like the document it patches. That is why `grafts.json` is readable, and it is why a complete document and a partial one cannot be told apart by looking at them. Both are an object with an `_id` and some fields.
+
+Nothing needs to tell them apart at build time, because context answers it: `mergeById` sees whether the id is already there, and `hydrateOne` sees whether the entry named a `source`. Absent either, the base is empty and the patch *is* the document.
+
+Export is the one place the base has gone out of scope, so the fact travels explicitly. `diff` records which entries it had no prior for, and only those can be turned into references. Guessing from shape instead got it wrong both ways: documents with no `type` field (journals, scenes, roll tables, which are most of an adventure) were never referenced and had their text copied, and renaming *and* retyping one item looked like a whole document, which then diffed against the full source and nulled out every field it did not mention.
+
 ### Sets look like ordered lists
 
 Foundry's `SetField` serialises to an array, and dnd5e uses eleven of them (`system.properties` among them). A Set has no meaningful order, but an array compared by equality does, so a source that happens to serialise `["mgc", "gear"]` where your copy has `["gear", "mgc"]` reads as a change when nothing changed.

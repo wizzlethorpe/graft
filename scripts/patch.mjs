@@ -98,26 +98,30 @@ function mergeById(target, patch) {
  * Returns `undefined` when nothing differs, so an unchanged branch is omitted
  * rather than emitted as `{}`.
  */
-export function diff(source, result) {
+export function diff(source, result, whole) {
   if (!isPlainObject(source) || !isPlainObject(result)) {
-    return equal(source, result) ? undefined : structuredClone(result);
+    if (equal(source, result)) return undefined;
+    return markWhole(structuredClone(result), whole);
   }
 
   const patch = {};
   for (const [key, value] of Object.entries(result)) {
     if (!(key in source)) {
-      patch[key] = structuredClone(value);
+      patch[key] = markWhole(structuredClone(value), whole);
       continue;
     }
     const before = source[key];
     if (isKeyedArray(before) && isKeyedArray(value)) {
-      const arr = diffById(before, value);
+      const arr = diffById(before, value, whole);
       if (arr) patch[key] = arr;
     } else if (isPlainObject(before) && isPlainObject(value)) {
-      const sub = diff(before, value);
+      const sub = diff(before, value, whole);
       if (sub !== undefined) patch[key] = sub;
     } else if (!equal(before, value)) {
-      patch[key] = structuredClone(value);
+      // A subtree replaced rather than merged, which is where an empty or
+      // absent array lands: `isKeyedArray` needs a member to recognise one, so
+      // the first entry added to an empty collection never reaches `diffById`.
+      patch[key] = markWhole(structuredClone(value), whole);
     }
   }
   // A key the source had and the result does not is a deletion, which merge
@@ -138,19 +142,42 @@ export function diff(source, result) {
  * needed deletions would reach for RFC 6902 `remove` ops, and pay for it by
  * addressing members positionally, which is the thing keying by `_id` avoids.
  */
-function diffById(source, result) {
+function diffById(source, result, whole) {
   const before = new Map(source.map((e) => [e._id, e]));
   const entries = [];
   for (const entry of result) {
     const prior = before.get(entry._id);
     if (!prior) {
+      // Nothing to diff against, so the entry travels whole. Recorded because
+      // the caller cannot tell afterwards: a merge patch is shaped like the
+      // document it patches, which is what makes it readable and what makes
+      // the two indistinguishable once the base has gone out of scope.
+      whole?.add(entry._id);
       entries.push(structuredClone(entry));
       continue;
     }
-    const sub = diff(prior, entry);
+    const sub = diff(prior, entry, whole);
     if (sub !== undefined) entries.push({ _id: entry._id, ...sub });
   }
   return entries.length > 0 ? entries : undefined;
+}
+
+/**
+ * Record every `_id` inside a subtree the diff is emitting wholesale.
+ *
+ * Nothing in it had a prior, so every document in it is whole. Returns its
+ * argument so it can wrap a `structuredClone` in place.
+ */
+function markWhole(value, whole) {
+  if (!whole) return value;
+  if (Array.isArray(value)) {
+    for (const v of value) markWhole(v, whole);
+    return value;
+  }
+  if (!isPlainObject(value)) return value;
+  if (typeof value._id === "string") whole.add(value._id);
+  for (const v of Object.values(value)) markWhole(v, whole);
+  return value;
 }
 
 function equal(a, b) {
@@ -277,14 +304,19 @@ export async function expandSources(patch, resolve) {
  * stripped. An entry with no recorded source stays as it is: content the
  * author wrote themselves is theirs to ship.
  */
-export async function referenceSources(patch, { sourceOf, resolve }) {
+export async function referenceSources(patch, { sourceOf, resolve, isWhole }) {
   if (Array.isArray(patch)) {
     return Promise.all(patch.map(async (entry) => {
       if (!isPlainObject(entry) || typeof entry._id !== "string") return entry;
       const source = sourceOf(entry._id);
-      // Only a *whole* entry is worth referencing. A partial patch of an entry
-      // already in the source document has nothing embedded to strip out.
-      if (!source || !isWholeDocument(entry)) return referenceSources(entry, { sourceOf, resolve });
+      // Only a *whole* entry can be referenced, and whether it is one is the
+      // caller's to say: `diff` recorded it, or there was no diff and every
+      // entry is whole by construction. Guessing from shape got it wrong both
+      // ways, missing documents with no `type` field (journals, scenes, tables)
+      // and mistaking a rename-and-retype for a whole document, which then
+      // diffed against the full source and nulled out everything it did not
+      // mention.
+      if (!source || !isWhole(entry._id)) return referenceSources(entry, { sourceOf, resolve, isWhole });
       const base = await resolve(source);
       if (!base) return entry;
       // Both sides without their ids: the source's is theirs and ours is ours,
@@ -292,26 +324,17 @@ export async function referenceSources(patch, { sourceOf, resolve }) {
       // change rather than removing it.
       const { _id: _mine, ...body } = entry;
       const { _id: _theirs, ...theirBody } = stripVolatile(base);
-      const inner = diff(theirBody, stripVolatile(body));
+      // `base` is a document at its own root, so its folder is world-local and
+      // goes. `body` is already an embedded entry, so its folder is an
+      // adventure-internal pointer and stays.
+      const inner = diff(theirBody, stripVolatile(body, false));
       return { _id: entry._id, source, ...(inner ? { patch: inner } : {}) };
     }));
   }
   if (!isPlainObject(patch)) return patch;
   const out = {};
-  for (const [k, v] of Object.entries(patch)) out[k] = await referenceSources(v, { sourceOf, resolve });
+  for (const [k, v] of Object.entries(patch)) out[k] = await referenceSources(v, { sourceOf, resolve, isWhole });
   return out;
-}
-
-/**
- * Whether an entry looks like a document in full rather than a patch of one.
- *
- * A patch names a handful of keys; a whole document carries the fields every
- * document has. `name` and `type` together are a good enough signal, and
- * guessing wrong is cheap in both directions: a missed reference ships a copy,
- * and a false one produces a patch against a document that already matches.
- */
-function isWholeDocument(entry) {
-  return typeof entry.name === "string" && typeof entry.type === "string";
 }
 
 /**

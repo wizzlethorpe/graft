@@ -207,6 +207,7 @@ test("an added item becomes a pointer, not a copy of its text", async () => {
   mine.system.equipped = true;
 
   const out = await referenceSources({ items: [mine] }, {
+    isWhole: () => true,
     sourceOf: (id) => id === "IP7kWWdq5km8SZad" ? "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt" : null,
     resolve,
   });
@@ -223,7 +224,7 @@ test("an item the author wrote themselves is shipped whole", async () => {
   // at nothing.
   const { referenceSources } = await import("../scripts/patch.mjs");
   const mine = { _id: "myOwnItem000001", name: "Marlo's Signet", type: "equipment", system: {} };
-  const out = await referenceSources({ items: [mine] }, { sourceOf: () => null, resolve });
+  const out = await referenceSources({ items: [mine] }, { sourceOf: () => null, resolve, isWhole: () => true });
   assert.deepEqual(out.items[0], mine);
 });
 
@@ -264,7 +265,7 @@ test("round trip through a reference reproduces the item", async () => {
   mine.system.equipped = true;
   const sourceOf = () => "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt";
 
-  const referenced = await referenceSources({ items: [mine] }, { sourceOf, resolve });
+  const referenced = await referenceSources({ items: [mine] }, { sourceOf, resolve, isWhole: () => true });
   const expanded = await expandSources(referenced, resolve);
   assert.deepEqual(expanded.items[0], mine);
 });
@@ -370,4 +371,74 @@ test("a plain document's folder still goes, at the root", async () => {
   const { stripVolatile } = await import("../scripts/patch.mjs");
   const out = stripVolatile({ _id: "itemSword0000001", name: "Sword", folder: "someFolder00001" });
   assert.ok(!("folder" in out));
+});
+
+// ── whole or partial, decided by the caller rather than guessed ─────────────
+
+test("a document with no `type` field is still referenced", async () => {
+  // Journals, scenes and roll tables have no `type`, so the old shape-based
+  // guess never referenced them and shipped their text as a copy instead. An
+  // adventure's payload is mostly exactly those.
+  const { diff, referenceSources } = await import("../scripts/patch.mjs");
+  const theirs = { _id: "jrnlShopIntro01", name: "Welcome", pages: [{ _id: "pg1", text: "licensed prose" }] };
+  const before = { name: "Adventure", journal: [] };
+  const mine = { name: "Adventure", journal: [{ ...theirs, name: "Welcome, traveller" }] };
+
+  const whole = new Set();
+  const delta = diff(before, mine, whole);
+  assert.ok(whole.has("jrnlShopIntro01"), "diff knew there was no prior for it");
+
+  const out = await referenceSources(delta, {
+    sourceOf: (id) => (id === "jrnlShopIntro01" ? "Compendium.shops.journal.JournalEntry.x" : null),
+    resolve: async () => theirs,
+    isWhole: (id) => whole.has(id),
+  });
+  assert.equal(out.journal[0].source, "Compendium.shops.journal.JournalEntry.x");
+  assert.deepEqual(out.journal[0].patch, { name: "Welcome, traveller" });
+  assert.equal(JSON.stringify(out).includes("licensed prose"), false, "their text does not travel");
+});
+
+test("renaming and retyping an existing item does not gut it", async () => {
+  // The false positive. `{_id, name, type}` looked like a whole document, so it
+  // was diffed against the full source, which nulled out every field it did not
+  // mention. An ordinary edit, not a contrived one.
+  const { diff, referenceSources, applyPatch } = await import("../scripts/patch.mjs");
+  const theirs = { _id: "itemScimitar0001", name: "Scimitar", type: "weapon",
+                   system: { damage: "1d6", description: "licensed" } };
+  const before = { items: [theirs] };
+  const mine = { items: [{ ...theirs, name: "Cutlass", type: "melee" }] };
+
+  const whole = new Set();
+  const delta = diff(before, mine, whole);
+  assert.equal(whole.has("itemScimitar0001"), false, "it had a prior, so it is a delta");
+
+  const out = await referenceSources(delta, {
+    sourceOf: () => "Compendium.dnd5e.items.Item.scimitar",
+    resolve: async () => theirs,
+    isWhole: (id) => whole.has(id),
+  });
+  assert.ok(!("source" in out.items[0]), "left as a delta rather than referenced");
+  const rebuilt = applyPatch(before, out).items[0];
+  assert.equal(rebuilt.system.damage, "1d6", "and the fields it never mentioned survive");
+  assert.equal(rebuilt.system.description, "licensed");
+  assert.equal(rebuilt.name, "Cutlass");
+});
+
+test("the first entry added to an empty collection is whole", async () => {
+  // `isKeyedArray` needs a member to recognise a keyed array, so an empty or
+  // absent one is replaced wholesale rather than merged and never reaches
+  // `diffById`. Everything inside a wholesale replacement is new by definition.
+  const { diff } = await import("../scripts/patch.mjs");
+
+  const fromEmpty = new Set();
+  diff({ items: [] }, { items: [{ _id: "itemFirstOne0001", name: "A" }] }, fromEmpty);
+  assert.ok(fromEmpty.has("itemFirstOne0001"));
+
+  const fromAbsent = new Set();
+  diff({}, { items: [{ _id: "itemFirstOne0001", name: "A" }] }, fromAbsent);
+  assert.ok(fromAbsent.has("itemFirstOne0001"));
+
+  const nested = new Set();
+  diff({}, { journal: [{ _id: "jrnlOuter000001", pages: [{ _id: "pageInner00001" }] }] }, nested);
+  assert.deepEqual([...nested].sort(), ["jrnlOuter000001", "pageInner00001"], "at any depth");
 });

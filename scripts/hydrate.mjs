@@ -207,9 +207,13 @@ export async function exportDiff(document) {
   const base = {
     id: document.id, type: document.documentName, ...(folder ? { folder } : {}),
   };
-  const withRefs = async (patch) => referenceSources(patch, {
+  // `isWhole` answers "is this array entry a complete document or just the
+  // changed fields of one?" It is the caller's to answer because only the
+  // caller has the base: a merge patch is shaped like the document it patches.
+  const withRefs = async (patch, isWhole = () => true) => referenceSources(patch, {
     sourceOf: (id) => sources.get(id) ?? null,
     resolve: resolveData,
+    isWhole,
   });
 
   const sourceUuid = document._stats?.compendiumSource;
@@ -239,7 +243,12 @@ export async function exportDiff(document) {
   const before = stripVolatile(source.toObject());
   delete before._id;
 
-  return { ...base, source: sourceUuid, patch: await withRefs(diff(before, mine) ?? {}) };
+  // Only entries `diff` had no prior for are whole; the rest are deltas against
+  // one. Referencing a delta would diff it against the full source and null out
+  // every field it did not mention.
+  const whole = new Set();
+  const delta = diff(before, mine, whole) ?? {};
+  return { ...base, source: sourceUuid, patch: await withRefs(delta, (id) => whole.has(id)) };
 }
 
 /**
