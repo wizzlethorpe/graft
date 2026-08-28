@@ -217,5 +217,24 @@
         }
       }
     }
+  },
+  {
+    "id": "fleshMountainGr1",
+    "type": "Adventure",
+    "pack": "graft-example-adventures",
+    "source": "Compendium.madv-fleshmountain.madv-fleshmountain-adventure.Adventure.CeteW6YgiNUi0Ykn",
+    "patch": {
+      "name": "Flesh Mountain (grafted)"
+    }
+  },
+  {
+    "id": "fleshJournalGr01",
+    "type": "JournalEntry",
+    "pack": "graft-example-journals",
+    "folder": "TMC | Flesh Mountain",
+    "source": "Compendium.madv-fleshmountain.madv-fleshmountain-adventure.Adventure.CeteW6YgiNUi0Ykn.JournalEntry.azXUvCHjdm7k31my",
+    "patch": {
+      "name": "Flesh Mountain (grafted journal)"
+    }
   }
 ]
