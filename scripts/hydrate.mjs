@@ -47,6 +47,7 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
     }
   } finally {
     await restoreLocks(touched);
+    refreshSidebar(touched);
   }
   return { built, skipped };
 }
@@ -111,6 +112,20 @@ async function unlock(pack, touched) {
   if (touched.has(pack.collection)) return;
   touched.set(pack.collection, pack.locked);
   if (pack.locked) await pack.configure({ locked: false });
+}
+
+/**
+ * Show what was just built.
+ *
+ * The documents are written and readable at this point; this is only about the
+ * sidebar, which lists a pack from its index. Re-rendering costs nothing and
+ * saves someone concluding a successful build did nothing.
+ */
+function refreshSidebar(touched) {
+  for (const collection of touched.keys()) {
+    try { game.packs.get(collection)?.render(false); } catch { /* not open */ }
+  }
+  try { ui.compendium?.render(); } catch { /* sidebar not ready */ }
 }
 
 async function restoreLocks(touched) {

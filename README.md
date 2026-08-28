@@ -151,7 +151,7 @@ Two actions, both GM-only.
 
 **Authoring.** Import a document from somebody's compendium, edit it in the ordinary sheet, and press **Copy graft** in the sheet header. Foundry already recorded where it came from, so the patch is recovered against that and put on the clipboard as YAML. Paste it into your `grafts.json`.
 
-**Building.** `game.modules.get("graft").api.buildPacks("your-module")` reads that module's `grafts.json` and hydrates every entry into its packs. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
+**Building.** `game.modules.get("graft").api.buildPacks("your-module")` reads that module's `grafts.json` and hydrates every entry into its packs. The results land in the **Compendium** tab, under that module's packs, not in the Actors or Items sidebar. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
 
 A module's packs are locked by default, so each is unlocked for the write and put back exactly as found. Leaving one unlocked would quietly invite hand edits that the next build overwrites.
 

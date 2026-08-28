@@ -103,7 +103,11 @@ async function buildPacks(moduleId) {
     ui.notifications.warn(`${built.length} built, ${skipped.length} skipped. See the console.`);
     console.warn(`Graft | skipped:`, skipped);
   } else {
-    ui.notifications.info(`Built ${built.length} graft(s).`);
+    // Named, because a compendium pack is not where someone looks first: the
+    // documents are in the Compendium tab, not the Actors or Items sidebar.
+    ui.notifications.info(
+      `Built ${built.length} graft(s). Find them in the Compendium tab, under this module's packs.`,
+    );
   }
   return { built, skipped };
 }
