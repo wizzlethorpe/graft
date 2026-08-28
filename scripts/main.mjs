@@ -97,11 +97,14 @@ async function buildPacks(moduleId) {
   });
 
   if (skipped.length > 0) {
-    // Named individually in the console, because "3 failed" is not actionable
-    // and the reasons differ: a missing dependency and a rejected document
-    // want different responses from the reader.
+    // One line each, not an array. A collapsed object in the console hides the
+    // reasons behind a disclosure triangle, and the reasons are the whole
+    // point: a missing dependency and a rejected document want different
+    // responses from the reader.
     ui.notifications.warn(`${built.length} built, ${skipped.length} skipped. See the console.`);
-    console.warn(`Graft | skipped:`, skipped);
+    console.group(`Graft | ${skipped.length} skipped`);
+    for (const { id, reason } of skipped) console.warn(`${id}: ${reason}`);
+    console.groupEnd();
   } else {
     // Named, because a compendium pack is not where someone looks first: the
     // documents are in the Compendium tab, not the Actors or Items sidebar.
