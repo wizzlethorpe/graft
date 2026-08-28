@@ -236,5 +236,15 @@
     "patch": {
       "name": "Flesh Mountain (grafted journal)"
     }
+  },
+  {
+    "id": "fleshForemanGr01",
+    "type": "Actor",
+    "pack": "graft-example-actors",
+    "folder": "TMC | Flesh Mountain/01. Halls of Flesh",
+    "source": "Compendium.madv-fleshmountain.madv-fleshmountain-adventure.Adventure.CeteW6YgiNUi0Ykn.Actor.mmToughBoss00000",
+    "patch": {
+      "name": "Fleshbound Foreman (grafted)"
+    }
   }
 ]
