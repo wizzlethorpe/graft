@@ -284,36 +284,16 @@ test("plain data is still walked as before", async () => {
   assert.deepEqual(out, { a: { b: { c: 1 } }, d: [{ e: 2 }] });
 });
 
-test("a module's bookkeeping flags do not travel", async () => {
-  // Scene Packer stamps every document it imports with a content hash and a
-  // `sourceId` naming an Item in the world it came from. That id resolves to
-  // nothing on anybody else's machine, and it turned up on six of seven
-  // entries the first time a real inventory was exported.
+test("another module's flags are left exactly as they are", async () => {
+  // Not ours to curate. A flag is inert on apply if the reader lacks the
+  // module and possibly wanted if they have it, so neither reason the other
+  // volatile fields are stripped applies to it.
   const { stripVolatile } = await import("../scripts/patch.mjs");
-  const out = stripVolatile({
-    name: "War Pick",
-    flags: {
-      "scene-packer": { hash: "65b94baa", sourceId: "Item.rdrUP2ttcvvzwYfj" },
-      dnd5e: { riders: { activity: [] } },
-    },
-  });
-  assert.ok(!("scene-packer" in out.flags), "bookkeeping goes");
-  assert.deepEqual(out.flags.dnd5e, { riders: { activity: [] } }, "authored flags stay");
-  assert.equal(JSON.stringify(out).includes("rdrUP2ttcvvzwYfj"), false);
-});
-
-test("flags vanish entirely when only bookkeeping was there", async () => {
-  // Otherwise the document reads as having lost its flags, and the patch says
-  // so with a null.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
-  const out = stripVolatile({ name: "Ash Chest", flags: { "scene-packer": { hash: "x" } } });
-  assert.ok(!("flags" in out));
-});
-
-test("a flag a module meaningfully set is preserved", async () => {
-  // Flags are where modules keep data an author chose. Stripping them all
-  // would lose real configuration.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
-  const out = stripVolatile({ flags: { "my-module": { difficulty: "hard" } } });
-  assert.deepEqual(out.flags, { "my-module": { difficulty: "hard" } });
+  const flags = {
+    "scene-packer": { hash: "65b94baa", sourceId: "Item.rdrUP2ttcvvzwYfj" },
+    dnd5e: { riders: { activity: [] } },
+  };
+  const out = stripVolatile({ name: "War Pick", _stats: { createdTime: 1 }, flags });
+  assert.deepEqual(out.flags, flags);
+  assert.ok(!("_stats" in out), "the three that earn it still go");
 });

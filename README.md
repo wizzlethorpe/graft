@@ -75,11 +75,11 @@ The second form addresses its source exactly as the outer entry does, and is rec
 
 An embedded source that does not resolve refuses the whole entry rather than building it without. A statblock quietly missing the magic item it was built around is worse than one that will not build and names the dependency.
 
-### Third-party bookkeeping
+### What is stripped, and what is not
 
-Flags are kept, because a flag is where a module stores data an author meant to set. The exception is a namespace holding bookkeeping about *this copy*: Scene Packer stamps every document it imports with a content hash and a `sourceId` naming an Item in the world it came from, and that id resolves to nothing anywhere else. Those namespaces are listed in `BOOKKEEPING_FLAGS` and dropped.
+Three fields are removed before diffing, at every depth. `_stats`, because its timestamps and last-editor id make an unchanged document read as changed. `folder`, because it names a folder in one world. `ownership`, because it maps user ids from one world.
 
-A list rather than a rule, because the data does not say which flags are bookkeeping. Add a namespace when its contents turn out to describe the copy rather than the content.
+Nothing else, and in particular **no other module's flags**. A patch will carry whatever Scene Packer or anything else stamped on a document. That is noise, but a third-party flag is inert on apply if the reader lacks the module and possibly wanted if they have it, so neither reason above applies to it. Tidying it would be an editorial judgement about somebody else's data, and would commit this to maintaining a list of other people's module names.
 
 ### Sets look like ordered lists
 
