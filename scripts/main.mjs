@@ -16,10 +16,21 @@ Hooks.once("init", () => {
  * On the sheet rather than in a sidebar context menu because the document you
  * want to export is the one you have just finished editing, and it is already
  * open in front of you.
+ *
+ * The hook name is `getHeaderControls` + a class name, not `getHeaderControls`.
+ * ApplicationV2 appends each class in the inheritance chain and fires one hook
+ * per name, so a listener on the bare name is never called and fails silently
+ * with no error to notice. `DocumentSheetV2` is the level worth binding: every
+ * document sheet inherits it, and it is the first ancestor that has a
+ * `.document` to export.
  */
-Hooks.on("getHeaderControls", (app, controls) => {
+Hooks.on("getHeaderControlsDocumentSheetV2", (app, controls) => {
   const doc = app?.document;
-  if (!doc?._stats?.compendiumSource || !game.user.isGM) return;
+  if (!doc || !game.user.isGM) return;
+  // Shown even when the document records no source. An absent button leaves a
+  // person wondering whether the module loaded; a button that explains why it
+  // cannot work tells them what to do instead, which is to edit a copy
+  // imported from a compendium rather than one built from scratch.
   controls.push({
     icon: "fa-solid fa-code-branch",
     label: "Copy graft",
