@@ -166,7 +166,7 @@ Nothing here needs a console.
 
 **Authoring.** Import a document from somebody's compendium, edit it in the ordinary sheet, and press **Copy graft** in the sheet header. Foundry already recorded where it came from, so the patch is recovered against that and put on the clipboard. Paste it into your `grafts.json`.
 
-Results land in the **Compendium** tab under that module's packs, not in the Actors or Items sidebar. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
+A build reports what happened in a window: what was not built and why, first, because that is the part somebody can act on, and a collapsed list of what was, whose entries are content links you can click through to. Results land in the **Compendium** tab under that module's packs, not in the Actors or Items sidebar. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
 
 Whether an entry is built is decided by reading the pack index rather than a stored flag, so a hand-deleted document and a module update shipping new entries both answer honestly.
 

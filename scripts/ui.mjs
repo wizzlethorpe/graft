@@ -122,16 +122,15 @@ export async function buildAndReport(moduleId) {
     await game.settings.set(MODULE_ID, SUPPRESSED, [...suppressed]);
   }
 
+  // Still logged, because a console line can be copied into a bug report and a
+  // dialog cannot. The dialog is what somebody actually reads.
   if (skipped.length > 0) {
-    ui.notifications.warn(`${built.length} built, ${skipped.length} skipped. See the console.`);
     console.group(`Graft | ${skipped.length} skipped`);
     for (const { id, reason } of skipped) console.warn(`${id}: ${reason}`);
     console.groupEnd();
-  } else {
-    ui.notifications.info(
-      `Built ${built.length} graft(s). Find them in the Compendium tab, under ${moduleId}'s packs.`,
-    );
   }
+  await reportBuild(moduleId, built, skipped);
+
   return { built, skipped };
 }
 
@@ -144,4 +143,50 @@ export function registerSettings() {
     type: Array,
     default: [],
   });
+}
+
+/**
+ * What happened, in a window rather than a notification.
+ *
+ * "See the console" is a reasonable thing to tell a developer and a poor thing
+ * to tell anybody else, and the reasons are the part worth reading: a source
+ * that is not installed and an entry that was never valid want different
+ * responses, and only one of them is the reader's to fix.
+ */
+async function reportBuild(moduleId, built, skipped) {
+  const title = game.modules.get(moduleId)?.title ?? moduleId;
+  const parts = [
+    `<p><strong>${built.length}</strong> built`
+    + (skipped.length ? `, <strong>${skipped.length}</strong> not built` : "")
+    + `.</p>`,
+  ];
+
+  if (skipped.length > 0) {
+    const rows = skipped.map(({ id, reason }) =>
+      `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
+      + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
+    parts.push(`<p><strong>Not built</strong></p><ul>${rows}</ul>`);
+  }
+
+  if (built.length > 0) {
+    // Collapsed, and after the failures: a successful entry needs no action,
+    // and a hundred of them would bury the handful that do.
+    const rows = built.map((uuid) => {
+      const id = uuid.split(".").pop();
+      const pack = game.packs.get(uuid.split(".").slice(1, 3).join("."));
+      const name = pack?.index?.get(id)?.name ?? id;
+      // The attribute Foundry's click handler actually selects on, so these
+      // open the document rather than looking like they might.
+      return `<li><a class="content-link" data-link draggable="true" data-uuid="${uuid}">`
+        + `${foundry.utils.escapeHTML(name)}</a></li>`;
+    }).join("");
+    parts.push(`<details><summary>${built.length} built</summary><ul>${rows}</ul></details>`);
+  }
+
+  await foundry.applications.api.DialogV2.prompt({
+    window: { title: `Graft: ${title}` },
+    content: `<div style="max-height:24rem;overflow:auto">${parts.join("")}</div>`,
+    ok: { label: "Close" },
+    position: { width: 520 },
+  }).catch(() => {});
 }
