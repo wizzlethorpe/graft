@@ -167,3 +167,95 @@ export function stripVolatile(value) {
   }
   return out;
 }
+
+// ── nested grafts ───────────────────────────────────────────────────────────
+//
+// An embedded document can be somebody else's content too. Adding a magic item
+// to a statblock puts that item's whole body in the patch, description and
+// all, which is the one thing this format exists to avoid: the artifact would
+// be redistributing content rather than pointing at it.
+//
+// So an entry in a keyed array takes one of two shapes:
+//
+//   { _id }              patch an entry that is already there
+//   { _id, source, ... } resolve `source`, patch it, insert it
+//
+// The second is a graft inside a graft, and it addresses its source the same
+// way the outer one does. Resolution is injected rather than imported so the
+// walk stays testable without Foundry.
+
+/** An entry that names content to fetch rather than carrying it. */
+export function isSourcedEntry(v) {
+  return isPlainObject(v) && typeof v._id === "string" && typeof v.source === "string";
+}
+
+/**
+ * Replace every sourced entry in a patch with the document it names, patched.
+ *
+ * Applied before `applyPatch`, so the merge itself stays pure and synchronous.
+ * An entry whose source does not resolve throws with the UUID in the message:
+ * a statblock silently missing the magic item it was built around is worse
+ * than one that refuses to build and says which dependency is absent.
+ */
+export async function expandSources(patch, resolve) {
+  if (Array.isArray(patch)) {
+    return Promise.all(patch.map(async (entry) => {
+      if (!isSourcedEntry(entry)) return expandSources(entry, resolve);
+      const base = await resolve(entry.source);
+      if (!base) throw new Error(`embedded source ${entry.source} did not resolve`);
+      const inner = await expandSources(entry.patch ?? {}, resolve);
+      // The id is ours, not the source's: this is our copy of their thing.
+      return { ...applyPatch(base, inner), _id: entry._id };
+    }));
+  }
+  if (!isPlainObject(patch)) return patch;
+  const out = {};
+  for (const [k, v] of Object.entries(patch)) out[k] = await expandSources(v, resolve);
+  return out;
+}
+
+/**
+ * The reverse, for authoring: turn a whole embedded document back into a
+ * reference plus the little that differs from it.
+ *
+ * `sourceOf` answers what a given embedded id was imported from, which the
+ * caller knows because Foundry recorded it before the volatile fields were
+ * stripped. An entry with no recorded source stays as it is: content the
+ * author wrote themselves is theirs to ship.
+ */
+export async function referenceSources(patch, { sourceOf, resolve }) {
+  if (Array.isArray(patch)) {
+    return Promise.all(patch.map(async (entry) => {
+      if (!isPlainObject(entry) || typeof entry._id !== "string") return entry;
+      const source = sourceOf(entry._id);
+      // Only a *whole* entry is worth referencing. A partial patch of an entry
+      // already in the source document has nothing embedded to strip out.
+      if (!source || !isWholeDocument(entry)) return referenceSources(entry, { sourceOf, resolve });
+      const base = await resolve(source);
+      if (!base) return entry;
+      // Both sides without their ids: the source's is theirs and ours is ours,
+      // and spreading `_id: undefined` would leave the key present and read as a
+      // change rather than removing it.
+      const { _id: _mine, ...body } = entry;
+      const { _id: _theirs, ...theirBody } = stripVolatile(base);
+      const inner = diff(theirBody, stripVolatile(body));
+      return { _id: entry._id, source, ...(inner ? { patch: inner } : {}) };
+    }));
+  }
+  if (!isPlainObject(patch)) return patch;
+  const out = {};
+  for (const [k, v] of Object.entries(patch)) out[k] = await referenceSources(v, { sourceOf, resolve });
+  return out;
+}
+
+/**
+ * Whether an entry looks like a document in full rather than a patch of one.
+ *
+ * A patch names a handful of keys; a whole document carries the fields every
+ * document has. `name` and `type` together are a good enough signal, and
+ * guessing wrong is cheap in both directions: a missed reference ships a copy,
+ * and a false one produces a patch against a document that already matches.
+ */
+function isWholeDocument(entry) {
+  return typeof entry.name === "string" && typeof entry.type === "string";
+}

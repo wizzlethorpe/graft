@@ -169,3 +169,92 @@ test("a real edit still survives the stripping", async () => {
   const mine = { name: "Rusted Armor", _stats: { createdTime: 2 }, folder: "xyz", items: [] };
   assert.deepEqual(diff(stripVolatile(source), stripVolatile(mine)), { name: "Rusted Armor" });
 });
+
+// ── nested grafts ───────────────────────────────────────────────────────────
+//
+// The premise of the whole format is that the artifact carries pointers, not
+// content. Adding a magic item to a statblock broke it: the item's entire
+// body, description and licence and all, went into the patch. These are the
+// tests that it does not.
+
+const AMULET = {
+  _id: "srcAmulet000001",
+  name: "Amulet of Health",
+  type: "equipment",
+  system: {
+    description: { value: "<p>Your Constitution is 19 while you wear this amulet.</p>" },
+    price: { value: 4000, denomination: "gp" },
+    equipped: false,
+  },
+};
+const resolve = async (uuid) =>
+  uuid === "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt" ? structuredClone(AMULET) : null;
+
+test("an added item becomes a pointer, not a copy of its text", async () => {
+  const { referenceSources } = await import("../scripts/patch.mjs");
+  const mine = { _id: "IP7kWWdq5km8SZad", ...structuredClone(AMULET) };
+  mine._id = "IP7kWWdq5km8SZad";
+  mine.system.equipped = true;
+
+  const out = await referenceSources({ items: [mine] }, {
+    sourceOf: (id) => id === "IP7kWWdq5km8SZad" ? "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt" : null,
+    resolve,
+  });
+
+  const entry = out.items[0];
+  assert.equal(entry.source, "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt");
+  assert.deepEqual(entry.patch, { system: { equipped: true } }, "only what differs");
+  assert.equal(JSON.stringify(entry).includes("Constitution is 19"), false,
+    "the licensed description is not in the artifact");
+});
+
+test("an item the author wrote themselves is shipped whole", async () => {
+  // Content with no recorded source is theirs, and referencing it would point
+  // at nothing.
+  const { referenceSources } = await import("../scripts/patch.mjs");
+  const mine = { _id: "myOwnItem000001", name: "Marlo's Signet", type: "equipment", system: {} };
+  const out = await referenceSources({ items: [mine] }, { sourceOf: () => null, resolve });
+  assert.deepEqual(out.items[0], mine);
+});
+
+test("expanding a pointer rebuilds the item on the reader's machine", async () => {
+  const { expandSources, applyPatch } = await import("../scripts/patch.mjs");
+  const expanded = await expandSources({
+    items: [{
+      _id: "IP7kWWdq5km8SZad",
+      source: "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt",
+      patch: { system: { equipped: true } },
+    }],
+  }, resolve);
+
+  const item = expanded.items[0];
+  assert.equal(item._id, "IP7kWWdq5km8SZad", "our id, not the source's");
+  assert.equal(item.name, "Amulet of Health");
+  assert.equal(item.system.equipped, true, "the patch applied");
+  assert.equal(item.system.price.value, 4000, "and the rest came from the source");
+  // And it still merges into an actor the ordinary way.
+  const actor = applyPatch({ name: "Animated Armor", items: [] }, expanded);
+  assert.equal(actor.items.length, 1);
+});
+
+test("a nested source that does not resolve refuses loudly", async () => {
+  // A statblock quietly missing the magic item it was built around is worse
+  // than one that will not build and names the dependency.
+  const { expandSources } = await import("../scripts/patch.mjs");
+  await assert.rejects(
+    () => expandSources({ items: [{ _id: "x", source: "Compendium.gone.pack.Item.nope" }] }, resolve),
+    /Compendium\.gone\.pack\.Item\.nope did not resolve/,
+  );
+});
+
+test("round trip through a reference reproduces the item", async () => {
+  const { referenceSources, expandSources } = await import("../scripts/patch.mjs");
+  const mine = structuredClone(AMULET);
+  mine._id = "IP7kWWdq5km8SZad";
+  mine.system.equipped = true;
+  const sourceOf = () => "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt";
+
+  const referenced = await referenceSources({ items: [mine] }, { sourceOf, resolve });
+  const expanded = await expandSources(referenced, resolve);
+  assert.deepEqual(expanded.items[0], mine);
+});

@@ -56,6 +56,25 @@ Merge patch replaces an array wholesale, and JSON Patch indexes into it. Neither
 
 This is the only place the format departs from a published standard, and it exists because Foundry's data model gave those arrays keys.
 
+### Embedded content is a graft too
+
+An embedded document can be somebody else's content as well. Adding a magic item to a statblock would otherwise put that item's whole body in the patch, description and licence and all, which is precisely what this format exists to avoid.
+
+So an entry in a keyed array takes one of two shapes:
+
+```yaml
+items:
+  - _id: itemCrossbow001            # patch an entry already in the source
+    system: { damage: "2d8" }
+  - _id: IP7kWWdq5km8SZad           # a graft inside a graft
+    source: Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt
+    patch: { system: { equipped: true } }
+```
+
+The second form addresses its source exactly as the outer entry does, and is recovered automatically: Foundry recorded where the item was imported from, so **Copy graft** references it rather than copying it. Content with no recorded source is shipped whole, because content the author wrote is theirs.
+
+An embedded source that does not resolve refuses the whole entry rather than building it without. A statblock quietly missing the magic item it was built around is worse than one that will not build and names the dependency.
+
 ### What it cannot say
 
 **Removing an entry from a keyed array.** Merge-by-id reads an omitted entry as "leave it alone", so there is nowhere to say "drop this one". Expressing it means RFC 6902 `remove` ops, which address positionally and break under exactly the reordering that keying by `_id` exists to survive. Documented rather than fixed, and there is a test asserting the round trip declines to represent it rather than silently shipping a patch that does nothing.

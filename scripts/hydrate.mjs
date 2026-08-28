@@ -5,7 +5,7 @@
 // is tested without Foundry. This file is the part that cannot be: resolving a
 // UUID, unlocking a pack, writing a document.
 
-import { applyPatch } from "./patch.mjs";
+import { applyPatch, expandSources } from "./patch.mjs";
 import { planOrder, entryUuid } from "./plan.mjs";
 
 /**
@@ -68,7 +68,11 @@ async function hydrateOne(entry, moduleId, touched) {
   }
   await unlock(pack, touched);
 
-  const data = applyPatch(source.toObject(), entry.patch ?? {});
+  // Embedded entries that name a source are fetched first: a magic item added
+  // to a statblock is a graft of its own, and the artifact carries a pointer
+  // to it rather than a copy of its text.
+  const patch = await expandSources(entry.patch ?? {}, (uuid) => fromUuid(uuid));
+  const data = applyPatch(source.toObject(), patch);
   data._id = entry.id;
   // Foundry's own provenance field, and the thing that makes the round trip
   // work later: an author who imports this and edits it can recover a patch
@@ -125,19 +129,48 @@ export async function exportDiff(document) {
   const source = await fromUuid(sourceUuid);
   if (!source) throw new Error(`its source ${sourceUuid} did not resolve; is that module still enabled?`);
 
-  const { diff, stripVolatile } = await import("./patch.mjs");
+  const { diff, stripVolatile, referenceSources } = await import("./patch.mjs");
+  const raw = document.toObject();
+  // Read before stripping, because `compendiumSource` lives in the `_stats`
+  // that stripping removes. This is what lets an added item be shipped as a
+  // pointer instead of a copy.
+  const sources = embeddedSources(raw);
+
   // An id is assigned by whoever hydrates. Everything else volatile is removed
   // at every depth, because an embedded item carries its own `_stats` and
   // would otherwise report as edited when only its timestamps differ.
-  const mine = stripVolatile(document.toObject());
+  const mine = stripVolatile(raw);
   const before = stripVolatile(source.toObject());
   delete mine._id;
   delete before._id;
 
+  const patch = diff(before, mine) ?? {};
   return {
     id: document.id,
     type: document.documentName,
     source: sourceUuid,
-    patch: diff(before, mine) ?? {},
+    patch: await referenceSources(patch, {
+      sourceOf: (id) => sources.get(id) ?? null,
+      resolve: (uuid) => fromUuid(uuid),
+    }),
   };
+}
+
+/**
+ * Every embedded document's `_id` mapped to what it was imported from.
+ *
+ * Walks the raw object rather than the stripped one, since that is where
+ * `_stats.compendiumSource` still is. Anything the author made themselves has
+ * no entry here and is shipped whole, which is right: it is theirs.
+ */
+function embeddedSources(value, into = new Map()) {
+  if (Array.isArray(value)) {
+    for (const v of value) embeddedSources(v, into);
+    return into;
+  }
+  if (!value || typeof value !== "object") return into;
+  const source = value._stats?.compendiumSource;
+  if (typeof value._id === "string" && typeof source === "string") into.set(value._id, source);
+  for (const v of Object.values(value)) embeddedSources(v, into);
+  return into;
 }
