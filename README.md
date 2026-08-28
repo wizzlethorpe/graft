@@ -10,10 +10,11 @@ Prototype. The diff format and its round trip are implemented and tested; the Fo
 
 ## The format
 
-Three fields. A source, a patch, and an id of your own.
+Four fields. A source, a patch, and an id and type of your own.
 
 ```yaml
-id: marlo-enforcer
+id: banditCaptain001               # a Foundry document id: [a-zA-Z0-9]{16}
+type: Actor
 source: Compendium.dnd-monster-manual.actors.Actor.mmBandit000000
 patch:
   name: Marlo's Enforcer
@@ -26,6 +27,20 @@ patch:
 ```
 
 Hydration is `fromUuid(source)`, `toObject()`, apply the patch, create under your id in the target pack. A source that does not resolve means the reader lacks the module, and the entry is skipped with a warning rather than half-built.
+
+## Chaining
+
+`id` is a **Foundry document id**, not a slug, because what you produce has to be addressable by anything else:
+
+```
+Compendium.<module>.<pack>.<Type>.<id>
+```
+
+So grafting onto a graft is not a special case. Somebody names your output the way they would name a Monster Manual entry, and your module is an ordinary dependency of theirs. Nothing in the format changes.
+
+What does change is **order**: a patch applied before its parent exists is a patch applied to nothing. `planOrder` sorts entries so anything grafted onto a sibling comes after it, and refuses two entries that graft onto each other rather than half-building them, because a document in a pack that nobody can explain is worse than an absent one. Sources pointing outside the module need no sequencing: `fromUuid` either resolves them or it does not, and Foundry reports a missing dependency better than we could from inside.
+
+The open risk in a chain is drift. If the base you built on rebuilds against a new source, the patch below you may still apply and mean something else. This is where RFC 6902 `test` operations would earn their keep, asserting the parent looks how you expected and failing loudly when it does not.
 
 ## Why merge patch
 
@@ -65,7 +80,8 @@ Pinning a range answers identity: within a pinned version the source ids are sta
 
 ```
 scripts/patch.mjs   the format: applyPatch, diff. Pure, no Foundry.
-test/patch.test.mjs its properties, including the round trip.
+scripts/plan.mjs    ids, UUIDs, and the order a chain has to build in.
+test/               their properties, including the round trip.
 module.json         Foundry manifest.
 ```
 
