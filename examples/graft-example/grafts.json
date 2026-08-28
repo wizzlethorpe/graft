@@ -154,5 +154,68 @@
     "patch": {
       "name": "Wrong Pack"
     }
+  },
+  {
+    "_comment": "9. Somebody else's map, with one wall turned into a secret door and one light recoloured. The point of the whole format: 570 walls stay in DC Maps, three lines ship here.",
+    "id": "ashCantinaScene1",
+    "type": "Scene",
+    "pack": "graft-example-scenes",
+    "source": "Compendium.dc-maps.dc-maps-standalone.Scene.ifwsYY5ntMzCxmly",
+    "patch": {
+      "name": "The Ashfall Cantina",
+      "navName": "Ashfall",
+      "navigation": true,
+      "walls": [
+        {
+          "_id": "jzLEgnhOBAbspTad",
+          "door": 2,
+          "ds": 0
+        }
+      ],
+      "lights": [
+        {
+          "_id": "WbuozwVElCCyZaBc",
+          "config": {
+            "color": "#ff6a3d",
+            "dim": 30
+          }
+        }
+      ]
+    }
+  },
+  {
+    "_comment": "10. A trade good from a third module, repriced. Proves nothing about the format is specific to the packs a system happens to ship.",
+    "id": "ashIronAdamant01",
+    "type": "Item",
+    "pack": "graft-example-items",
+    "source": "Compendium.kctg-5e.kctg-dnd5e.Item.zmlpVpxQH6EAMn3x",
+    "patch": {
+      "name": "Ash-Touched Adamantine",
+      "system": {
+        "price": {
+          "value": 750,
+          "denomination": "gp"
+        },
+        "description": {
+          "value": "<p>Adamantine quenched in the ashes of the Halls of Flesh.</p>"
+        }
+      }
+    }
+  },
+  {
+    "_comment": "11. A graft onto the trade good above, so a chain runs through a third party's content rather than only our own.",
+    "id": "ashIronRefined01",
+    "type": "Item",
+    "pack": "graft-example-items",
+    "source": "Compendium.graft-example.graft-example-items.Item.ashIronAdamant01",
+    "patch": {
+      "name": "Refined Ash-Iron",
+      "system": {
+        "price": {
+          "value": 1200,
+          "denomination": "gp"
+        }
+      }
+    }
   }
 ]

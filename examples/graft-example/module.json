@@ -26,6 +26,12 @@
       "path": "packs/graft-example-items",
       "type": "Item",
       "system": "dnd5e"
+    },
+    {
+      "name": "graft-example-scenes",
+      "label": "Graft Example: Scenes",
+      "path": "packs/graft-example-scenes",
+      "type": "Scene"
     }
   ],
   "relationships": {
@@ -43,6 +49,14 @@
       },
       {
         "id": "dnd-monster-manual",
+        "type": "module"
+      },
+      {
+        "id": "kctg-5e",
+        "type": "module"
+      },
+      {
+        "id": "dc-maps",
         "type": "module"
       }
     ]
