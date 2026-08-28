@@ -4,9 +4,21 @@ Package your changes to somebody else's compendium content as a **diff**, and hy
 
 A graft joins your scion to somebody else's rootstock. The result grows as one plant, but you only ever supplied the shoot.
 
+## Your content is your responsibility
+
+Graft is built so that an artifact carries pointers and patches rather than somebody else's content, and the tests hold it to that. **That is a design property, not a legal opinion, and it does not make anything you distribute lawful by itself.**
+
+What you write in a patch is your own expression. Whether you may distribute something derived from another creator's work depends on their licence, on what your patch actually contains, and on where you are. A patch small enough to be a pointer is still capable of reproducing protected material: a description rewritten in full, a stat block restated, a map's whole wall layout. Graft will happily carry any of it, because it cannot tell the difference.
+
+Nor does it check entitlement. It resolves whatever UUIDs an entry names against whatever the reader happens to have installed, and asks nothing about whether either of you is licensed to hold it.
+
+So: check what your grafts contain before you publish them, honour the licences of what you build on, and do not treat "graft only ships a diff" as a defence. It is a good default, not a shield.
+
 ## Status
 
-Prototype, untested in a live world. The format, the ordering and the YAML output are implemented and covered by 26 tests; the Foundry side is written but has never run.
+Working prototype, exercised in a live world. Eight entries across Actor, Item and Scene documents built from five source modules, including a graft onto another graft and a DC Maps scene whose 570 walls stay in DC Maps while one becomes a secret door. 37 tests cover the format, the ordering and the clipboard output.
+
+Not published to Foundry's package registry, and not stable: the format may change.
 
 ## The format
 
