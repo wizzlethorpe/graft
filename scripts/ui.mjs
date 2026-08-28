@@ -5,7 +5,7 @@
 // somebody dismisses the prompt, and a module that only builds from a button
 // nobody knows about never gets built at all.
 
-import { hydrate } from "./hydrate.mjs";
+import { hydrate, exportDiff } from "./hydrate.mjs";
 
 const MODULE_ID = "graft";
 const SUPPRESSED = "suppressedPrompts";
@@ -100,6 +100,70 @@ export function addPackControl(app, controls) {
     action: "graftBuild",
     onClick: () => buildAndReport(moduleId),
   });
+}
+
+/**
+ * A "Copy grafts" control on every compendium window.
+ *
+ * On every one, not only a graft module's own, because the pack an author
+ * assembles their work in is an ordinary world compendium: make a pack, drag
+ * in the things you have imported and edited and the things you invented, and
+ * take the whole array in one go. Doing it a document at a time is the same
+ * work done fifty times.
+ */
+export function addCopyControl(app, controls, withPack = (e) => e) {
+  const pack = app?.collection;
+  if (!game.user.isGM || !pack) return;
+  controls.push({
+    icon: "fa-solid fa-clipboard-list",
+    label: "Copy grafts",
+    action: "graftCopyAll",
+    onClick: () => copyPackGrafts(pack, withPack),
+  });
+}
+
+/**
+ * Export every document in a pack as a grafts array.
+ *
+ * `getDocuments` fetches the lot, which is why a large pack asks first: a
+ * thousand-document compendium is a long wait and rarely what somebody meant
+ * to press.
+ */
+export async function copyPackGrafts(pack, withPack = (e) => e) {
+  const index = await pack.getIndex();
+  if (index.size === 0) {
+    ui.notifications.warn(`${pack.title} is empty.`);
+    return null;
+  }
+  if (index.size > 100) {
+    const go = await foundry.applications.api.DialogV2.confirm({
+      window: { title: "Graft" },
+      content: `<p>${pack.title} holds <strong>${index.size}</strong> documents. `
+        + `Export a graft for every one?</p>`,
+    }).catch(() => false);
+    if (!go) return null;
+  }
+
+  const entries = [];
+  const failed = [];
+  for (const doc of await pack.getDocuments()) {
+    try { entries.push(withPack(await exportDiff(doc))); }
+    catch (err) { failed.push(`${doc.name}: ${err.message}`); }
+  }
+
+  await game.clipboard.copyPlainText(JSON.stringify(entries, null, 2));
+  console.log(`Graft | ${entries.length} entr(ies) from ${pack.collection}`,
+    JSON.stringify(entries, null, 2));
+  if (failed.length > 0) {
+    console.group(`Graft | ${failed.length} could not be exported`);
+    for (const f of failed) console.warn(f);
+    console.groupEnd();
+  }
+  ui.notifications.info(
+    `Copied ${entries.length} graft(s) from ${pack.title}`
+    + (failed.length ? `, ${failed.length} skipped. See the console.` : "."),
+  );
+  return entries;
 }
 
 /** Build one module and say what happened, in the console and on screen. */

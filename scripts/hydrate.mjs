@@ -177,12 +177,17 @@ export async function exportDiff(document) {
     resolve: resolveData,
   });
 
-  // A document that lives in a compendium *is* a source. There is nothing to
-  // diff it against, and the useful thing to say about it is "include this",
-  // so it becomes a pure reference with an empty patch.
-  if (document.pack) return { ...base, source: document.uuid, patch: {} };
-
   const sourceUuid = document._stats?.compendiumSource;
+
+  // Asked before the pack check, and the order matters. A document that graft
+  // itself built lives in a pack *and* records what it was grafted from, so
+  // testing for the pack first would export it as a reference to itself and
+  // lose the graft entirely.
+  //
+  // With no such record, a document that lives in a compendium *is* a source.
+  // There is nothing to diff it against, and the useful thing to say is
+  // "include this", so it becomes a pure reference with an empty patch.
+  if (!sourceUuid && document.pack) return { ...base, source: document.uuid, patch: {} };
 
   // Nothing to diff against, and that is not a failure: content the author
   // wrote is theirs, and a graft module is an adventure rather than only a

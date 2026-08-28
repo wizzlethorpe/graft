@@ -180,7 +180,9 @@ game.modules.get("graft").api.buildPacks("your-adventure")
 
 **3. Build the content in your world, the ordinary way.** Import somebody's monster and edit it. Drag items onto it. Make the things that are yours from scratch. Nothing here is graft-specific: you are just playing with Foundry.
 
-**4. Press Copy graft** in each document's sheet header, and paste the result into a JSON array in `grafts.json` beside your `module.json`. The `pack` field is filled in for you when your module declares exactly one pack of that type; otherwise add it.
+**4. Take the grafts.** Either **Copy graft** in a document's sheet header, one at a time, or gather the work in a world compendium and press **Copy grafts** in that pack's window header to take the whole array at once. Paste into `grafts.json` beside your `module.json`. The `pack` field is filled in for you when your module declares exactly one pack of that type; otherwise add it.
+
+Assembling in a pack first is usually the better way round: make a world compendium, drag in the things you have imported and edited and the things you invented, and export the lot in one press. A document that graft itself built exports as the graft it was, not as a reference to itself, so a pack can be re-exported after edits.
 
 **5. Build**, from the prompt on load or the Build grafts control in your pack's window header, and check the report.
 
