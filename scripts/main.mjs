@@ -80,7 +80,9 @@ Hooks.on("preImportAdventure", (adventure, formData, toCreate) => {
 // name fires nothing and does so silently. `addCopyGraftContext` de-duplicates,
 // so a type that fires both hooks still gets one entry.
 for (const type of CONTEXT_TYPES) {
-  Hooks.on(`get${type}ContextOptions`, addCopyGraftContext);
+  // The type is bound rather than derived, because the hook hands over HTML
+  // and the element alone cannot say which collection its id belongs to.
+  Hooks.on(`get${type}ContextOptions`, (html, menuItems) => addCopyGraftContext(type, menuItems));
 }
 
 // Folders group the work, so exporting one is the bulk case that matches how

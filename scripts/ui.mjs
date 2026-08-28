@@ -327,30 +327,35 @@ async function reportBuild(moduleId, built, skipped) {
 // convenience rather than the main road. The compendium menu keeps its own
 // purpose, which is chaining onto a pack graft built.
 
-/** Every context hook v14 might fire for a document entry. */
+/**
+ * Document types whose directory context menu gets a Copy graft entry.
+ *
+ * Concrete types only. The API docs name a generic `getDocumentContextOptions`,
+ * but Item Piles, which visibly works in this version, binds
+ * `getActorContextOptions` per type, and a working module beats documentation
+ * that also got the argument list wrong.
+ */
 export const CONTEXT_TYPES = [
-  "Document", "Actor", "Item", "JournalEntry", "Scene", "RollTable",
+  "Actor", "Item", "JournalEntry", "Scene", "RollTable",
   "Macro", "Playlist", "Cards", "Adventure",
 ];
 
 /**
  * Add "Copy graft" to a directory entry's context menu.
  *
- * Registered for the generic hook and every concrete type, because v14
- * consolidated these and the naming is the same shape as the header-control
- * hooks, where the bare name never fires and does so silently. A hook that
- * never fires costs nothing; the wrong guess costs the feature. Hence the
- * duplicate guard: if two of them do fire for one menu, only one entry lands.
+ * The first hook argument is the rendered HTML, *not* the application, whatever
+ * the API docs say. So the document is found from the element's own dataset and
+ * the type this hook was registered for, rather than from an application's
+ * collection.
  */
-export function addCopyGraftContext(app, menuItems) {
+export function addCopyGraftContext(documentName, menuItems) {
   if (!game.user.isGM || !Array.isArray(menuItems)) return;
   if (menuItems.some((i) => i?.name === "Copy graft")) return;
   menuItems.push({
     name: "Copy graft",
     icon: '<i class="fa-solid fa-code-branch"></i>',
-    condition: () => true,
     callback: async (target) => {
-      const doc = await documentFromEntry(app, target);
+      const doc = documentFromEntry(documentName, target);
       if (doc) await copyOne(doc);
       else ui.notifications.warn("Graft could not identify that document.");
     },
@@ -358,15 +363,15 @@ export function addCopyGraftContext(app, menuItems) {
 }
 
 /** And "Copy grafts" on a folder, which is how people actually group work. */
-export function addCopyFolderGrafts(app, menuItems) {
+export function addCopyFolderGrafts(html, menuItems) {
   if (!game.user.isGM || !Array.isArray(menuItems)) return;
   if (menuItems.some((i) => i?.name === "Copy grafts")) return;
   menuItems.push({
     name: "Copy grafts",
     icon: '<i class="fa-solid fa-clipboard-list"></i>',
-    condition: () => true,
     callback: async (target) => {
-      const id = elementOf(target)?.dataset?.folderId;
+      const el = elementOf(target);
+      const id = el?.dataset?.folderId ?? el?.dataset?.entryId;
       const folder = id ? game.folders.get(id) : null;
       if (!folder) return ui.notifications.warn("Graft could not identify that folder.");
       await copyMany(folderContents(folder), folder.name);
@@ -381,16 +386,15 @@ function folderContents(folder, into = []) {
   return into;
 }
 
-/** Context callbacks are handed the list element, jQuery-wrapped in some paths. */
+/** Callbacks are handed the list element, jQuery-wrapped on some paths. */
 function elementOf(target) {
   return target?.[0] ?? target;
 }
 
-async function documentFromEntry(app, target) {
+function documentFromEntry(documentName, target) {
   const el = elementOf(target);
-  const id = el?.dataset?.entryId ?? el?.dataset?.documentId;
-  if (!id) return null;
-  const collection = app?.collection;
-  if (!collection) return null;
-  return collection.get?.(id) ?? await collection.getDocument?.(id) ?? null;
+  // Both spellings, because Item Piles reads both and it is in a position to
+  // know which one this version actually uses.
+  const id = el?.dataset?.documentId ?? el?.dataset?.entryId;
+  return id ? game.collections.get(documentName)?.get(id) ?? null : null;
 }
