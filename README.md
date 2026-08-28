@@ -158,12 +158,20 @@ game.modules.get("graft").api.buildPacks("your-adventure")
 
 ## Using it
 
-Two actions, both GM-only.
+Nothing here needs a console.
 
-**Authoring.** Import a document from somebody's compendium, edit it in the ordinary sheet, and press **Copy graft** in the sheet header. Foundry already recorded where it came from, so the patch is recovered against that and put on the clipboard as YAML. Paste it into your `grafts.json`.
+**Installing.** When a graft module is enabled and has entries it has not built, graft offers to build them on the next world load. Asked once per module and remembered, because a prompt that returns every load is one people learn to dismiss without reading. Declining is not permanent.
 
-**Building.** `game.modules.get("graft").api.buildPacks("your-module")` reads that module's `grafts.json` and hydrates every entry into its packs. The results land in the **Compendium** tab, under that module's packs, not in the Actors or Items sidebar. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
+**Rebuilding.** A **Build grafts** control sits in the header of that module's own compendium windows, which is where somebody looks when they wonder why a pack is empty. Use it after installing a source you were missing, or when the module ships new entries.
+
+**Authoring.** Import a document from somebody's compendium, edit it in the ordinary sheet, and press **Copy graft** in the sheet header. Foundry already recorded where it came from, so the patch is recovered against that and put on the clipboard. Paste it into your `grafts.json`.
+
+Results land in the **Compendium** tab under that module's packs, not in the Actors or Items sidebar. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
+
+Whether an entry is built is decided by reading the pack index rather than a stored flag, so a hand-deleted document and a module update shipping new entries both answer honestly.
 
 A module's packs are locked by default, so each is unlocked for the write and put back exactly as found. Leaving one unlocked would quietly invite hand edits that the next build overwrites.
+
+`game.modules.get("graft").api` exposes the same things for scripting: `buildPacks(moduleId)`, `unbuilt(moduleId)`, `exportDiff(document)`.
 
 Run the tests with `node --test 'test/*.test.mjs'`.
