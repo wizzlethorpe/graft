@@ -1,14 +1,30 @@
-// Module entry point: where the grafts are read from, and the two things a
-// person does with them.
+// Module entry point: the hooks, and nothing else. What they do lives in
+// hydrate.mjs (building), ui.mjs (asking and reporting) and patch.mjs (the
+// format), so this file stays a list of where Foundry calls in.
 
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { toYaml } from "./yaml.mjs";
+import {
+  registerSettings, promptForUnbuilt, addPackControl, buildAndReport, readGrafts, unbuilt,
+} from "./ui.mjs";
 
 const MODULE_ID = "graft";
 
 Hooks.once("init", () => {
-  game.modules.get(MODULE_ID).api = { hydrate, exportDiff, readGrafts, buildPacks };
+  registerSettings();
+  game.modules.get(MODULE_ID).api = {
+    hydrate, exportDiff, readGrafts, unbuilt, buildPacks: buildAndReport,
+  };
 });
+
+// Offers to build anything an enabled graft module has not built yet. Once per
+// module, remembered, because a prompt on every world load is one people learn
+// to dismiss without reading.
+Hooks.once("ready", () => promptForUnbuilt());
+
+// A Build control in the header of a graft module's own compendium windows,
+// which is where somebody looks when they wonder why a pack is empty.
+Hooks.on("getHeaderControlsCompendium", addPackControl);
 
 /**
  * A "Copy graft" control on every document sheet.
@@ -58,59 +74,3 @@ async function copyGraft(doc) {
   }
 }
 
-/**
- * Graft ships no content of its own, so every entry point names the module
- * whose grafts are meant. Defaulting to "graft" would look like it worked and
- * then report no entries.
- */
-function requireModuleId(moduleId) {
-  if (typeof moduleId === "string" && moduleId) return;
-  throw new Error(
-    `name the module whose grafts to build, e.g. buildPacks("my-adventure"). `
-    + `Graft is a library: your module declares the packs and calls this.`,
-  );
-}
-
-/**
- * The entries a module ships, from `grafts.json` beside its module.json.
- *
- * A file of its own rather than a `flags` block: it is the bulk of what a
- * graft module *is*, and burying a few hundred entries in the manifest would
- * make the manifest unreadable and the entries unreviewable in a diff.
- */
-async function readGrafts(moduleId) {
-  requireModuleId(moduleId);
-  const res = await fetch(`modules/${moduleId}/grafts.json`);
-  if (!res.ok) throw new Error(`no grafts.json in modules/${moduleId}/ (HTTP ${res.status})`);
-  const parsed = await res.json();
-  return Array.isArray(parsed) ? parsed : parsed.entries ?? [];
-}
-
-/** Read this module's grafts and build them, reporting what could not be. */
-async function buildPacks(moduleId) {
-  requireModuleId(moduleId);
-  const entries = await readGrafts(moduleId);
-  ui.notifications.info(`Building ${entries.length} graft(s)…`);
-
-  const { built, skipped } = await hydrate(moduleId, entries, {
-    onProgress: (i, total, entry) => console.log(`Graft | ${i}/${total} ${entry.id}`),
-  });
-
-  if (skipped.length > 0) {
-    // One line each, not an array. A collapsed object in the console hides the
-    // reasons behind a disclosure triangle, and the reasons are the whole
-    // point: a missing dependency and a rejected document want different
-    // responses from the reader.
-    ui.notifications.warn(`${built.length} built, ${skipped.length} skipped. See the console.`);
-    console.group(`Graft | ${skipped.length} skipped`);
-    for (const { id, reason } of skipped) console.warn(`${id}: ${reason}`);
-    console.groupEnd();
-  } else {
-    // Named, because a compendium pack is not where someone looks first: the
-    // documents are in the Compendium tab, not the Actors or Items sidebar.
-    ui.notifications.info(
-      `Built ${built.length} graft(s). Find them in the Compendium tab, under this module's packs.`,
-    );
-  }
-  return { built, skipped };
-}
