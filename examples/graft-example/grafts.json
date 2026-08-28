@@ -1,0 +1,39 @@
+[
+  {
+    "id": "mmAnimatedArmor0",
+    "type": "Actor",
+    "pack": "graft-example-actors",
+    "source": "Compendium.dnd5e.actors24.Actor.mmAnimatedArmor0",
+    "patch": {
+      "name": "Ash-Warded Armor",
+      "items": [
+        {
+          "_id": "IP7kWWdq5km8SZad",
+          "source": "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt",
+          "patch": { "system": { "equipped": true } }
+        },
+        {
+          "_id": "1Dq6QrMw7NCIXHQK",
+          "name": "Ash Chest",
+          "type": "container",
+          "img": "icons/containers/chest/chest-reinforced-steel-walnut-brown.webp",
+          "system": {
+            "quantity": 1,
+            "description": { "value": "<p>A chest made of ash wood, located in the Halls of Flesh.</p>" },
+            "weight": { "value": 30, "units": "lb" }
+          }
+        },
+        {
+          "_id": "PVh46qg5t7KTTJzI",
+          "source": "Compendium.dnd5e.equipment24.Item.phbagGrapplingHo",
+          "patch": { "system": { "container": "1Dq6QrMw7NCIXHQK" } }
+        },
+        {
+          "_id": "aVJkfhuvBG46lKyf",
+          "source": "Compendium.dnd5e.equipment24.Item.phbagManacles000",
+          "patch": { "system": { "container": "1Dq6QrMw7NCIXHQK", "quantity": 2 } }
+        }
+      ]
+    }
+  }
+]

@@ -119,13 +119,39 @@ test/               properties of the three pure modules.
 module.json         Foundry manifest.
 ```
 
+## Graft is a library
+
+It ships code and no content, and it is system-agnostic: the only Foundry fields it knows about are `_stats`, `ownership` and `folder`, which are core, and `fromUuid` and `getDocumentClass`, which are core too.
+
+That is not a stylistic choice. Foundry requires an Actor or Item pack to declare the system it depends on, so a module shipping those packs cannot be system-agnostic. Your own module declares the packs, the system and the dependencies; graft builds them.
+
+```jsonc
+// your-adventure/module.json
+"packs": [
+  { "name": "your-actors", "path": "packs/your-actors", "type": "Actor", "system": "dnd5e" }
+],
+"relationships": { "requires": [
+  { "id": "graft", "type": "module" },
+  { "id": "dnd5e", "type": "system" },
+  { "id": "dnd-monster-manual", "type": "module" }   // whatever your grafts point at
+]}
+```
+
+Then `grafts.json` beside it, and:
+
+```js
+game.modules.get("graft").api.buildPacks("your-adventure")
+```
+
+`examples/graft-example/` is a complete one.
+
 ## Using it
 
 Two actions, both GM-only.
 
 **Authoring.** Import a document from somebody's compendium, edit it in the ordinary sheet, and press **Copy graft** in the sheet header. Foundry already recorded where it came from, so the patch is recovered against that and put on the clipboard as YAML. Paste it into your `grafts.json`.
 
-**Building.** `game.modules.get("graft").api.buildPacks()` reads `grafts.json` and hydrates every entry into this module's packs. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
+**Building.** `game.modules.get("graft").api.buildPacks("your-module")` reads that module's `grafts.json` and hydrates every entry into its packs. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
 
 A module's packs are locked by default, so each is unlocked for the write and put back exactly as found. Leaving one unlocked would quietly invite hand edits that the next build overwrites.
 

@@ -1,0 +1,23 @@
+{
+  "id": "graft-example",
+  "title": "Graft Example",
+  "description": "A worked example of a graft module: it declares its own packs, its own system, and depends on graft to build them.",
+  "version": "0.1.0",
+  "compatibility": { "minimum": "14", "verified": "14" },
+  "authors": [{ "name": "Wizzlethorpe Labs" }],
+  "packs": [
+    {
+      "name": "graft-example-actors",
+      "label": "Graft Example: Actors",
+      "path": "packs/graft-example-actors",
+      "type": "Actor",
+      "system": "dnd5e"
+    }
+  ],
+  "relationships": {
+    "requires": [
+      { "id": "graft", "type": "module" },
+      { "id": "dnd5e", "type": "system", "compatibility": { "minimum": "5" } }
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 {
   "id": "graft",
   "title": "Graft",
-  "description": "Package your changes to somebody else's compendium content as a diff, and hydrate it on install. Ships pointers and patches, never the content itself.",
+  "description": "Package your changes to somebody else's compendium content as a diff, and hydrate it on install. A library: your own module declares the packs and the dependencies, and calls this to build them.",
   "version": "0.1.0",
   "compatibility": {
     "minimum": "14",
@@ -16,25 +16,5 @@
   "esmodules": [
     "scripts/main.mjs"
   ],
-  "flags": {},
-  "packs": [
-    {
-      "name": "graft-actors",
-      "label": "Graft: Actors",
-      "path": "packs/graft-actors",
-      "type": "Actor",
-      "system": "dnd5e"
-    }
-  ],
-  "relationships": {
-    "requires": [
-      {
-        "id": "dnd5e",
-        "type": "system",
-        "compatibility": {
-          "minimum": "5"
-        }
-      }
-    ]
-  }
+  "flags": {}
 }

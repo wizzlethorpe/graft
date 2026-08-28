@@ -59,13 +59,27 @@ async function copyGraft(doc) {
 }
 
 /**
- * The entries this module ships, from `grafts.json` beside module.json.
+ * Graft ships no content of its own, so every entry point names the module
+ * whose grafts are meant. Defaulting to "graft" would look like it worked and
+ * then report no entries.
+ */
+function requireModuleId(moduleId) {
+  if (typeof moduleId === "string" && moduleId) return;
+  throw new Error(
+    `name the module whose grafts to build, e.g. buildPacks("my-adventure"). `
+    + `Graft is a library: your module declares the packs and calls this.`,
+  );
+}
+
+/**
+ * The entries a module ships, from `grafts.json` beside its module.json.
  *
  * A file of its own rather than a `flags` block: it is the bulk of what a
  * graft module *is*, and burying a few hundred entries in the manifest would
  * make the manifest unreadable and the entries unreviewable in a diff.
  */
-async function readGrafts(moduleId = MODULE_ID) {
+async function readGrafts(moduleId) {
+  requireModuleId(moduleId);
   const res = await fetch(`modules/${moduleId}/grafts.json`);
   if (!res.ok) throw new Error(`no grafts.json in modules/${moduleId}/ (HTTP ${res.status})`);
   const parsed = await res.json();
@@ -73,7 +87,8 @@ async function readGrafts(moduleId = MODULE_ID) {
 }
 
 /** Read this module's grafts and build them, reporting what could not be. */
-async function buildPacks(moduleId = MODULE_ID) {
+async function buildPacks(moduleId) {
+  requireModuleId(moduleId);
   const entries = await readGrafts(moduleId);
   ui.notifications.info(`Building ${entries.length} graft(s)…`);
 
