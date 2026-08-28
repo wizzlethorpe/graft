@@ -50,7 +50,9 @@ An id names a folder in one particular world or pack and resolves to nothing any
 
 **`source` is optional.** Without one the patch *is* the document, carried whole. A graft module is an adventure rather than only a pile of derivatives, so the things you invent belong in the same pack as the things you borrow. Absent means "this is mine"; present but empty is an error, because somebody meant to name one.
 
-Pressing **Copy graft** works out which you have, and the order it asks in matters.
+**Copy graft** lives in three places, and the world sidebar is the main one. A graft is an edit *of* something from a compendium, and you make that edit in the world: the actor with the items on it, the scene you have walled. Right-click any document there, or right-click a folder for **Copy grafts** to take the lot. The control on a document sheet is the same thing for something already open. The compendium menu is for the other case, chaining onto a pack graft built.
+
+It works out which shape you have, and the order it asks in matters.
 
 A document in a pack somebody else can install already *is* a source, whatever it remembers about its own past, so it becomes a pure reference with an empty patch: include this, unchanged. That is asked first, and it is what makes chaining work. Graft's own output lives in its module's packs, so pressing **Copy graft** on a built document answers "reference this" rather than replaying the patch that produced it. That patch lives in `grafts.json`, which is where it belongs, and re-deriving it here would mean nobody could ever graft onto a graft.
 

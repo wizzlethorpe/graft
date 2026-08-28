@@ -6,6 +6,7 @@
 // nobody knows about never gets built at all.
 
 import { hydrate, exportDiff } from "./hydrate.mjs";
+import { toYaml } from "./yaml.mjs";
 
 const MODULE_ID = "graft";
 const SUPPRESSED = "suppressedPrompts";
@@ -111,14 +112,14 @@ export function addPackControl(app, controls) {
  * take the whole array in one go. Doing it a document at a time is the same
  * work done fifty times.
  */
-export function addCopyControl(app, controls, withPack = (e) => e) {
+export function addCopyControl(app, controls) {
   const pack = app?.collection;
   if (!game.user.isGM || !pack) return;
   controls.push({
     icon: "fa-solid fa-clipboard-list",
     label: "Copy grafts",
     action: "graftCopyAll",
-    onClick: () => copyPackGrafts(pack, withPack),
+    onClick: () => copyPackGrafts(pack),
   });
 }
 
@@ -129,30 +130,90 @@ export function addCopyControl(app, controls, withPack = (e) => e) {
  * thousand-document compendium is a long wait and rarely what somebody meant
  * to press.
  */
-export async function copyPackGrafts(pack, withPack = (e) => e) {
+export async function copyPackGrafts(pack) {
   const index = await pack.getIndex();
   if (index.size === 0) {
     ui.notifications.warn(`${pack.title} is empty.`);
     return null;
   }
-  if (index.size > 100) {
-    const go = await foundry.applications.api.DialogV2.confirm({
-      window: { title: "Graft" },
-      content: `<p>${pack.title} holds <strong>${index.size}</strong> documents. `
-        + `Export a graft for every one?</p>`,
-    }).catch(() => false);
-    if (!go) return null;
+  // Asked from the index, before `getDocuments` loads the lot, because loading
+  // is the expensive part and rarely what somebody meant to press.
+  if (index.size > 100 && !await confirmMany(index.size, pack.title)) return null;
+  return copyMany(await pack.getDocuments(), pack.title, { confirmed: true });
+}
+
+/**
+ * Fill in the pack an entry belongs in, when there is only one it could be.
+ *
+ * `exportDiff` cannot know which module is being authored, but the answer is
+ * usually forced: one graft module is enabled and it declares one pack of that
+ * document type. Guessing there saves editing every entry by hand.
+ *
+ * Left out when it is genuinely ambiguous, because a wrong pack fails at build
+ * time with a confusing message about types, and a missing one fails with an
+ * obvious message about a missing field.
+ */
+export function withPack(entry) {
+  const candidates = [];
+  for (const module of graftModules()) {
+    for (const pack of module.packs ?? []) {
+      if (pack.type === entry.type) candidates.push(pack.name);
+    }
   }
+  return candidates.length === 1 ? { ...entry, pack: candidates[0] } : entry;
+}
+
+async function confirmMany(count, label) {
+  return foundry.applications.api.DialogV2.confirm({
+    window: { title: "Graft" },
+    content: `<p>${label} holds <strong>${count}</strong> documents. Export a graft for every one?</p>`,
+  }).catch(() => false);
+}
+
+/** One document to the clipboard, as a graft entry. */
+export async function copyOne(doc) {
+  try {
+    const entry = withPack(await exportDiff(doc));
+    // JSON, because grafts.json is JSON and what you copy should be what you
+    // paste. `toYaml` is for the other destination: a vault page's frontmatter.
+    const text = JSON.stringify(entry, null, 2);
+    await game.clipboard.copyPlainText(text);
+    ui.notifications.info(
+      Object.keys(entry.patch).length > 0
+        ? `Copied a graft for ${doc.name}.`
+        : `${doc.name} is unchanged from its source, so the graft is empty.`,
+    );
+    console.log(`Graft | ${doc.name}\n${text}`);
+    console.log(`Graft | as YAML, for a vault page:\n${toYaml(entry)}`);
+    return entry;
+  } catch (err) {
+    ui.notifications.error(`Could not build a graft: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Several documents as one grafts array.
+ *
+ * One failure does not lose the rest: a reader missing one dependency should
+ * still get everything else, and the names of what was skipped.
+ */
+export async function copyMany(docs, label, { confirmed = false } = {}) {
+  if (docs.length === 0) {
+    ui.notifications.warn(`${label} has nothing to export.`);
+    return null;
+  }
+  if (!confirmed && docs.length > 100 && !await confirmMany(docs.length, label)) return null;
 
   const entries = [];
   const failed = [];
-  for (const doc of await pack.getDocuments()) {
+  for (const doc of docs) {
     try { entries.push(withPack(await exportDiff(doc))); }
     catch (err) { failed.push(`${doc.name}: ${err.message}`); }
   }
 
   await game.clipboard.copyPlainText(JSON.stringify(entries, null, 2));
-  console.log(`Graft | ${entries.length} entr(ies) from ${pack.collection}`,
+  console.log(`Graft | ${entries.length} entr(ies) from ${label}`,
     JSON.stringify(entries, null, 2));
   if (failed.length > 0) {
     console.group(`Graft | ${failed.length} could not be exported`);
@@ -160,7 +221,7 @@ export async function copyPackGrafts(pack, withPack = (e) => e) {
     console.groupEnd();
   }
   ui.notifications.info(
-    `Copied ${entries.length} graft(s) from ${pack.title}`
+    `Copied ${entries.length} graft(s) from ${label}`
     + (failed.length ? `, ${failed.length} skipped. See the console.` : "."),
   );
   return entries;
@@ -256,4 +317,80 @@ async function reportBuild(moduleId, built, skipped) {
     ok: { label: "Close" },
     position: { width: 520 },
   }).catch(() => {});
+}
+
+// ── the world sidebar ───────────────────────────────────────────────────────
+//
+// A graft is an edit *of* something from a compendium, and you make that edit
+// in the world: the actor with the items on it, the scene you have walled. So
+// the sidebar is where exporting belongs, and the sheet control is the
+// convenience rather than the main road. The compendium menu keeps its own
+// purpose, which is chaining onto a pack graft built.
+
+/** Every context hook v14 might fire for a document entry. */
+export const CONTEXT_TYPES = [
+  "Document", "Actor", "Item", "JournalEntry", "Scene", "RollTable",
+  "Macro", "Playlist", "Cards", "Adventure",
+];
+
+/**
+ * Add "Copy graft" to a directory entry's context menu.
+ *
+ * Registered for the generic hook and every concrete type, because v14
+ * consolidated these and the naming is the same shape as the header-control
+ * hooks, where the bare name never fires and does so silently. A hook that
+ * never fires costs nothing; the wrong guess costs the feature. Hence the
+ * duplicate guard: if two of them do fire for one menu, only one entry lands.
+ */
+export function addCopyGraftContext(app, menuItems) {
+  if (!game.user.isGM || !Array.isArray(menuItems)) return;
+  if (menuItems.some((i) => i?.name === "Copy graft")) return;
+  menuItems.push({
+    name: "Copy graft",
+    icon: '<i class="fa-solid fa-code-branch"></i>',
+    condition: () => true,
+    callback: async (target) => {
+      const doc = await documentFromEntry(app, target);
+      if (doc) await copyOne(doc);
+      else ui.notifications.warn("Graft could not identify that document.");
+    },
+  });
+}
+
+/** And "Copy grafts" on a folder, which is how people actually group work. */
+export function addCopyFolderGrafts(app, menuItems) {
+  if (!game.user.isGM || !Array.isArray(menuItems)) return;
+  if (menuItems.some((i) => i?.name === "Copy grafts")) return;
+  menuItems.push({
+    name: "Copy grafts",
+    icon: '<i class="fa-solid fa-clipboard-list"></i>',
+    condition: () => true,
+    callback: async (target) => {
+      const id = elementOf(target)?.dataset?.folderId;
+      const folder = id ? game.folders.get(id) : null;
+      if (!folder) return ui.notifications.warn("Graft could not identify that folder.");
+      await copyMany(folderContents(folder), folder.name);
+    },
+  });
+}
+
+/** A folder's documents, and its subfolders' documents. */
+function folderContents(folder, into = []) {
+  for (const doc of folder.contents ?? []) into.push(doc);
+  for (const child of folder.children ?? []) folderContents(child.folder ?? child, into);
+  return into;
+}
+
+/** Context callbacks are handed the list element, jQuery-wrapped in some paths. */
+function elementOf(target) {
+  return target?.[0] ?? target;
+}
+
+async function documentFromEntry(app, target) {
+  const el = elementOf(target);
+  const id = el?.dataset?.entryId ?? el?.dataset?.documentId;
+  if (!id) return null;
+  const collection = app?.collection;
+  if (!collection) return null;
+  return collection.get?.(id) ?? await collection.getDocument?.(id) ?? null;
 }

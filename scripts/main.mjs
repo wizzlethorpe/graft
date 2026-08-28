@@ -4,10 +4,10 @@
 
 import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff } from "./hydrate.mjs";
-import { toYaml } from "./yaml.mjs";
 import {
-  registerSettings, promptForUnbuilt, addPackControl, addCopyControl, copyPackGrafts,
-  buildAndReport, readGrafts, unbuilt, graftModules,
+  registerSettings, promptForUnbuilt, addPackControl, addCopyControl, copyOne,
+  copyPackGrafts, buildAndReport, readGrafts, unbuilt,
+  addCopyGraftContext, addCopyFolderGrafts, CONTEXT_TYPES,
 } from "./ui.mjs";
 
 const MODULE_ID = "graft";
@@ -16,7 +16,7 @@ Hooks.once("init", () => {
   registerSettings();
   game.modules.get(MODULE_ID).api = {
     hydrate, exportDiff, readGrafts, unbuilt, buildPacks: buildAndReport,
-    copyPackGrafts: (pack) => copyPackGrafts(pack, withPack),
+    copyPackGrafts,
   };
 });
 
@@ -31,15 +31,14 @@ Hooks.on("getHeaderControlsCompendium", (app, controls) => {
   addPackControl(app, controls);
   // Every compendium, not only a graft module's own: the pack an author
   // assembles their work in is an ordinary world compendium.
-  addCopyControl(app, controls, withPack);
+  addCopyControl(app, controls);
 });
 
 /**
  * A "Copy graft" control on every document sheet.
  *
- * On the sheet rather than in a sidebar context menu because the document you
- * want to export is the one you have just finished editing, and it is already
- * open in front of you.
+ * The convenience path, for a document already open in front of you. The
+ * sidebar context menu below is the main road.
  *
  * The hook name is `getHeaderControls` + a class name, not `getHeaderControls`.
  * ApplicationV2 appends each class in the inheritance chain and fires one hook
@@ -59,7 +58,7 @@ Hooks.on("getHeaderControlsDocumentSheetV2", (app, controls) => {
     icon: "fa-solid fa-code-branch",
     label: "Copy graft",
     action: "graftExport",
-    onClick: () => copyGraft(doc),
+    onClick: () => copyOne(doc),
   });
 });
 
@@ -70,43 +69,20 @@ Hooks.on("preImportAdventure", (adventure, formData, toCreate) => {
 });
 
 
-/**
- * Fill in the pack the entry belongs in, when there is only one it could be.
- *
- * `exportDiff` cannot know which module is being authored, but the answer is
- * usually forced: one graft module is enabled and it declares one pack of that
- * document type. Guessing there saves editing every single entry by hand.
- *
- * Left out when it is genuinely ambiguous, because a wrong pack fails at build
- * time with a confusing message about types, and a missing one fails with an
- * obvious message about a missing field.
- */
-function withPack(entry) {
-  const candidates = [];
-  for (const module of graftModules()) {
-    for (const pack of module.packs ?? []) {
-      if (pack.type === entry.type) candidates.push(pack.name);
-    }
-  }
-  return candidates.length === 1 ? { ...entry, pack: candidates[0] } : entry;
+// The world sidebar, which is where a graft is actually made: you edit the
+// actor with the items on it, or the scene you have walled, and the edit *is*
+// the graft. The sheet control is the convenience for a document already open;
+// this is the main road.
+//
+// Registered for the generic hook and every concrete type. v14 consolidated
+// these into `getDocumentContextOptions` with per-type variants, and this is
+// the same naming shape as the header-control hooks, where binding the bare
+// name fires nothing and does so silently. `addCopyGraftContext` de-duplicates,
+// so a type that fires both hooks still gets one entry.
+for (const type of CONTEXT_TYPES) {
+  Hooks.on(`get${type}ContextOptions`, addCopyGraftContext);
 }
 
-async function copyGraft(doc) {
-  try {
-    const entry = withPack(await exportDiff(doc));
-    // JSON, because grafts.json is JSON and what you copy should be what you
-    // paste. `toYaml` is for the other destination: a vault page's frontmatter.
-    const text = JSON.stringify(entry, null, 2);
-    await game.clipboard.copyPlainText(text);
-    ui.notifications.info(
-      Object.keys(entry.patch).length > 0
-        ? `Copied a graft for ${doc.name}.`
-        : `${doc.name} is unchanged from its source, so the graft is empty.`,
-    );
-    console.log(`Graft | ${doc.name}\n${text}`);
-    console.log(`Graft | as YAML, for a vault page:\n${toYaml(entry)}`);
-  } catch (err) {
-    ui.notifications.error(`Could not build a graft: ${err.message}`);
-  }
-}
-
+// Folders group the work, so exporting one is the bulk case that matches how
+// people organise rather than how the data happens to be stored.
+Hooks.on("getFolderContextOptions", addCopyFolderGrafts);
