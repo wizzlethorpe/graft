@@ -6,7 +6,7 @@ A graft joins your scion to somebody else's rootstock. The result grows as one p
 
 ## Status
 
-Prototype. The diff format and its round trip are implemented and tested; the Foundry side is not written yet.
+Prototype, untested in a live world. The format, the ordering and the YAML output are implemented and covered by 26 tests; the Foundry side is written but has never run.
 
 ## The format
 
@@ -81,8 +81,21 @@ Pinning a range answers identity: within a pinned version the source ids are sta
 ```
 scripts/patch.mjs   the format: applyPatch, diff. Pure, no Foundry.
 scripts/plan.mjs    ids, UUIDs, and the order a chain has to build in.
-test/               their properties, including the round trip.
+scripts/yaml.mjs    what lands on the clipboard.
+scripts/hydrate.mjs the parts that need Foundry: resolve, unlock, write.
+scripts/main.mjs    hooks, the sheet control, reading grafts.json.
+test/               properties of the three pure modules.
 module.json         Foundry manifest.
 ```
+
+## Using it
+
+Two actions, both GM-only.
+
+**Authoring.** Import a document from somebody's compendium, edit it in the ordinary sheet, and press **Copy graft** in the sheet header. Foundry already recorded where it came from, so the patch is recovered against that and put on the clipboard as YAML. Paste it into your `grafts.json`.
+
+**Building.** `game.modules.get("graft").api.buildPacks()` reads `grafts.json` and hydrates every entry into this module's packs. Entries whose source does not resolve are skipped and named, so a reader missing one dependency still gets everything else.
+
+A module's packs are locked by default, so each is unlocked for the write and put back exactly as found. Leaving one unlocked would quietly invite hand edits that the next build overwrites.
 
 Run the tests with `node --test 'test/*.test.mjs'`.
