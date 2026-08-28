@@ -75,6 +75,12 @@ The second form addresses its source exactly as the outer entry does, and is rec
 
 An embedded source that does not resolve refuses the whole entry rather than building it without. A statblock quietly missing the magic item it was built around is worse than one that will not build and names the dependency.
 
+### Third-party bookkeeping
+
+Flags are kept, because a flag is where a module stores data an author meant to set. The exception is a namespace holding bookkeeping about *this copy*: Scene Packer stamps every document it imports with a content hash and a `sourceId` naming an Item in the world it came from, and that id resolves to nothing anywhere else. Those namespaces are listed in `BOOKKEEPING_FLAGS` and dropped.
+
+A list rather than a rule, because the data does not say which flags are bookkeeping. Add a namespace when its contents turn out to describe the copy rather than the content.
+
 ### Sets look like ordered lists
 
 Foundry's `SetField` serialises to an array, and dnd5e uses eleven of them (`system.properties` among them). A Set has no meaningful order, but an array compared by equality does, so a source that happens to serialise `["mgc", "gear"]` where your copy has `["gear", "mgc"]` reads as a change when nothing changed.

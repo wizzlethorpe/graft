@@ -171,6 +171,21 @@ function equal(a, b) {
 const VOLATILE = new Set(["_stats", "ownership", "folder"]);
 
 /**
+ * Flag namespaces holding a module's own bookkeeping about *this* copy.
+ *
+ * Flags are otherwise kept, because a flag is where a module stores data an
+ * author meant to set. These are the exception: Scene Packer stamps every
+ * document it imports with a content hash and a `sourceId` naming an Item in
+ * the world it came from. That id resolves to nothing anywhere else, and it
+ * appeared on six of seven entries in the first inventory anyone tried.
+ *
+ * A list rather than a rule because the data does not say which flags are
+ * bookkeeping. Add a namespace here when its contents turn out to describe the
+ * copy rather than the content.
+ */
+const BOOKKEEPING_FLAGS = new Set(["scene-packer"]);
+
+/**
  * A copy with the volatile fields removed, at every depth.
  *
  * Every depth because embedded documents carry their own `_stats`: stripping
@@ -181,7 +196,23 @@ export function stripVolatile(value) {
   if (!isPlainObject(value)) return value;
   const out = {};
   for (const [k, v] of Object.entries(value)) {
-    if (!VOLATILE.has(k)) out[k] = stripVolatile(v);
+    if (VOLATILE.has(k)) continue;
+    if (k === "flags" && isPlainObject(v)) {
+      const kept = stripBookkeeping(v);
+      // Omit the key entirely when nothing survives, so a document whose only
+      // flags were bookkeeping does not read as having lost them.
+      if (Object.keys(kept).length > 0) out[k] = kept;
+      continue;
+    }
+    out[k] = stripVolatile(v);
+  }
+  return out;
+}
+
+function stripBookkeeping(flags) {
+  const out = {};
+  for (const [ns, v] of Object.entries(flags)) {
+    if (!BOOKKEEPING_FLAGS.has(ns)) out[ns] = stripVolatile(v);
   }
   return out;
 }
