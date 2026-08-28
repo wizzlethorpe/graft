@@ -61,11 +61,14 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
  * for what goes wrong otherwise.
  */
 async function resolveData(uuid) {
+  // Checked first, and not as a fallback. `fromUuid` does not return null for
+  // this shape, it throws: it parses the tail and rejects JournalEntry as an
+  // embedded document of Adventure, which is true and unhelpful. An adventure's
+  // contents are embedded data rather than documents, which is the whole reason
+  // graft resolves this one form itself.
+  if (parseAdventureSource(uuid)) return resolveAdventureSource(uuid);
   const doc = await fromUuid(uuid);
-  if (doc) return doc.toObject();
-  // The one form Foundry cannot resolve, because an adventure's contents are
-  // embedded data rather than documents.
-  return resolveAdventureSource(uuid);
+  return doc ? doc.toObject() : null;
 }
 
 async function hydrateOne(entry, moduleId, touched) {
