@@ -236,6 +236,15 @@ export function stripVolatile(value, root = true) {
   for (const [k, v] of Object.entries(value)) {
     if (VOLATILE.has(k)) continue;
     if (root && ROOT_ONLY.has(k)) continue;
+    if (k === "flags" && isPlainObject(v)) {
+      // Our own namespace describes where *this copy* came from, so it is
+      // exactly as volatile as `_stats` and would be a lie on the other end.
+      // Every other module's flags stay: inert if the reader lacks the module,
+      // possibly wanted if they have it, and not ours to curate either way.
+      const { graft: _ours, ...rest } = v;
+      out[k] = stripVolatile(rest, false);
+      continue;
+    }
     if (k === "ownership" && isPlainObject(v)) {
       const kept = Object.fromEntries(
         Object.entries(v).filter(([who]) => OWNERSHIP_KEEP.has(who)));

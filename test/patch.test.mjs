@@ -442,3 +442,24 @@ test("the first entry added to an empty collection is whole", async () => {
   diff({}, { journal: [{ _id: "jrnlOuter000001", pages: [{ _id: "pageInner00001" }] }] }, nested);
   assert.deepEqual([...nested].sort(), ["jrnlOuter000001", "pageInner00001"], "at any depth");
 });
+
+test("our own flags do not travel, and other modules' still do", async () => {
+  // `flags.graft.origin` records where this copy came from, which is exactly as
+  // volatile as `_stats` and would be a lie on the other end. Somebody else's
+  // flags are not ours to curate.
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const out = stripVolatile({
+    name: "Flesh Mountain",
+    flags: {
+      graft: { origin: { adventure: "Compendium.madv.adv.Adventure.x", id: "y" } },
+      "scene-packer": { hash: "abc" },
+      core: { sheetClass: "" },
+    },
+    journal: [{ _id: "jrnlInner00001", flags: { graft: { origin: {} }, other: { keep: 1 } } }],
+  });
+  assert.ok(!("graft" in out.flags), "ours goes");
+  assert.deepEqual(out.flags["scene-packer"], { hash: "abc" }, "theirs stays");
+  assert.deepEqual(out.flags.core, { sheetClass: "" });
+  assert.ok(!("graft" in out.journal[0].flags), "at depth too");
+  assert.deepEqual(out.journal[0].flags.other, { keep: 1 });
+});

@@ -115,6 +115,10 @@ Foundry stamps `_stats.compendiumSource` on anything imported from a pack, which
 
 Publishers routinely assemble a module in a private work module, and Foundry stamps its id on every document. Packaging into an adventure carries the stamp along, and adventure import carries it into your world. Flesh Mountain's journal points at `aa-mad-workmodule`, which was never published and which nobody outside that studio can resolve.
 
+Graft records its own answer where it can. `preImportAdventure` hands over each document's data before it is created, so an adventure import stamps `flags.graft.origin` with the adventure's UUID, which is real and resolves for anybody who owns the module. That is preferred over `compendiumSource` when present. It is not done for ordinary imports, where `fromCompendium` already writes an accurate one and a second copy would buy nothing but a monkeypatch of a core method.
+
+It only helps adventures imported *after* graft is installed. For anything already in your world the fallback below applies.
+
 So an unresolvable source splits two ways. If the package is **installed but disabled**, that is yours to fix and the export refuses until you enable it. If it is **not installed at all**, it may not be obtainable by anyone, so the export treats the document as having no recorded source: in a pack it references itself, and in the world it travels whole. Travelling whole puts the content in your `grafts.json`, which is visible in the file, and whether you may distribute it is your call.
 
 ### Whole documents and deltas look alike

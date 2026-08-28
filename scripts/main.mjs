@@ -2,6 +2,7 @@
 // hydrate.mjs (building), ui.mjs (asking and reporting) and patch.mjs (the
 // format), so this file stays a list of where Foundry calls in.
 
+import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { toYaml } from "./yaml.mjs";
 import {
@@ -60,6 +61,12 @@ Hooks.on("getHeaderControlsDocumentSheetV2", (app, controls) => {
     action: "graftExport",
     onClick: () => copyGraft(doc),
   });
+});
+
+// Adventure import is the one path that carries a publisher's own provenance
+// into your world verbatim, so this is the moment to record something true.
+Hooks.on("preImportAdventure", (adventure, formData, toCreate) => {
+  stampOrigin(adventure, toCreate);
 });
 
 

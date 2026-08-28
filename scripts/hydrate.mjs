@@ -6,6 +6,7 @@
 // UUID, unlocking a pack, writing a document.
 
 import { applyPatch, expandSources, folderPath, folderSegments } from "./patch.mjs";
+import { originOf } from "./origin.mjs";
 import { planOrder, entryUuid } from "./plan.mjs";
 
 /**
@@ -216,6 +217,12 @@ export async function exportDiff(document) {
     isWhole,
   });
 
+  // What we recorded at import beats what the document claims, because we
+  // computed it from the adventure in front of us and the claim may have been
+  // inherited from a publisher's private module. Falls back for anything
+  // imported before graft was installed, and for the ordinary drag-from-a-pack
+  // path where `fromCompendium` writes an accurate one anyway.
+  const origin = originOf(document);
   const sourceUuid = document._stats?.compendiumSource;
 
   // Asked before the pack check, and the order matters. A document that graft
@@ -253,10 +260,18 @@ export async function exportDiff(document) {
     // document in a pack references itself, and one in the world travels whole.
     // Travelling whole means the content is in your grafts.json, which is
     // visible in the file and is the author's call to make.
+    // Knowing where it really came from improves what we can say, and nothing
+    // else: an outcome that got worse the more we knew would be a strange
+    // thing to build.
+    const from = origin ? (await fromUuid(origin.adventure))?.name ?? origin.adventure : null;
     console.warn(
-      `Graft | ${document.name} records ${sourceUuid} as its source, but ${pkg} is not installed. `
-      + `It was most likely a publisher's private work module. Exporting with no source, so this `
-      + `entry carries its content: check you have the right to distribute it.`,
+      `Graft | ${document.name} records ${sourceUuid} as its source, but ${pkg} is not installed`
+      + (from
+        ? `. It came from the adventure ${from}, and ${pkg} is that publisher's own work module, `
+          + `which was never released. An adventure's contents have no UUID of their own, so there `
+          + `is nothing to point at.`
+        : `, and was most likely a publisher's private work module.`)
+      + ` Exporting with no source, so this entry carries its content: check you may distribute it.`,
     );
     if (document.pack) return { ...base, source: document.uuid, patch: {} };
     return { ...base, patch: await withRefs(mine) };
