@@ -51,6 +51,18 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
   return { built, skipped };
 }
 
+/**
+ * Resolve a UUID to plain document data.
+ *
+ * `.toObject()` is not optional: `fromUuid` returns a live Document, and the
+ * patch functions walk what they are given. See `isPlainObject` in patch.mjs
+ * for what goes wrong otherwise.
+ */
+async function resolveData(uuid) {
+  const doc = await fromUuid(uuid);
+  return doc ? doc.toObject() : null;
+}
+
 async function hydrateOne(entry, moduleId, touched) {
   const source = await fromUuid(entry.source);
   if (!source) {
@@ -71,7 +83,7 @@ async function hydrateOne(entry, moduleId, touched) {
   // Embedded entries that name a source are fetched first: a magic item added
   // to a statblock is a graft of its own, and the artifact carries a pointer
   // to it rather than a copy of its text.
-  const patch = await expandSources(entry.patch ?? {}, (uuid) => fromUuid(uuid));
+  const patch = await expandSources(entry.patch ?? {}, resolveData);
   const data = applyPatch(source.toObject(), patch);
   data._id = entry.id;
   // Foundry's own provenance field, and the thing that makes the round trip
@@ -151,7 +163,7 @@ export async function exportDiff(document) {
     source: sourceUuid,
     patch: await referenceSources(patch, {
       sourceOf: (id) => sources.get(id) ?? null,
-      resolve: (uuid) => fromUuid(uuid),
+      resolve: resolveData,
     }),
   };
 }

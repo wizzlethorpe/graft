@@ -258,3 +258,28 @@ test("round trip through a reference reproduces the item", async () => {
   const expanded = await expandSources(referenced, resolve);
   assert.deepEqual(expanded.items[0], mine);
 });
+
+test("a class instance is opaque, not something to walk into", async () => {
+  // The bug that took the longest to find. `fromUuid` returns a live Document,
+  // whose embedded collections hold a `model` back-reference to the document
+  // that owns them: Actor to items to model to Actor. Treating "any object" as
+  // walkable meant recursing that forever. Callers must pass toObject() output,
+  // and a caller who forgets now gets a wrong answer at once rather than a
+  // stack overflow seconds later.
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+
+  class FakeCollection { constructor(model) { this.model = model; } }
+  const doc = { name: "Animated Armor", _stats: { createdTime: 1 } };
+  doc.items = new FakeCollection(doc);          // the cycle, exactly as Foundry has it
+
+  const out = stripVolatile(doc);               // must terminate
+  assert.equal(out.name, "Animated Armor");
+  assert.ok(!("_stats" in out));
+  assert.equal(out.items, doc.items, "an instance is copied by reference, not descended into");
+});
+
+test("plain data is still walked as before", async () => {
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const out = stripVolatile({ a: { b: { _stats: {}, c: 1 } }, d: [{ _stats: {}, e: 2 }] });
+  assert.deepEqual(out, { a: { b: { c: 1 } }, d: [{ e: 2 }] });
+});

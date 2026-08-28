@@ -19,7 +19,25 @@
 // That one rule is the only place this departs from a published standard, and
 // it exists because Foundry's data model gave those arrays keys.
 
-const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+/**
+ * A plain data object, and not merely "an object".
+ *
+ * The distinction is load-bearing. A patch is always plain JSON, but the
+ * *source* it is diffed against arrives from Foundry, and a live Document is a
+ * class instance whose embedded collections hold a `model` back-reference to
+ * the document that owns them: Actor to items to model to Actor. Walking one
+ * recursively never returns, which is how the first real export died with
+ * "Maximum call stack size exceeded".
+ *
+ * Callers are expected to pass `toObject()` output. Checking the prototype
+ * means a caller who forgets gets a wrong answer immediately rather than a
+ * stack overflow several seconds later.
+ */
+function isPlainObject(v) {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+}
 
 /** An array Foundry would treat as a keyed collection rather than a list. */
 export function isKeyedArray(v) {
