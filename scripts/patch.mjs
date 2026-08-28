@@ -168,7 +168,16 @@ function equal(a, b) {
  * anything on the machine that will apply the patch, and the user id is not
  * ours to ship.
  */
-const VOLATILE = new Set(["_stats", "folder"]);
+const VOLATILE = new Set(["_stats"]);
+
+// `folder` is stripped at the root only, and the depth is the whole point.
+// On the document itself an id names a folder in one world or pack and
+// resolves to nothing elsewhere, so it travels as a path of names instead.
+// Inside an Adventure it means something entirely different: an Adventure
+// carries its own `folders` array, and its embedded documents point into that,
+// which travels with them. Stripping at depth would ship the folders empty and
+// dump every document at the root.
+const ROOT_ONLY = new Set(["folder"]);
 
 // `ownership` is half world-local and half not, so it is thinned rather than
 // dropped. The per-user entries are ids from one world and mean nothing
@@ -193,12 +202,13 @@ const OWNERSHIP_KEEP = new Set(["default"]);
  * Every depth because embedded documents carry their own `_stats`: stripping
  * only the top level leaves each item in an actor's inventory looking edited.
  */
-export function stripVolatile(value) {
-  if (Array.isArray(value)) return value.map(stripVolatile);
+export function stripVolatile(value, root = true) {
+  if (Array.isArray(value)) return value.map((v) => stripVolatile(v, false));
   if (!isPlainObject(value)) return value;
   const out = {};
   for (const [k, v] of Object.entries(value)) {
     if (VOLATILE.has(k)) continue;
+    if (root && ROOT_ONLY.has(k)) continue;
     if (k === "ownership" && isPlainObject(v)) {
       const kept = Object.fromEntries(
         Object.entries(v).filter(([who]) => OWNERSHIP_KEEP.has(who)));
@@ -207,7 +217,7 @@ export function stripVolatile(value) {
       if (Object.keys(kept).length > 0) out[k] = kept;
       continue;
     }
-    out[k] = stripVolatile(v);
+    out[k] = stripVolatile(v, false);
   }
   return out;
 }

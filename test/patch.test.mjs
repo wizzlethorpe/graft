@@ -337,3 +337,37 @@ test("the id form is still stripped from a patch", async () => {
   const out = stripVolatile({ name: "Random Magic Items", folder: "U4xmShLy19Ry54zl" });
   assert.ok(!("folder" in out));
 });
+
+// ── adventures ──────────────────────────────────────────────────────────────
+
+test("an adventure's internal folder pointers survive stripping", async () => {
+  // The one place `folder` is not world-local. An Adventure carries its own
+  // `folders` array and its embedded documents point into it, and that array
+  // travels with the document, so those ids stay meaningful on the other side.
+  // Stripping at depth would ship the folders empty and every document loose.
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const adventure = {
+    _id: "advSpectacular01", name: "Spectacular Shops",
+    folder: "packFolderId001",                       // world-local, goes
+    folders: [
+      { _id: "folderShops0001", name: "Shops", type: "Actor", folder: null },
+      { _id: "folderArmory0001", name: "Weapons", type: "Actor", folder: "folderShops0001" },
+    ],
+    actors: [{ _id: "actorKosov000001", name: "Kosov", folder: "folderArmory0001",
+               _stats: { modifiedTime: 1 }, ownership: { default: 0, someUser0000001: 3 } }],
+  };
+  const out = stripVolatile(adventure);
+
+  assert.ok(!("folder" in out), "the adventure's own folder is world-local and goes");
+  assert.equal(out.folders.length, 2, "the folders it carries stay");
+  assert.equal(out.folders[1].folder, "folderShops0001", "including the tree between them");
+  assert.equal(out.actors[0].folder, "folderArmory0001", "and what points into it");
+  assert.ok(!("_stats" in out.actors[0]), "while genuine noise still goes at depth");
+  assert.deepEqual(out.actors[0].ownership, { default: 0 });
+});
+
+test("a plain document's folder still goes, at the root", async () => {
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const out = stripVolatile({ _id: "itemSword0000001", name: "Sword", folder: "someFolder00001" });
+  assert.ok(!("folder" in out));
+});
