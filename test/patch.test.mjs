@@ -148,18 +148,28 @@ test("timestamps on embedded items do not count as changes", async () => {
     "nothing about the document changed");
 });
 
-test("a user id never reaches the patch", async () => {
-  // `ownership` is a map of ids from one world. It means nothing on the
-  // machine applying the patch, and it is not ours to ship.
+test("a user id never reaches the patch, but the default does", async () => {
+  // Half of `ownership` is world-local and half is not. The per-user entries
+  // are ids from one world; `default` is the only way to say "players can see
+  // this", which is an authorial decision worth carrying.
   const { stripVolatile } = await import("../scripts/patch.mjs");
   const mine = stripVolatile({
-    name: "Marlo's Enforcer",
-    ownership: { default: 0, K5n12UWOfcmnnwjH: 3 },
+    name: "Marlo's Handout",
+    ownership: { default: 2, K5n12UWOfcmnnwjH: 3 },
     items: [{ _id: "itemAmulet00001", ownership: { K5n12UWOfcmnnwjH: 3 } }],
   });
-  assert.ok(!("ownership" in mine));
-  assert.ok(!("ownership" in mine.items[0]));
+  assert.deepEqual(mine.ownership, { default: 2 }, "the portable half survives");
+  assert.ok(!("ownership" in mine.items[0]), "and a purely per-user map goes entirely");
   assert.equal(JSON.stringify(mine).includes("K5n12UWOfcmnnwjH"), false);
+});
+
+test("making something player-visible is a change the diff reports", async () => {
+  // The point of keeping `default`: a GM-only source and a player-visible copy
+  // differ in a way the reader should receive.
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const before = stripVolatile({ name: "Handout", ownership: { default: 0 } });
+  const mine = stripVolatile({ name: "Handout", ownership: { default: 2, abc: 3 } });
+  assert.deepEqual(diff(before, mine), { ownership: { default: 2 } });
 });
 
 test("a real edit still survives the stripping", async () => {

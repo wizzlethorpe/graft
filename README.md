@@ -101,9 +101,13 @@ An embedded source that does not resolve refuses the whole entry rather than bui
 
 ### What is stripped, and what is not
 
-Three fields are removed before diffing, at every depth. `_stats`, because its timestamps and last-editor id make an unchanged document read as changed. `folder`, because it names a folder in one world. `ownership`, because it maps user ids from one world.
+Before diffing, at every depth:
 
-Nothing else, and in particular **no other module's flags**. A patch will carry whatever Scene Packer or anything else stamped on a document. That is noise, but a third-party flag is inert on apply if the reader lacks the module and possibly wanted if they have it, so neither reason above applies to it. Tidying it would be an editorial judgement about somebody else's data, and would commit this to maintaining a list of other people's module names.
+- **`_stats` is removed.** Its timestamps and last-editor id differ between two identical documents, so leaving it in reports every embedded item as changed when none are.
+- **`folder` is removed**, because an id names a folder in one world or pack. The path of names is carried on the entry instead, and rebuilt on the way in.
+- **`ownership` is thinned, not removed.** The per-user entries are ids from one world and mean nothing elsewhere. `default` stays: it is the only way to say "players can see this" about a handout or a player-facing item, and that is an authorial decision rather than an accident of where the document was edited.
+
+Nothing else, and in particular **no other module's flags**. A patch will carry whatever Scene Packer or anything else stamped on a document. That is noise, but a third-party flag is inert on apply if the reader lacks the module and possibly wanted if they have it. Tidying it would be an editorial judgement about somebody else's data, and would commit this to maintaining a list of other people's module names.
 
 ### Sets look like ordered lists
 

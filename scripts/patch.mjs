@@ -168,7 +168,14 @@ function equal(a, b) {
  * anything on the machine that will apply the patch, and the user id is not
  * ours to ship.
  */
-const VOLATILE = new Set(["_stats", "ownership", "folder"]);
+const VOLATILE = new Set(["_stats", "folder"]);
+
+// `ownership` is half world-local and half not, so it is thinned rather than
+// dropped. The per-user entries are ids from one world and mean nothing
+// anywhere else; `default` is a real authorial decision, and the only way to
+// say "players can see this" about a handout, a player-facing item, or a scene
+// they can navigate to.
+const OWNERSHIP_KEEP = new Set(["default"]);
 
 // Nothing else is removed, and in particular no other module's flags. Each of
 // the three above earns it: `_stats` makes an unchanged document read as
@@ -191,7 +198,16 @@ export function stripVolatile(value) {
   if (!isPlainObject(value)) return value;
   const out = {};
   for (const [k, v] of Object.entries(value)) {
-    if (!VOLATILE.has(k)) out[k] = stripVolatile(v);
+    if (VOLATILE.has(k)) continue;
+    if (k === "ownership" && isPlainObject(v)) {
+      const kept = Object.fromEntries(
+        Object.entries(v).filter(([who]) => OWNERSHIP_KEEP.has(who)));
+      // Omitted when nothing survives, so a document whose only ownership was
+      // per-user does not read as having lost something.
+      if (Object.keys(kept).length > 0) out[k] = kept;
+      continue;
+    }
+    out[k] = stripVolatile(v);
   }
   return out;
 }
