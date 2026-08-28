@@ -5,7 +5,7 @@
 // is tested without Foundry. This file is the part that cannot be: resolving a
 // UUID, unlocking a pack, writing a document.
 
-import { applyPatch, expandSources } from "./patch.mjs";
+import { applyPatch, expandSources, folderPath, folderSegments } from "./patch.mjs";
 import { planOrder, entryUuid } from "./plan.mjs";
 
 /**
@@ -103,6 +103,8 @@ async function hydrateOne(entry, moduleId, touched) {
   const patch = await expandSources(entry.patch ?? {}, resolveData);
   const data = applyPatch(base, patch);
   data._id = entry.id;
+  // Rebuilt from names, since the source's folder id means nothing here.
+  data.folder = await ensureFolderPath(pack, entry.folder);
   // Foundry's own provenance field, and the thing that makes the round trip
   // work later: an author who imports this and edits it can recover a patch
   // against what it was grafted from. Nothing to record for original content.
@@ -122,6 +124,34 @@ async function hydrateOne(entry, moduleId, touched) {
     }
   }
   return entryUuid(entry, moduleId);
+}
+
+/**
+ * The folder an entry asks for, created in this pack if it is not there yet.
+ *
+ * Matched by name and parent rather than by a derived id, so a rebuild reuses
+ * the folder somebody may have since renamed or recoloured, and an author who
+ * organises a pack by hand does not have it undone on the next build.
+ */
+async function ensureFolderPath(pack, path) {
+  let parent = null;
+  for (const name of folderSegments(path)) {
+    let folder = pack.folders.find((f) => f.name === name && (f.folder?.id ?? null) === parent);
+    if (!folder) {
+      try {
+        folder = await Folder.create(
+          { name, type: pack.documentName, folder: parent },
+          { pack: pack.collection },
+        );
+      } catch (err) {
+        // A document at the pack root is better than no document.
+        console.warn(`Graft | could not create folder "${name}" in ${pack.collection}:`, err);
+        return parent;
+      }
+    }
+    parent = folder?.id ?? parent;
+  }
+  return parent;
 }
 
 async function unlock(pack, touched) {
@@ -171,7 +201,12 @@ export async function exportDiff(document) {
   const mine = stripVolatile(raw);
   delete mine._id;
 
-  const base = { id: document.id, type: document.documentName };
+  // Carried as names so the other side can rebuild it. Kept even for a pure
+  // reference, since organisation is most of what a bulk export is for.
+  const folder = folderPath(document);
+  const base = {
+    id: document.id, type: document.documentName, ...(folder ? { folder } : {}),
+  };
   const withRefs = async (patch) => referenceSources(patch, {
     sourceOf: (id) => sources.get(id) ?? null,
     resolve: resolveData,

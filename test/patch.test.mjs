@@ -297,3 +297,33 @@ test("another module's flags are left exactly as they are", async () => {
   assert.deepEqual(out.flags, flags);
   assert.ok(!("_stats" in out), "the three that earn it still go");
 });
+
+// ── folders ─────────────────────────────────────────────────────────────────
+
+test("a folder travels as a path of names, not an id", async () => {
+  // An id names a folder in one world or pack and resolves to nothing
+  // elsewhere, which is why `folder` is stripped from a patch. The shape an
+  // author organised their work into is still worth keeping, and a path can be
+  // rebuilt on the other side.
+  const { folderPath } = await import("../scripts/patch.mjs");
+  const bags = { name: "Bags", folder: { name: "Magic Items", folder: null } };
+  assert.equal(folderPath({ folder: bags }), "Magic Items/Bags");
+  assert.equal(folderPath({ folder: { name: "Tables", folder: null } }), "Tables");
+  assert.equal(folderPath({ folder: null }), undefined, "not in a folder says so");
+  assert.equal(folderPath(undefined), undefined);
+});
+
+test("a folder path tolerates what people type", async () => {
+  const { folderSegments } = await import("../scripts/patch.mjs");
+  assert.deepEqual(folderSegments("/Magic Items//Bags/ "), ["Magic Items", "Bags"]);
+  assert.deepEqual(folderSegments(""), []);
+  assert.deepEqual(folderSegments(undefined), []);
+});
+
+test("the id form is still stripped from a patch", async () => {
+  // Both things are true at once: the path is carried on the entry, and the
+  // raw id never reaches the patch.
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const out = stripVolatile({ name: "Random Magic Items", folder: "U4xmShLy19Ry54zl" });
+  assert.ok(!("folder" in out));
+});

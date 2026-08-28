@@ -287,3 +287,22 @@ export async function referenceSources(patch, { sourceOf, resolve }) {
 function isWholeDocument(entry) {
   return typeof entry.name === "string" && typeof entry.type === "string";
 }
+
+/**
+ * A document's folder as a path of names, or undefined when it is not in one.
+ *
+ * Names, not ids. `folder` is stripped from a patch because an id names a
+ * folder in one particular world or pack and resolves to nothing anywhere
+ * else, but the *shape* an author organised their work into is worth keeping,
+ * and a path can be rebuilt on the other side.
+ */
+export function folderPath(document) {
+  const names = [];
+  for (let f = document?.folder; f; f = f.folder) names.unshift(f.name);
+  return names.length > 0 ? names.join("/") : undefined;
+}
+
+/** "/Magic Items//Bags/" -> ["Magic Items", "Bags"]. Tolerates what people type. */
+export function folderSegments(path) {
+  return typeof path === "string" ? path.split("/").map((s) => s.trim()).filter(Boolean) : [];
+}

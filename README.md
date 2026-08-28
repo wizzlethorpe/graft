@@ -40,6 +40,14 @@ patch:
 
 Hydration is `fromUuid(source)`, `toObject()`, apply the patch, create under your id in the target pack. A source that does not resolve means the reader lacks the module, and the entry is skipped with a warning rather than half-built.
 
+**`folder` is optional**, and is a path of names rather than an id:
+
+```yaml
+folder: Magic Items/Bags
+```
+
+An id names a folder in one particular world or pack and resolves to nothing anywhere else, which is why `folder` is stripped from the patch itself. The shape you organised your work into is worth keeping though, so it travels as names and the folders are created in your pack on the way in. Matched by name and parent rather than a derived id, so renaming or recolouring one by hand survives the next build.
+
 **`source` is optional.** Without one the patch *is* the document, carried whole. A graft module is an adventure rather than only a pile of derivatives, so the things you invent belong in the same pack as the things you borrow. Absent means "this is mine"; present but empty is an error, because somebody meant to name one.
 
 Pressing **Copy graft** works out which you have. A document living in a compendium already *is* a source, so it becomes a pure reference with an empty patch: include this, unchanged. One imported from a compendium is diffed against where it came from. One you wrote yourself travels whole.
