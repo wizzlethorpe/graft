@@ -172,6 +172,27 @@ game.modules.get("graft").api.buildPacks("your-adventure")
 
 `examples/graft-example/` is a complete one.
 
+## Authoring a graft module
+
+**1. Make the module.** A directory in `Data/modules/` with a `module.json`, declaring the packs you want, `requires` for graft and your system, and `recommends` for each source you graft onto. `examples/graft-example/` is a working one.
+
+**2. Restart the Foundry server.** Manifests are read at startup, so a pack you just declared is invisible until then. A browser reload is not enough, and the symptom is a build complaining that your module declares no such pack.
+
+**3. Build the content in your world, the ordinary way.** Import somebody's monster and edit it. Drag items onto it. Make the things that are yours from scratch. Nothing here is graft-specific: you are just playing with Foundry.
+
+**4. Press Copy graft** in each document's sheet header, and paste the result into a JSON array in `grafts.json` beside your `module.json`. The `pack` field is filled in for you when your module declares exactly one pack of that type; otherwise add it.
+
+**5. Build**, from the prompt on load or the Build grafts control in your pack's window header, and check the report.
+
+**6. Test what a reader without your sources gets.** Disable one of the modules you graft onto and build again. Those entries should skip and name themselves while everything else still builds. This is worth doing: it is the difference between a module that degrades and one that half-builds.
+
+> [!WARNING]
+> **Do not distribute the `packs/` directory.**
+>
+> Building writes the *resolved* documents into your module's packs, and those contain everything that was fetched: the descriptions, the stat blocks, the map. Publishing the module directory after testing therefore ships all of it, which is exactly what this format exists to avoid.
+>
+> A graft module is `module.json`, `grafts.json`, and whatever art and code are genuinely yours. Nothing else. Add `packs/` to your `.gitignore` and exclude it from any zip you build.
+
 ## Using it
 
 Nothing here needs a console.

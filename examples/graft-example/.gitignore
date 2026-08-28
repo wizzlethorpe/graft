@@ -1,0 +1,4 @@
+# Building writes the resolved documents here: everything fetched from the
+# sources, in full. Publishing them would ship the content this module exists
+# to avoid shipping.
+packs/

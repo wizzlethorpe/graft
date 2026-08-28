@@ -6,6 +6,7 @@ import { hydrate, exportDiff } from "./hydrate.mjs";
 import { toYaml } from "./yaml.mjs";
 import {
   registerSettings, promptForUnbuilt, addPackControl, buildAndReport, readGrafts, unbuilt,
+  graftModules,
 } from "./ui.mjs";
 
 const MODULE_ID = "graft";
@@ -55,9 +56,31 @@ Hooks.on("getHeaderControlsDocumentSheetV2", (app, controls) => {
   });
 });
 
+
+/**
+ * Fill in the pack the entry belongs in, when there is only one it could be.
+ *
+ * `exportDiff` cannot know which module is being authored, but the answer is
+ * usually forced: one graft module is enabled and it declares one pack of that
+ * document type. Guessing there saves editing every single entry by hand.
+ *
+ * Left out when it is genuinely ambiguous, because a wrong pack fails at build
+ * time with a confusing message about types, and a missing one fails with an
+ * obvious message about a missing field.
+ */
+function withPack(entry) {
+  const candidates = [];
+  for (const module of graftModules()) {
+    for (const pack of module.packs ?? []) {
+      if (pack.type === entry.type) candidates.push(pack.name);
+    }
+  }
+  return candidates.length === 1 ? { ...entry, pack: candidates[0] } : entry;
+}
+
 async function copyGraft(doc) {
   try {
-    const entry = await exportDiff(doc);
+    const entry = withPack(await exportDiff(doc));
     // JSON, because grafts.json is JSON and what you copy should be what you
     // paste. `toYaml` is for the other destination: a vault page's frontmatter.
     const text = JSON.stringify(entry, null, 2);
