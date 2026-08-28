@@ -50,7 +50,13 @@ An id names a folder in one particular world or pack and resolves to nothing any
 
 **`source` is optional.** Without one the patch *is* the document, carried whole. A graft module is an adventure rather than only a pile of derivatives, so the things you invent belong in the same pack as the things you borrow. Absent means "this is mine"; present but empty is an error, because somebody meant to name one.
 
-Pressing **Copy graft** works out which you have. A document living in a compendium already *is* a source, so it becomes a pure reference with an empty patch: include this, unchanged. One imported from a compendium is diffed against where it came from. One you wrote yourself travels whole.
+Pressing **Copy graft** works out which you have, and the order it asks in matters.
+
+A document in a pack somebody else can install already *is* a source, whatever it remembers about its own past, so it becomes a pure reference with an empty patch: include this, unchanged. That is asked first, and it is what makes chaining work. Graft's own output lives in its module's packs, so pressing **Copy graft** on a built document answers "reference this" rather than replaying the patch that produced it. That patch lives in `grafts.json`, which is where it belongs, and re-deriving it here would mean nobody could ever graft onto a graft.
+
+A **world** pack is the opposite, being a workbench rather than something anybody can install, so documents there are still diffed against where they came from. That is what makes assembling a pack by hand worth doing: drag in somebody's monster, edit it, and bulk-export a real diff. Foundry draws the same line for whether a pack is locked by default.
+
+Otherwise, a document imported from a compendium is diffed against where it came from, and one you wrote yourself travels whole.
 
 ## Chaining
 
@@ -134,7 +140,7 @@ This is the only source graft resolves itself instead of handing to `fromUuid`. 
 
 It only helps adventures imported *after* graft is installed. For anything already in your world the fallback below applies.
 
-So an unresolvable source splits two ways. If the package is **installed but disabled**, that is yours to fix and the export refuses until you enable it. If it is **not installed at all**, it may not be obtainable by anyone, so the export treats the document as having no recorded source: in a pack it references itself, and in the world it travels whole. Travelling whole puts the content in your `grafts.json`, which is visible in the file, and whether you may distribute it is your call.
+So an unresolvable source splits two ways. If the package is **installed but disabled**, that is yours to fix and the export refuses until you enable it. If it is **not installed at all**, it may not be obtainable by anyone, so the export treats the document as having no recorded source: in a world pack it references itself, and in the world it travels whole. Travelling whole puts the content in your `grafts.json`, which is visible in the file, and whether you may distribute it is your call.
 
 ### Whole documents and deltas look alike
 

@@ -245,15 +245,22 @@ export async function exportDiff(document) {
   const sourceUuid = adventureSourceUuid(origin, document.documentName)
     ?? document._stats?.compendiumSource;
 
-  // Asked before the pack check, and the order matters. A document that graft
-  // itself built lives in a pack *and* records what it was grafted from, so
-  // testing for the pack first would export it as a reference to itself and
-  // lose the graft entirely.
+  // A document in a pack somebody else can install *is* a source, whatever it
+  // remembers about its own past. Asked first, and the order is the whole point
+  // of chaining: graft's own output lives in its module's packs, so pressing
+  // Copy graft on a built document has to answer "reference this", not replay
+  // the patch that produced it. That patch is in grafts.json, which is where it
+  // belongs; re-deriving it here would mean nobody could ever graft onto a
+  // graft, which is the case this format was shaped around.
   //
-  // With no such record, a document that lives in a compendium *is* a source.
-  // There is nothing to diff it against, and the useful thing to say is
-  // "include this", so it becomes a pure reference with an empty patch.
-  if (!sourceUuid && document.pack) return { ...base, source: document.uuid, patch: {} };
+  // A *world* pack is the opposite: it is a workbench, not a distributable, and
+  // referencing one would produce an entry no reader could resolve. So an
+  // author who assembles a pack, drags in somebody's monster and edits it still
+  // gets a real diff, which is what makes the bulk export worth having.
+  const collection = document.pack ? game.packs.get(document.pack) : null;
+  if (collection && collection.metadata?.packageType !== "world") {
+    return { ...base, source: document.uuid, patch: {} };
+  }
 
   // Nothing to diff against, and that is not a failure: content the author
   // wrote is theirs, and a graft module is an adventure rather than only a
