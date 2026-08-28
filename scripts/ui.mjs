@@ -174,7 +174,10 @@ export async function buildAndReport(moduleId) {
     return null;
   }
 
-  ui.notifications.info(`Building ${entries.length} graft(s) for ${moduleId}…`);
+  // No count here. It would be the number declared, and the number attempted is
+  // whatever survives planning, so the two disagree in exactly the situation
+  // somebody is most likely to be reading carefully. The dialog reports both.
+  ui.notifications.info(`Building grafts for ${moduleId}…`);
   const { built, skipped } = await hydrate(moduleId, entries, {
     onProgress: (i, total, entry) => console.log(`Graft | ${i}/${total} ${entry.id}`),
   });
