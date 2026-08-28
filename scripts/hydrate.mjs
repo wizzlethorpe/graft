@@ -235,10 +235,31 @@ export async function exportDiff(document) {
 
   const source = await fromUuid(sourceUuid);
   if (!source) {
-    throw new Error(
-      `${document.name} was imported from ${sourceUuid}, which no longer resolves. `
-      + `Enable that module, or delete the document's compendiumSource to ship it whole.`,
+    // Two very different situations, and only one is the author's to fix.
+    const pkg = sourceUuid.split(".")[1];
+    const installed = game.modules.get(pkg) ?? (game.system.id === pkg ? game.system : null);
+    if (installed) {
+      throw new Error(
+        `${document.name} was imported from ${sourceUuid}. ${installed.title ?? pkg} is installed `
+        + `but not enabled, so the source cannot be read. Enable it and copy again.`,
+      );
+    }
+    // Not installed at all, and quite possibly unpublishable: publishers build
+    // in a private work module and Foundry stamps its id on everything, then
+    // adventure import carries the stamp into your world. Nobody outside that
+    // studio can resolve it, so "enable the module" is not advice.
+    //
+    // Treated as no recorded source, which is a case with settled meaning: a
+    // document in a pack references itself, and one in the world travels whole.
+    // Travelling whole means the content is in your grafts.json, which is
+    // visible in the file and is the author's call to make.
+    console.warn(
+      `Graft | ${document.name} records ${sourceUuid} as its source, but ${pkg} is not installed. `
+      + `It was most likely a publisher's private work module. Exporting with no source, so this `
+      + `entry carries its content: check you have the right to distribute it.`,
     );
+    if (document.pack) return { ...base, source: document.uuid, patch: {} };
+    return { ...base, patch: await withRefs(mine) };
   }
   const before = stripVolatile(source.toObject());
   delete before._id;

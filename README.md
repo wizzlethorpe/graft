@@ -109,6 +109,14 @@ Before diffing, at every depth:
 
 Nothing else, and in particular **no other module's flags**. A patch will carry whatever Scene Packer or anything else stamped on a document. That is noise, but a third-party flag is inert on apply if the reader lacks the module and possibly wanted if they have it. Tidying it would be an editorial judgement about somebody else's data, and would commit this to maintaining a list of other people's module names.
 
+### `compendiumSource` is not provenance
+
+Foundry stamps `_stats.compendiumSource` on anything imported from a pack, which is what lets an author edit a monster in the ordinary sheet and have the diff recovered for them. It records where a document was last imported from *by whoever imported it*, though, and that is not the same as where you can get it.
+
+Publishers routinely assemble a module in a private work module, and Foundry stamps its id on every document. Packaging into an adventure carries the stamp along, and adventure import carries it into your world. Flesh Mountain's journal points at `aa-mad-workmodule`, which was never published and which nobody outside that studio can resolve.
+
+So an unresolvable source splits two ways. If the package is **installed but disabled**, that is yours to fix and the export refuses until you enable it. If it is **not installed at all**, it may not be obtainable by anyone, so the export treats the document as having no recorded source: in a pack it references itself, and in the world it travels whole. Travelling whole puts the content in your `grafts.json`, which is visible in the file, and whether you may distribute it is your call.
+
 ### Whole documents and deltas look alike
 
 A merge patch is shaped like the document it patches. That is why `grafts.json` is readable, and it is why a complete document and a partial one cannot be told apart by looking at them. Both are an object with an `_id` and some fields.
