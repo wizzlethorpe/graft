@@ -31,14 +31,17 @@ Hooks.on("getHeaderControls", (app, controls) => {
 async function copyGraft(doc) {
   try {
     const entry = await exportDiff(doc);
-    const yaml = toYaml(entry);
-    await game.clipboard.copyPlainText(yaml);
+    // JSON, because grafts.json is JSON and what you copy should be what you
+    // paste. `toYaml` is for the other destination: a vault page's frontmatter.
+    const text = JSON.stringify(entry, null, 2);
+    await game.clipboard.copyPlainText(text);
     ui.notifications.info(
       Object.keys(entry.patch).length > 0
         ? `Copied a graft for ${doc.name}.`
         : `${doc.name} is unchanged from its source, so the graft is empty.`,
     );
-    console.log(`Graft | ${doc.name}\n${yaml}`);
+    console.log(`Graft | ${doc.name}\n${text}`);
+    console.log(`Graft | as YAML, for a vault page:\n${toYaml(entry)}`);
   } catch (err) {
     ui.notifications.error(`Could not build a graft: ${err.message}`);
   }
