@@ -75,6 +75,12 @@ The second form addresses its source exactly as the outer entry does, and is rec
 
 An embedded source that does not resolve refuses the whole entry rather than building it without. A statblock quietly missing the magic item it was built around is worse than one that will not build and names the dependency.
 
+### Sets look like ordered lists
+
+Foundry's `SetField` serialises to an array, and dnd5e uses eleven of them (`system.properties` among them). A Set has no meaningful order, but an array compared by equality does, so a source that happens to serialise `["mgc", "gear"]` where your copy has `["gear", "mgc"]` reads as a change when nothing changed.
+
+Not currently handled, because the data does not say which arrays are Sets and guessing costs something either way: comparing every scalar array order-insensitively would silently drop a genuine reordering of a list that is meant to be ordered. Worth revisiting if spurious `properties` lines turn out to be common.
+
 ### What it cannot say
 
 **Removing an entry from a keyed array.** Merge-by-id reads an omitted entry as "leave it alone", so there is nowhere to say "drop this one". Expressing it means RFC 6902 `remove` ops, which address positionally and break under exactly the reordering that keying by `_id` exists to survive. Documented rather than fixed, and there is a test asserting the round trip declines to represent it rather than silently shipping a patch that does nothing.
