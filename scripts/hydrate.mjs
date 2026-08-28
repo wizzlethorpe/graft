@@ -65,12 +65,18 @@ async function resolveData(uuid) {
 }
 
 async function hydrateOne(entry, moduleId, touched) {
-  const source = await fromUuid(entry.source);
-  if (!source) {
-    // Almost always a dependency the reader has not installed. Foundry says so
-    // better than we can, on the module's own listing, so name the UUID and
-    // leave the diagnosis there.
-    throw new Error(`source ${entry.source} did not resolve; is its module installed and enabled?`);
+  // No source means the entry carries its own content, so there is nothing to
+  // fetch and the patch is the document.
+  let base = {};
+  if (entry.source) {
+    const source = await fromUuid(entry.source);
+    if (!source) {
+      // Almost always a dependency the reader has not installed. Foundry says
+      // so better than we can, on the module's own listing, so name the UUID
+      // and leave the diagnosis there.
+      throw new Error(`source ${entry.source} did not resolve; is its module installed and enabled?`);
+    }
+    base = source.toObject();
   }
 
   const collection = `${moduleId}.${entry.pack}`;
@@ -95,12 +101,12 @@ async function hydrateOne(entry, moduleId, touched) {
   // to a statblock is a graft of its own, and the artifact carries a pointer
   // to it rather than a copy of its text.
   const patch = await expandSources(entry.patch ?? {}, resolveData);
-  const data = applyPatch(source.toObject(), patch);
+  const data = applyPatch(base, patch);
   data._id = entry.id;
   // Foundry's own provenance field, and the thing that makes the round trip
   // work later: an author who imports this and edits it can recover a patch
-  // against what it was grafted from.
-  foundry.utils.setProperty(data, "_stats.compendiumSource", entry.source);
+  // against what it was grafted from. Nothing to record for original content.
+  if (entry.source) foundry.utils.setProperty(data, "_stats.compendiumSource", entry.source);
 
   const existing = await pack.getDocument(entry.id);
   if (existing) {
@@ -156,41 +162,44 @@ async function restoreLocks(touched) {
  * this recovers what changed.
  */
 export async function exportDiff(document) {
-  const sourceUuid = document?._stats?.compendiumSource;
-  if (!sourceUuid) {
-    throw new Error(
-      `${document?.name ?? "This document"} records no compendium source, so there is nothing to diff `
-      + `against. Import it from a compendium and edit that copy.`,
-    );
-  }
-  const source = await fromUuid(sourceUuid);
-  if (!source) throw new Error(`its source ${sourceUuid} did not resolve; is that module still enabled?`);
-
   const { diff, stripVolatile, referenceSources } = await import("./patch.mjs");
   const raw = document.toObject();
   // Read before stripping, because `compendiumSource` lives in the `_stats`
   // that stripping removes. This is what lets an added item be shipped as a
   // pointer instead of a copy.
   const sources = embeddedSources(raw);
-
-  // An id is assigned by whoever hydrates. Everything else volatile is removed
-  // at every depth, because an embedded item carries its own `_stats` and
-  // would otherwise report as edited when only its timestamps differ.
   const mine = stripVolatile(raw);
-  const before = stripVolatile(source.toObject());
   delete mine._id;
+
+  const base = { id: document.id, type: document.documentName };
+  const withRefs = async (patch) => referenceSources(patch, {
+    sourceOf: (id) => sources.get(id) ?? null,
+    resolve: resolveData,
+  });
+
+  // A document that lives in a compendium *is* a source. There is nothing to
+  // diff it against, and the useful thing to say about it is "include this",
+  // so it becomes a pure reference with an empty patch.
+  if (document.pack) return { ...base, source: document.uuid, patch: {} };
+
+  const sourceUuid = document._stats?.compendiumSource;
+
+  // Nothing to diff against, and that is not a failure: content the author
+  // wrote is theirs, and a graft module is an adventure rather than only a
+  // pile of derivatives. It travels whole, with no source.
+  if (!sourceUuid) return { ...base, patch: await withRefs(mine) };
+
+  const source = await fromUuid(sourceUuid);
+  if (!source) {
+    throw new Error(
+      `${document.name} was imported from ${sourceUuid}, which no longer resolves. `
+      + `Enable that module, or delete the document's compendiumSource to ship it whole.`,
+    );
+  }
+  const before = stripVolatile(source.toObject());
   delete before._id;
 
-  const patch = diff(before, mine) ?? {};
-  return {
-    id: document.id,
-    type: document.documentName,
-    source: sourceUuid,
-    patch: await referenceSources(patch, {
-      sourceOf: (id) => sources.get(id) ?? null,
-      resolve: resolveData,
-    }),
-  };
+  return { ...base, source: sourceUuid, patch: await withRefs(diff(before, mine) ?? {}) };
 }
 
 /**

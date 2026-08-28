@@ -22,7 +22,7 @@ Not published to Foundry's package registry, and not stable: the format may chan
 
 ## The format
 
-Four fields. A source, a patch, and an id and type of your own.
+Four fields. A patch, an id and type of your own, and a source it grafts onto.
 
 ```yaml
 id: banditCaptain001               # a Foundry document id: [a-zA-Z0-9]{16}
@@ -39,6 +39,10 @@ patch:
 ```
 
 Hydration is `fromUuid(source)`, `toObject()`, apply the patch, create under your id in the target pack. A source that does not resolve means the reader lacks the module, and the entry is skipped with a warning rather than half-built.
+
+**`source` is optional.** Without one the patch *is* the document, carried whole. A graft module is an adventure rather than only a pile of derivatives, so the things you invent belong in the same pack as the things you borrow. Absent means "this is mine"; present but empty is an error, because somebody meant to name one.
+
+Pressing **Copy graft** works out which you have. A document living in a compendium already *is* a source, so it becomes a pure reference with an empty patch: include this, unchanged. One imported from a compendium is diffed against where it came from. One you wrote yourself travels whole.
 
 ## Chaining
 

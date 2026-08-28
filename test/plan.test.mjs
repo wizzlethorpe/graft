@@ -88,3 +88,33 @@ test("an entry that grafts onto itself is a cycle, not a no-op", () => {
   assert.deepEqual(order, []);
   assert.equal(cycles.length, 1);
 });
+
+// ── entries with no source ──────────────────────────────────────────────────
+
+test("an entry with no source is valid, and carries its own content", () => {
+  // A graft module is an adventure, not only a pile of derivatives. The things
+  // it invents belong in the same pack as the things it borrows, and pressing
+  // Copy graft on a document you wrote yourself should produce something the
+  // format can express.
+  const own = { id: "myOwnCreation001", type: "Actor", pack: "marlo-actors",
+                patch: { name: "The Ashfall Herald" } };
+  const { order, invalid } = planOrder([own], MOD);
+  assert.deepEqual(invalid, []);
+  assert.deepEqual(order.map((e) => e.id), ["myOwnCreation001"]);
+});
+
+test("a source that is present but empty is still wrong", () => {
+  // Absent means "mine". Empty means somebody meant to name one.
+  const { invalid } = planOrder([{ id: "aaaaaaaaaaaaaaaa", source: "", type: "Actor", pack: "p" }], MOD);
+  assert.match(invalid[0].reason, /when given/);
+});
+
+test("sourceless entries do not disturb the ordering of the rest", () => {
+  const own = { id: "myOwnCreation001", type: "Actor", pack: "marlo-actors", patch: {} };
+  const base = entry("banditCaptain001", MM);
+  const derived = entry("banditWarlord001", entryUuid(base, MOD));
+  const { order } = planOrder([derived, own, base], MOD);
+  const ids = order.map((e) => e.id);
+  assert.ok(ids.indexOf("banditCaptain001") < ids.indexOf("banditWarlord001"));
+  assert.ok(ids.includes("myOwnCreation001"));
+});

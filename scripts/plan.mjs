@@ -89,8 +89,12 @@ function describeInvalid(entry) {
   if (!isDocumentId(entry?.id)) {
     return `id must be 16 characters of [a-zA-Z0-9] so the result has a real UUID, got ${JSON.stringify(entry?.id)}`;
   }
-  if (typeof entry.source !== "string" || !entry.source) {
-    return "source must name the document this grafts onto";
+  // Optional. An entry with no source is content the author wrote themselves,
+  // carried whole: a graft module is an adventure, not only a pile of
+  // derivatives, and the things it invents belong in the same pack as the
+  // things it borrows.
+  if ("source" in entry && (typeof entry.source !== "string" || !entry.source)) {
+    return "source, when given, must name the document this grafts onto";
   }
   if (typeof entry.type !== "string" || !entry.type) {
     return "type must name a document type, since it decides the UUID and the pack";
