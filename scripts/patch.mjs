@@ -138,3 +138,32 @@ function diffById(source, result) {
 function equal(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
+
+/**
+ * Fields that describe *this copy* of a document rather than the document, and
+ * so are noise in a diff.
+ *
+ * `_stats` is timestamps and the id of whoever last touched it: two documents
+ * with identical content differ here, so leaving it in reports every embedded
+ * item as changed when none are. `ownership` is a map of user ids from one
+ * world. `folder` is a folder id from one world. None of the three mean
+ * anything on the machine that will apply the patch, and the user id is not
+ * ours to ship.
+ */
+const VOLATILE = new Set(["_stats", "ownership", "folder"]);
+
+/**
+ * A copy with the volatile fields removed, at every depth.
+ *
+ * Every depth because embedded documents carry their own `_stats`: stripping
+ * only the top level leaves each item in an actor's inventory looking edited.
+ */
+export function stripVolatile(value) {
+  if (Array.isArray(value)) return value.map(stripVolatile);
+  if (!isPlainObject(value)) return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (!VOLATILE.has(k)) out[k] = stripVolatile(v);
+  }
+  return out;
+}

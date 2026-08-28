@@ -125,15 +125,14 @@ export async function exportDiff(document) {
   const source = await fromUuid(sourceUuid);
   if (!source) throw new Error(`its source ${sourceUuid} did not resolve; is that module still enabled?`);
 
-  const { diff } = await import("./patch.mjs");
-  const mine = document.toObject();
-  // Not part of the diff: an id is assigned by whoever hydrates, and the stats
-  // block describes this copy rather than anything the author changed.
+  const { diff, stripVolatile } = await import("./patch.mjs");
+  // An id is assigned by whoever hydrates. Everything else volatile is removed
+  // at every depth, because an embedded item carries its own `_stats` and
+  // would otherwise report as edited when only its timestamps differ.
+  const mine = stripVolatile(document.toObject());
+  const before = stripVolatile(source.toObject());
   delete mine._id;
-  delete mine._stats;
-  const before = source.toObject();
   delete before._id;
-  delete before._stats;
 
   return {
     id: document.id,

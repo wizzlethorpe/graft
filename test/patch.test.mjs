@@ -127,3 +127,45 @@ test("removing an item from a keyed array is NOT representable", () => {
   assert.equal(patch, undefined, "nothing changed that the format can say");
   assert.equal(applyPatch(BANDIT, patch ?? {}).items.length, 2, "so the item survives");
 });
+
+// ── noise ───────────────────────────────────────────────────────────────────
+
+test("timestamps on embedded items do not count as changes", async () => {
+  // The first real export produced this: two items whose only delta was their
+  // own `_stats`, reported as edits. Stripping only the top level is not
+  // enough, because every embedded document carries one.
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const stats = (t) => ({ coreVersion: "14.367", createdTime: t, modifiedTime: t,
+                          lastModifiedBy: "K5n12UWOfcmnnwjH" });
+  const source = { name: "Animated Armor", _stats: stats(1), items: [
+    { _id: "mmSlam0000000000", name: "Slam", _stats: stats(1) },
+  ] };
+  const mine = { name: "Animated Armor", _stats: stats(2), items: [
+    { _id: "mmSlam0000000000", name: "Slam", _stats: stats(2) },
+  ] };
+
+  assert.equal(diff(stripVolatile(source), stripVolatile(mine)), undefined,
+    "nothing about the document changed");
+});
+
+test("a user id never reaches the patch", async () => {
+  // `ownership` is a map of ids from one world. It means nothing on the
+  // machine applying the patch, and it is not ours to ship.
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const mine = stripVolatile({
+    name: "Marlo's Enforcer",
+    ownership: { default: 0, K5n12UWOfcmnnwjH: 3 },
+    items: [{ _id: "itemAmulet00001", ownership: { K5n12UWOfcmnnwjH: 3 } }],
+  });
+  assert.ok(!("ownership" in mine));
+  assert.ok(!("ownership" in mine.items[0]));
+  assert.equal(JSON.stringify(mine).includes("K5n12UWOfcmnnwjH"), false);
+});
+
+test("a real edit still survives the stripping", async () => {
+  // The stripping must not be so keen that it eats the change itself.
+  const { stripVolatile } = await import("../scripts/patch.mjs");
+  const source = { name: "Animated Armor", _stats: { createdTime: 1 }, folder: "abc", items: [] };
+  const mine = { name: "Rusted Armor", _stats: { createdTime: 2 }, folder: "xyz", items: [] };
+  assert.deepEqual(diff(stripVolatile(source), stripVolatile(mine)), { name: "Rusted Armor" });
+});
