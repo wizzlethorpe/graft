@@ -75,7 +75,17 @@ async function hydrateOne(entry, moduleId, touched) {
 
   const collection = `${moduleId}.${entry.pack}`;
   const pack = game.packs.get(collection);
-  if (!pack) throw new Error(`this module declares no pack "${entry.pack}"`);
+  if (!pack) {
+    // Foundry reads a module's manifest when the server starts, not when the
+    // browser reloads, so a pack added to module.json is invisible until then.
+    // That is the usual cause here and not an obvious one.
+    const declared = [...game.packs.keys()].filter((c) => c.startsWith(`${moduleId}.`));
+    throw new Error(
+      `this module declares no pack "${entry.pack}". Foundry knows of `
+      + `${declared.length ? declared.join(", ") : "none for this module"}. If you just added it to `
+      + `module.json, restart the Foundry server: a browser reload does not re-read manifests.`,
+    );
+  }
   if (pack.documentName !== entry.type) {
     throw new Error(`pack "${entry.pack}" holds ${pack.documentName}, not ${entry.type}`);
   }
