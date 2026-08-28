@@ -109,7 +109,12 @@ applyPatch(source, diff(source, mine))   // deep-equals mine
 
 ## Dependencies
 
-A graft module declares what it is built on through Foundry's own `relationships.requires`, with a version range. Foundry then reports a missing or mismatched dependency itself, which is better than anything a module could do from inside, and is the piece a live-synced vault can never have.
+A graft module declares what it is built on through Foundry's own `relationships`, with version ranges, and Foundry reports a missing or mismatched one itself. That is better than anything a module could do from inside, and it is the piece a live-synced vault can never have.
+
+The distinction that matters is which kind:
+
+- **`requires`** for what the module cannot function without: graft itself, and the game system its packs declare. Foundry refuses to let the reader disable these while your module is enabled.
+- **`recommends`** for the content you graft *onto*. A missing source skips its own entries and names them, and everything else still builds, so hard-requiring one turns a degradation into a wall. It also makes the module untestable against a missing dependency, since the reader cannot disable it without disabling yours.
 
 Pinning a range answers identity: within a pinned version the source ids are stable, because it is the same artifact. What a range does not tell you is whether the *specific document* you diffed changed within it. RFC 6902 `test` ops would close that at document granularity, if it turns out to matter.
 

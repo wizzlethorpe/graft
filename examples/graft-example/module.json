@@ -46,7 +46,9 @@
         "compatibility": {
           "minimum": "5"
         }
-      },
+      }
+    ],
+    "recommends": [
       {
         "id": "dnd-monster-manual",
         "type": "module"
