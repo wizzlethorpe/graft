@@ -304,10 +304,37 @@ export function addCopyFolderGrafts(html, menuItems) {
           "dataset:", el?.dataset ? { ...el.dataset } : el);
         return ui.notifications.warn("Graft could not identify that folder.");
       }
+      // A Compendium folder groups packs rather than documents, so it is a
+      // different job: every document in every pack it holds.
+      if (folder.type === "Compendium") return copyCompendiumFolder(folder);
       const docs = await folderContents(folder);
       if (await confirmBulk(docs.length, folder.name)) await copyMany(docs, folder.name);
     },
   });
+}
+
+/**
+ * Every document in every pack a Compendium folder holds.
+ *
+ * `contents` is empty for these: a pack's folder is recorded on the pack, not
+ * as folder contents. Counted from the indexes before loading, since loading
+ * several packs is the expensive part.
+ */
+async function copyCompendiumFolder(folder) {
+  const ids = new Set([folder, ...folder.getSubfolders(true)].map((f) => f.id));
+  const packs = game.packs.filter((p) => ids.has(p.folder?.id));
+  if (packs.length === 0) {
+    ui.notifications.warn(`${folder.name} holds no compendiums.`);
+    return null;
+  }
+
+  let count = 0;
+  for (const pack of packs) count += (await pack.getIndex()).size;
+  if (!await confirmBulk(count, folder.name)) return null;
+
+  const docs = [];
+  for (const pack of packs) docs.push(...await pack.getDocuments());
+  return copyMany(docs, folder.name);
 }
 
 /**
