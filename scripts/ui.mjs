@@ -202,17 +202,6 @@ async function confirmBulk(count, label) {
   }).catch(() => false);
 }
 
-/** Every document in a pack. Asked from the index, before loading the lot. */
-export async function copyPackGrafts(pack) {
-  const index = await pack.getIndex();
-  if (index.size === 0) {
-    ui.notifications.warn(`${pack.title} is empty.`);
-    return null;
-  }
-  if (!await confirmBulk(index.size, pack.title)) return null;
-  return copyMany(await pack.getDocuments(), pack.title);
-}
-
 // ── compendium controls ─────────────────────────────────────────────────────
 
 /** A Build control on a graft module's own packs, where an empty one is noticed. */
@@ -225,23 +214,6 @@ export function addPackControl(app, controls) {
     label: "Build grafts",
     action: "graftBuild",
     onClick: () => buildAndReport(moduleId),
-  });
-}
-
-/**
- * A Copy grafts control on every compendium, not only a graft module's own.
- *
- * The pack an author assembles their work in is an ordinary world compendium,
- * and taking the array in one go beats doing it fifty times.
- */
-export function addCopyControl(app, controls) {
-  const pack = app?.collection;
-  if (!game.user.isGM || !pack) return;
-  controls.push({
-    icon: "fa-solid fa-clipboard-list",
-    label: "Copy grafts",
-    action: "graftCopyAll",
-    onClick: () => copyPackGrafts(pack),
   });
 }
 
@@ -297,6 +269,12 @@ export function addCopyFolderGrafts(html, menuItems) {
     callback: async (target) => {
       const el = elementOf(target);
       const folder = folderFrom(el);
+      // World folders only. Copying runs one way on purpose: the world is where
+      // you build, the compendium is where graft puts things.
+      if (folder && (folder.pack || folder.type === "Compendium")) {
+        return ui.notifications.warn(
+          "Graft copies from the world, not from compendiums. Build in a world folder and copy there.");
+      }
       if (!folder) {
         // The dataset is logged because which attribute this version uses is
         // invisible from a notification.
@@ -304,59 +282,20 @@ export function addCopyFolderGrafts(html, menuItems) {
           "dataset:", el?.dataset ? { ...el.dataset } : el);
         return ui.notifications.warn("Graft could not identify that folder.");
       }
-      // A Compendium folder groups packs rather than documents, so it is a
-      // different job: every document in every pack it holds.
-      if (folder.type === "Compendium") return copyCompendiumFolder(folder);
-      const docs = await folderContents(folder);
+      const docs = folderContents(folder);
       if (await confirmBulk(docs.length, folder.name)) await copyMany(docs, folder.name);
     },
   });
 }
 
 /**
- * Every document in every pack a Compendium folder holds.
- *
- * `contents` is empty for these: a pack's folder is recorded on the pack, not
- * as folder contents. Counted from the indexes before loading, since loading
- * several packs is the expensive part.
- */
-async function copyCompendiumFolder(folder) {
-  const ids = new Set([folder, ...folder.getSubfolders(true)].map((f) => f.id));
-  const packs = game.packs.filter((p) => ids.has(p.folder?.id));
-  if (packs.length === 0) {
-    ui.notifications.warn(`${folder.name} holds no compendiums.`);
-    return null;
-  }
-
-  let count = 0;
-  for (const pack of packs) count += (await pack.getIndex()).size;
-  if (!await confirmBulk(count, folder.name)) return null;
-
-  const docs = [];
-  for (const pack of packs) docs.push(...await pack.getDocuments());
-  return copyMany(docs, folder.name);
-}
-
-/**
  * A folder's documents, and its subfolders'.
  *
  * `getSubfolders(true)` rather than `children`, which holds tree nodes rather
- * than Folders. Inside a compendium, `contents` is the pack index rather than
- * documents, so those are loaded.
+ * than Folder documents.
  */
-async function folderContents(folder) {
-  const all = [folder, ...folder.getSubfolders(true)];
-  if (!folder.pack) return all.flatMap((f) => f.contents ?? []);
-
-  const pack = game.packs.get(folder.pack);
-  const docs = [];
-  for (const f of all) {
-    for (const entry of f.contents ?? []) {
-      const doc = await pack?.getDocument(entry._id ?? entry.id);
-      if (doc) docs.push(doc);
-    }
-  }
-  return docs;
+function folderContents(folder) {
+  return [folder, ...folder.getSubfolders(true)].flatMap((f) => f.contents ?? []);
 }
 
 /** Callbacks are handed the list element, jQuery-wrapped on some paths. */

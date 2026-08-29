@@ -50,7 +50,9 @@ An id names a folder in one particular world or pack and resolves to nothing any
 
 **`source` is optional.** Without one the patch *is* the document, carried whole. A graft module is an adventure rather than only a pile of derivatives, so the things you invent belong in the same pack as the things you borrow. Absent means "this is mine"; present but empty is an error, because somebody meant to name one.
 
-**Copy graft** lives in three places, and the world sidebar is the main one. A graft is an edit *of* something from a compendium, and you make that edit in the world: the actor with the items on it, the scene you have walled. Right-click any document there, or right-click a folder for **Copy grafts** to take the lot. The control on a document sheet is the same thing for something already open. The compendium menu is for the other case, chaining onto a pack graft built.
+**Copy graft** lives in the world, and only there. A graft is an edit *of* something from a compendium, and you make that edit in the world: the actor with the items on it, the scene you have walled. Right-click any document in a directory, or a folder for **Copy grafts** to take everything in it and its subfolders. The control on a document sheet is the same thing for something already open.
+
+Copying runs one way on purpose. The world is where you build; a compendium is where graft puts what it builds. Assembling a pack by hand and exporting from it would be a second way to do the same job, and a worse one, since it separates the work from the documents you were editing.
 
 It works out which shape you have, and the order it asks in matters.
 

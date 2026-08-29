@@ -6,8 +6,8 @@ import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { readGrafts, unbuilt } from "./modules.mjs";
 import {
-  registerSettings, promptForUnbuilt, addPackControl, addCopyControl, copyOne,
-  copyPackGrafts, buildAndReport, addCopyGraftContext, addCopyFolderGrafts, CONTEXT_TYPES,
+  registerSettings, promptForUnbuilt, addPackControl, copyOne,
+  buildAndReport, addCopyGraftContext, addCopyFolderGrafts, CONTEXT_TYPES,
 } from "./ui.mjs";
 
 const MODULE_ID = "graft";
@@ -16,7 +16,6 @@ Hooks.once("init", () => {
   registerSettings();
   game.modules.get(MODULE_ID).api = {
     hydrate, exportDiff, readGrafts, unbuilt, buildPacks: buildAndReport,
-    copyPackGrafts,
   };
 });
 
@@ -27,12 +26,7 @@ Hooks.once("ready", () => promptForUnbuilt());
 
 // A Build control in the header of a graft module's own compendium windows,
 // which is where somebody looks when they wonder why a pack is empty.
-Hooks.on("getHeaderControlsCompendium", (app, controls) => {
-  addPackControl(app, controls);
-  // Every compendium, not only a graft module's own: the pack an author
-  // assembles their work in is an ordinary world compendium.
-  addCopyControl(app, controls);
-});
+Hooks.on("getHeaderControlsCompendium", addPackControl);
 
 /**
  * Copy graft on every document sheet: the convenience path for something
