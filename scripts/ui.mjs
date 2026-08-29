@@ -371,9 +371,15 @@ export function addCopyFolderGrafts(html, menuItems) {
     icon: '<i class="fa-solid fa-clipboard-list"></i>',
     callback: async (target) => {
       const el = elementOf(target);
-      const id = el?.dataset?.folderId ?? el?.dataset?.entryId;
-      const folder = id ? game.folders.get(id) : null;
-      if (!folder) return ui.notifications.warn("Graft could not identify that folder.");
+      const folder = folderFrom(el);
+      if (!folder) {
+        // Logged rather than only reported, because the useful thing is which
+        // attribute this version actually uses, and that is invisible from a
+        // notification.
+        console.warn("Graft | could not identify a folder from", el,
+          "dataset:", el?.dataset ? { ...el.dataset } : el);
+        return ui.notifications.warn("Graft could not identify that folder.");
+      }
       await copyMany(folderContents(folder), folder.name);
     },
   });
@@ -389,6 +395,24 @@ function folderContents(folder, into = []) {
 /** Callbacks are handed the list element, jQuery-wrapped on some paths. */
 function elementOf(target) {
   return target?.[0] ?? target;
+}
+
+/**
+ * The folder a context menu was opened on.
+ *
+ * Every plausible spelling, and a walk up the tree, because the directory
+ * markup is not documented and the element handed to a callback is not
+ * necessarily the one carrying the id. Cheap to try them all; expensive to
+ * guess wrong, since a wrong guess fails with no clue which part was wrong.
+ */
+function folderFrom(el) {
+  if (!el) return null;
+  const d = el.dataset ?? {};
+  const uuid = typeof d.uuid === "string" && d.uuid.startsWith("Folder.") ? d.uuid.slice(7) : null;
+  const id = d.folderId ?? d.entryId ?? d.documentId ?? uuid
+    ?? el.closest?.("[data-folder-id]")?.dataset?.folderId
+    ?? el.closest?.("[data-entry-id]")?.dataset?.entryId;
+  return id ? game.folders.get(id) ?? null : null;
 }
 
 function documentFromEntry(documentName, target) {
