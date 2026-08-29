@@ -160,8 +160,10 @@ export function moulinetteProvider() {
 }
 
 async function hydrateEntries(entries) {
-  const wanted = entries.some((e) => isMoulinetteRef(e?.source) || mentionsRef(e?.patch));
-  if (!wanted) return null;
+  // Only the entries this provider has anything to do with. Counting all of
+  // them would report fourteen unrelated grafts as Moulinette work.
+  const mine = new Set(entries.filter((e) => isMoulinetteRef(e?.source) || mentionsRef(e?.patch)));
+  if (mine.size === 0) return null;
 
   const index = await loadIndex();
   if (index.error) {
@@ -176,8 +178,9 @@ async function hydrateEntries(entries) {
 
   // The provider knows its own unit of work better than the loop that called
   // it, so it names the phase rather than taking a generic one.
-  progress.phase("Moulinette", entries.length);
+  progress.phase("Moulinette", mine.size);
   for (const entry of entries) {
+    if (!mine.has(entry)) { out.push(entry); continue; }
     progress.step(entry.id);
     const problems = [];
     const resolve = async (ref) => {
