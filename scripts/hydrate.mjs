@@ -24,11 +24,12 @@ import { planOrder, entryUuid } from "./plan.mjs";
  * back as it was found: leaving one unlocked invites hand edits that the next
  * build overwrites.
  *
- * @returns `{ built, skipped }`, both reportable to the reader.
+ * @returns `{ built, skipped, warnings }`, all reportable to the reader.
  */
 export async function hydrate(moduleId, entries, { onProgress } = {}) {
   const { order, invalid, cycles } = planOrder(entries, moduleId);
   const built = [];
+  const warnings = [];
   const skipped = [
     ...invalid.map(({ entry, reason }) => ({ id: entry?.id ?? "(no id)", reason })),
     ...cycles.map((loop) => ({ id: loop[0], reason: `grafts onto itself through ${loop.length - 1} other entries` })),
@@ -39,7 +40,7 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
     for (const [i, entry] of order.entries()) {
       onProgress?.(i + 1, order.length, entry);
       try {
-        built.push(await hydrateOne(entry, moduleId, touched));
+        built.push(await hydrateOne(entry, moduleId, touched, warnings));
       } catch (err) {
         // A reader missing one dependency should still get everything else.
         skipped.push({ id: entry.id, reason: err.message });
@@ -49,7 +50,19 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
     await restoreLocks(touched);
     refreshSidebar(touched);
   }
-  return { built, skipped };
+  return { built, skipped, warnings };
+}
+
+/**
+ * The Foundry generation a document was authored for, or null.
+ *
+ * `_stats.coreVersion` is recorded on anything Foundry has written, and is the
+ * one piece of `_stats` that says something about the document rather than
+ * about this copy of it.
+ */
+export function authoredGeneration(data) {
+  const major = Number(String(data?._stats?.coreVersion ?? "").split(".")[0]);
+  return Number.isInteger(major) && major > 0 ? major : null;
 }
 
 /**
@@ -67,13 +80,22 @@ async function resolveData(uuid) {
   return doc ? doc.toObject() : null;
 }
 
-async function hydrateOne(entry, moduleId, touched) {
+async function hydrateOne(entry, moduleId, touched, warnings = []) {
   // No source means the entry carries its own content: the patch is the document.
   let base = {};
   if (entry.source) {
     base = await resolveData(entry.source);
     if (!base) {
       throw new Error(`source ${entry.source} did not resolve; is its module installed and enabled?`);
+    }
+    // Fields that moved between generations do not carry over, and the failure
+    // is not always loud: a pre-14 scene keeps a `background` nothing reads any
+    // more, and builds looking fine. Said before the build rather than after.
+    const authored = authoredGeneration(base);
+    const current = Number(game.release?.generation);
+    if (authored && current && authored < current) {
+      warnings.push({ id: entry.id,
+        reason: `authored for Foundry ${authored}, and this is ${current}: fields that moved since will not carry over` });
     }
   }
 

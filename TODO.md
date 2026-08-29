@@ -4,10 +4,9 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 
 ## Drift detection
 
-`_stats.coreVersion` and `systemVersion` record what a source looked like when a
-patch was authored. Comparing them at build time would catch a patch reshaping a
-document whose schema moved underneath it, which currently applies silently and
-looks like it worked. Cheaper than RFC 6902 `test` ops for most of the benefit.
+The cheap half is built: a source whose `_stats.coreVersion` predates this
+Foundry generation is built and warned about. What is not built is the same
+check against `systemVersion`, and anything finer than a generation number.
 
 ## Known limits
 
@@ -17,5 +16,9 @@ looks like it worked. Cheaper than RFC 6902 `test` ops for most of the benefit.
   Foundry has real nullable fields.
 - Stale entries are not removed: deleting an entry from `grafts.json` leaves
   what it built behind.
+- A pre-14 Scene keeps a `background` that nothing reads: Foundry moves it into
+  `levels` during a world migration, not on document creation, and
+  `migrateData` does not do it either. Graft warns rather than rewriting it,
+  since editing somebody's data to suit ours is what this module does not do.
 - `exportDiff` has no test coverage. It needs Foundry, so every bug in it so far
   has been found by hand in a live world.

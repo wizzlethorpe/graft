@@ -481,3 +481,17 @@ test("an unrecognised error is passed through rather than lost", async () => {
   const { summarizeValidation } = await import("../scripts/hydrate.mjs");
   assert.equal(summarizeValidation(new Error("something else entirely")), "something else entirely");
 });
+
+test("the generation a document was authored for is read from _stats", async () => {
+  // The one part of `_stats` that describes the document rather than this copy
+  // of it, and the cheapest possible drift check: a scene authored before 14
+  // keeps a `background` nothing reads, and builds looking fine.
+  const { authoredGeneration } = await import("../scripts/hydrate.mjs");
+  assert.equal(authoredGeneration({ _stats: { coreVersion: "13.344" } }), 13);
+  assert.equal(authoredGeneration({ _stats: { coreVersion: "14.364" } }), 14);
+  assert.equal(authoredGeneration({ _stats: { coreVersion: "9" } }), 9);
+  assert.equal(authoredGeneration({ _stats: {} }), null);
+  assert.equal(authoredGeneration({}), null);
+  assert.equal(authoredGeneration(null), null);
+  assert.equal(authoredGeneration({ _stats: { coreVersion: "nonsense" } }), null);
+});

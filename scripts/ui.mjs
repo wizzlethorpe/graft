@@ -74,14 +74,14 @@ export async function buildAndReport(moduleId) {
 
   const title = game.modules.get(moduleId)?.title ?? moduleId;
   progress.begin(`Graft: ${title}`);
-  let prepared, built, skipped;
+  let prepared, built, skipped, warnings;
   try {
     // Providers rewrite entries before anything is built. Their failures use
     // the same shape as build failures, so the reader sees one report.
     prepared = await runProviders(entries, undefined, {
       onProvider: (p) => progress.phase(p.label),
     });
-    ({ built, skipped } = await hydrate(moduleId, prepared.entries, {
+    ({ built, skipped, warnings } = await hydrate(moduleId, prepared.entries, {
       // The total is only known once planning has dropped what it cannot
       // build, which is the first thing the callback is told.
       onProgress: (i, total, entry) => {
@@ -110,8 +110,8 @@ export async function buildAndReport(moduleId) {
     }
     console.groupEnd();
   }
-  await reportBuild(moduleId, built, allSkipped);
-  return { built, skipped: allSkipped };
+  await reportBuild(moduleId, built, allSkipped, warnings);
+  return { built, skipped: allSkipped, warnings };
 }
 
 /** Build failures first, then each provider's, each under its own heading. */
@@ -141,7 +141,7 @@ function providerNotice() {
  * The reasons are the part worth reading: a missing dependency and an invalid
  * entry want different responses, and only one is the reader's to fix.
  */
-async function reportBuild(moduleId, built, skipped) {
+async function reportBuild(moduleId, built, skipped, warnings = []) {
   const title = game.modules.get(moduleId)?.title ?? moduleId;
   const parts = [
     `<p><strong>${built.length}</strong> built`
@@ -158,6 +158,15 @@ async function reportBuild(moduleId, built, skipped) {
       + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
     parts.push(`<p><strong>Not built${provider ? ` — ${foundry.utils.escapeHTML(provider)}` : ""}`
       + `</strong></p><ul>${rows}</ul>`);
+  }
+
+  if (warnings.length > 0) {
+    // Built, but not necessarily as intended. Between the failures and the
+    // successes, because that is what they are.
+    const rows = warnings.map(({ id, reason }) =>
+      `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
+      + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
+    parts.push(`<p><strong>Built, with warnings</strong></p><ul>${rows}</ul>`);
   }
 
   if (built.length > 0) {
