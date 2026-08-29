@@ -590,39 +590,3 @@ test("an embedded graft answers for itself", async () => {
   assert.deepEqual(project(source, patch), {});
 });
 
-test("an array migration emptied is put back", async () => {
-  // `fromImport` migrates old data and empties every SetField doing it, so a
-  // tile's occlusion modes of [1] returns as [] and a roof stops fading.
-  const { restoreEmptiedArrays } = await import("../scripts/patch.mjs");
-  const before = { tiles: [{ _id: "tileRoof00000001", x: 100, occlusion: { alpha: 0.5, modes: [1] } }] };
-  const after = { tiles: [{ _id: "tileRoof00000001", x: 200, occlusion: { alpha: 0.5, modes: [] } }] };
-
-  const fixed = restoreEmptiedArrays(before, after);
-  assert.deepEqual(fixed.tiles[0].occlusion.modes, [1], "the set comes back");
-  assert.equal(fixed.tiles[0].x, 200, "and the migration is kept");
-});
-
-test("only an emptied array is restored, never a changed one", async () => {
-  const { restoreEmptiedArrays } = await import("../scripts/patch.mjs");
-  const before = { a: [1, 2, 3], b: [], c: ["x"], d: [1] };
-  const after = { a: [9], b: [7], c: [], d: [1, 2] };
-  assert.deepEqual(restoreEmptiedArrays(before, after),
-    { a: [9], b: [7], c: ["x"], d: [1, 2] });
-});
-
-test("keyed arrays pair by id, not position", async () => {
-  // Migration is free to reorder; pairing by index would repair the wrong entry.
-  const { restoreEmptiedArrays } = await import("../scripts/patch.mjs");
-  const before = { items: [{ _id: "itemAaaaaaaaaaa1", tags: ["x"] }, { _id: "itemBbbbbbbbbbb2", tags: ["y"] }] };
-  const after = { items: [{ _id: "itemBbbbbbbbbbb2", tags: [] }, { _id: "itemAaaaaaaaaaa1", tags: [] }] };
-
-  const fixed = restoreEmptiedArrays(before, after);
-  assert.deepEqual(fixed.items[0], { _id: "itemBbbbbbbbbbb2", tags: ["y"] });
-  assert.deepEqual(fixed.items[1], { _id: "itemAaaaaaaaaaa1", tags: ["x"] });
-});
-
-test("a key migration added is left alone", async () => {
-  const { restoreEmptiedArrays } = await import("../scripts/patch.mjs");
-  assert.deepEqual(restoreEmptiedArrays({ a: 1 }, { a: 1, levels: [{ _id: "x" }] }),
-    { a: 1, levels: [{ _id: "x" }] });
-});

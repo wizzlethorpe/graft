@@ -24,11 +24,13 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 - Drift is reported, never refused, and a source with no recorded `sourceHash`
   is silent. Both deliberate: refusing would strand a reader over an upstream
   typo, and every `grafts.json` written before hashes existed has none.
-- Two Foundry 14 bugs in `Document.fromImport`, the documented migration path.
-  It throws on an unmodified Adventure taken straight from a pack, so adventures
-  build without migration via the fallback. And it empties every `SetField` it
-  touches, so the migrated result is repaired against its input. Neither is ours
-  to fix; both are worked around and both would hit anyone using `fromImport`.
+- `Document.fromImport` throws on an unmodified Adventure taken straight from a
+  pack, so adventures build unmigrated via the fallback.
+- Import-time migration is less complete than a world upgrade. A Foundry 13
+  tile's `occlusion.mode` is dropped rather than converted to `occlusion.modes`,
+  by `fromImport` and `importFromJSON` alike, so a roof set to fade stops
+  fading. Mapping renamed fields by hand is schema surgery on somebody else's
+  data and has no natural end, so it is reported by the drift warning and left.
 - The first prune after upgrading reclaims nothing. Only documents carrying
   `flags.graft.built` are eligible, and that flag did not exist before 0.2.0, so
   anything an earlier graft built is left alone. Correct and conservative: it

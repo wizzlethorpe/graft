@@ -7,8 +7,7 @@
 
 import {
   applyPatch, currentWorld, diff, driftFromSource, driftWarnings, expandSources,
-  folderPath, folderSegments, referenceSources, restoreEmptiedArrays, sourceHash,
-  stripVolatile,
+  folderPath, folderSegments, referenceSources, sourceHash, stripVolatile,
 } from "./patch.mjs";
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
@@ -174,9 +173,7 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
   // failure to the GM and carries on, so the reason reaches the build report.
   let prepared;
   try {
-    // Repaired against the input, because migration empties every SetField on
-    // the way through. See `restoreEmptiedArrays`.
-    prepared = restoreEmptiedArrays(data, (await cls.fromImport(data)).toObject());
+    prepared = (await cls.fromImport(data)).toObject();
   } catch (err) {
     try {
       prepared = new cls(data, { pack: collection }).toObject();

@@ -240,7 +240,9 @@ Everything is created through `Document.fromImport`, Foundry's own migration pat
 
 A source older than the running generation is still reported, since migration handles fields that moved but not one removed outright.
 
-Foundry 14 has two bugs there, both worked around. `fromImport` throws on an unmodified `Adventure` straight out of a pack, so those are constructed directly instead: unmigrated is worse than migrated, but losing the entry over somebody else's bug is worse than both. And it empties every `SetField` it touches, so a tile's `occlusion.modes` of `[1]` returns as `[]` and a roof stops fading; the migrated result is repaired against its input, restoring only arrays that were non-empty and came back empty.
+`fromImport` throws on an unmodified `Adventure` straight out of a pack, so those are constructed directly instead: unmigrated is worse than migrated, but losing an entry over somebody else's bug is worse than both.
+
+Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. A Foundry 13 tile's `occlusion.mode` is dropped rather than converted to the `occlusion.modes` that replaced it, by `fromImport` and `importFromJSON` alike, so a roof set to fade stops fading. Graft does not map fields by hand: that is schema surgery on somebody else's data, and there is no end to it.
 
 ### `compendiumSource` is not provenance
 

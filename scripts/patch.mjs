@@ -425,38 +425,6 @@ export function driftFromSource(id, recorded, source, patch) {
   return { id, reason: "the source has changed where this patch touches it; check the result still means what you intended" };
 }
 
-/**
- * Put back arrays that migration emptied.
- *
- * `Document.fromImport` migrates old data to the current schema, and in
- * Foundry 14 it also empties every `SetField` on the way: a tile's
- * `occlusion.modes` of `[1]` comes back as `[]`, so a roof that faded when a
- * token walked under it stops fading. Plain construction keeps the value and
- * does not migrate; nothing does both.
- *
- * So the migrated result is repaired against what went in. Only an array that
- * was non-empty and came back empty is restored, which is the shape of the bug
- * and not something a real migration is likely to want. Keyed arrays are paired
- * by `_id` rather than position.
- */
-export function restoreEmptiedArrays(before, after) {
-  if (Array.isArray(before) && Array.isArray(after)) {
-    if (before.length > 0 && after.length === 0) return structuredClone(before);
-    if (isKeyedArray(before) && isKeyedArray(after)) {
-      const byId = new Map(before.map((e) => [e._id, e]));
-      return after.map((e) => (byId.has(e._id) ? restoreEmptiedArrays(byId.get(e._id), e) : e));
-    }
-    if (before.length === after.length) return after.map((v, i) => restoreEmptiedArrays(before[i], v));
-    return after;
-  }
-  if (isPlainObject(before) && isPlainObject(after)) {
-    const out = {};
-    for (const [k, v] of Object.entries(after)) out[k] = k in before ? restoreEmptiedArrays(before[k], v) : v;
-    return out;
-  }
-  return after;
-}
-
 /** `"/Magic Items//Bags/"` to `["Magic Items", "Bags"]`. */
 export function folderSegments(path) {
   return typeof path === "string" ? path.split("/").map((s) => s.trim()).filter(Boolean) : [];
