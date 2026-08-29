@@ -275,6 +275,18 @@ export function authoredGeneration(data) {
   return Number.isInteger(major) && major > 0 ? major : null;
 }
 
+/**
+ * A `{ id, reason }` warning when `data` predates the running Foundry, or null.
+ *
+ * `fromImport` migrates fields that moved, but not one removed outright or a
+ * value that stopped being valid, so it is still worth saying.
+ */
+export function driftWarning(id, data, current) {
+  const authored = authoredGeneration(data);
+  if (!authored || !current || authored >= current) return null;
+  return { id, reason: `authored for Foundry ${authored} and migrated to ${current}; worth checking it looks right` };
+}
+
 /** `"/Magic Items//Bags/"` to `["Magic Items", "Bags"]`. */
 export function folderSegments(path) {
   return typeof path === "string" ? path.split("/").map((s) => s.trim()).filter(Boolean) : [];

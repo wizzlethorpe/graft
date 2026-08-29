@@ -1,9 +1,8 @@
 // Resolving `@moulinette/...` against the reader's own Moulinette library.
 //
 // Composition without redistribution, which is graft's whole argument extended
-// to a cloud: an entry points at The MAD Cartographer's map or Michael Ghelfi's
-// ambience, ships neither, and each reader's own subscriptions decide what they
-// get.
+// to a cloud: an entry points at somebody's map or somebody else's ambience,
+// ships neither, and each reader's own subscriptions decide what they get.
 //
 //   @moulinette/<pack_ref>/<filepath>
 //   @moulinette/10698/scenes/abandoned-mine-entrance.webp
@@ -17,7 +16,7 @@
 // graft's own, no ids to collide. Anywhere inside a patch it names a *file*,
 // which is downloaded and rewritten to a local path.
 
-import { applyPatch, authoredGeneration, stripVolatile } from "./patch.mjs";
+import { applyPatch, driftWarning, stripVolatile } from "./patch.mjs";
 import * as progress from "./progress.mjs";
 
 export const MOULINETTE_PREFIX = "@moulinette/";
@@ -220,12 +219,8 @@ async function hydrateEntries(entries) {
       // Checked here rather than at build time: this is the only place the
       // document still has its `_stats`, and the entry it becomes carries no
       // source for the builder to resolve and check for itself.
-      const authored = authoredGeneration(document);
-      const current = Number(game.release?.generation);
-      if (authored && current && authored < current) {
-        warnings.push({ id: entry.id,
-          reason: `authored for Foundry ${authored} and migrated to ${current}; worth checking it looks right` });
-      }
+      const drift = driftWarning(entry.id, document, Number(game.release?.generation));
+      if (drift) warnings.push(drift);
       // The patch applied to the fetched JSON, carried whole with no source.
       // `hydrateOne` already treats a missing source as "the patch is the
       // document", so this needs nothing new from the builder.

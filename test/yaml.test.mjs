@@ -14,13 +14,13 @@ test("an entry comes out as pasteable YAML", () => {
   const out = toYaml({
     id: "banditCaptain001",
     type: "Actor",
-    source: "Compendium.dnd-monster-manual.actors.Actor.mmBandit000000",
-    patch: { name: "Marlo's Enforcer" },
+    source: "Compendium.some-bestiary.actors.Actor.mmBandit000000",
+    patch: { name: "The Enforcer" },
   });
   assert.match(out, /^id: banditCaptain001$/m);
   assert.match(out, /^type: Actor$/m);
   assert.match(out, /^patch:$/m);
-  assert.match(out, /^ {2}name: Marlo's Enforcer$/m);
+  assert.match(out, /^ {2}name: The Enforcer$/m);
 });
 
 test("nesting indents rather than flattening", () => {

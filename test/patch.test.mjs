@@ -24,8 +24,8 @@ const BANDIT = {
 };
 
 test("a patch mirrors the document's shape", () => {
-  const out = applyPatch(BANDIT, { name: "Marlo's Enforcer" });
-  assert.equal(out.name, "Marlo's Enforcer");
+  const out = applyPatch(BANDIT, { name: "The Enforcer" });
+  assert.equal(out.name, "The Enforcer");
   assert.equal(out.system.attributes.hp.value, 11, "untouched branches survive");
 });
 
@@ -74,11 +74,11 @@ test("a patch can add an item the source never had", () => {
 
 test("diff recovers what an edit changed, and nothing else", () => {
   const mine = structuredClone(BANDIT);
-  mine.name = "Marlo's Enforcer";
+  mine.name = "The Enforcer";
   mine.system.attributes.hp.value = 45;
 
   assert.deepEqual(diff(BANDIT, mine), {
-    name: "Marlo's Enforcer",
+    name: "The Enforcer",
     system: { attributes: { hp: { value: 45 } } },
   });
 });
@@ -104,7 +104,7 @@ test("diffing a keyed array names only the entries that moved", () => {
 test("round trip: applying a recovered diff reproduces the edit", () => {
   // The property everything else rests on.
   const mine = structuredClone(BANDIT);
-  mine.name = "Marlo's Enforcer";
+  mine.name = "The Enforcer";
   mine.system.attributes.hp = { value: 45, max: 45 };
   delete mine.system.details.cr;
   mine.items[0].name = "Notched Scimitar";
@@ -154,7 +154,7 @@ test("a user id never reaches the patch, but the default does", async () => {
   // this", which is an authorial decision worth carrying.
   const { stripVolatile } = await import("../scripts/patch.mjs");
   const mine = stripVolatile({
-    name: "Marlo's Handout",
+    name: "Player Handout",
     ownership: { default: 2, K5n12UWOfcmnnwjH: 3 },
     items: [{ _id: "itemAmulet00001", ownership: { K5n12UWOfcmnnwjH: 3 } }],
   });
@@ -223,7 +223,7 @@ test("an item the author wrote themselves is shipped whole", async () => {
   // Content with no recorded source is theirs, and referencing it would point
   // at nothing.
   const { referenceSources } = await import("../scripts/patch.mjs");
-  const mine = { _id: "myOwnItem000001", name: "Marlo's Signet", type: "equipment", system: {} };
+  const mine = { _id: "myOwnItem000001", name: "Signet Ring", type: "equipment", system: {} };
   const out = await referenceSources({ items: [mine] }, { sourceOf: () => null, resolve, isWhole: () => true });
   assert.deepEqual(out.items[0], mine);
 });
@@ -334,7 +334,7 @@ test("an adventure's internal folder pointers survive stripping", async () => {
   // Stripping at depth would ship the folders empty and every document loose.
   const { stripVolatile } = await import("../scripts/patch.mjs");
   const adventure = {
-    _id: "advSpectacular01", name: "Spectacular Shops",
+    _id: "adventure00000001", name: "An Adventure",
     folder: "packFolderId001",                       // world-local, goes
     folders: [
       { _id: "folderShops0001", name: "Shops", type: "Actor", folder: null },
@@ -429,16 +429,16 @@ test("our own flags do not travel, and other modules' still do", async () => {
   // flags are not ours to curate.
   const { stripVolatile } = await import("../scripts/patch.mjs");
   const out = stripVolatile({
-    name: "Flesh Mountain",
+    name: "The Adventure",
     flags: {
       graft: { origin: { adventure: "Compendium.madv.adv.Adventure.x", id: "y" } },
-      "scene-packer": { hash: "abc" },
+      "other-module": { hash: "abc" },
       core: { sheetClass: "" },
     },
     journal: [{ _id: "jrnlInner00001", flags: { graft: { origin: {} }, other: { keep: 1 } } }],
   });
   assert.ok(!("graft" in out.flags), "ours goes");
-  assert.deepEqual(out.flags["scene-packer"], { hash: "abc" }, "theirs stays");
+  assert.deepEqual(out.flags["other-module"], { hash: "abc" }, "theirs stays");
   assert.deepEqual(out.flags.core, { sheetClass: "" });
   assert.ok(!("graft" in out.journal[0].flags), "at depth too");
   assert.deepEqual(out.journal[0].flags.other, { keep: 1 });
@@ -494,4 +494,15 @@ test("the generation a document was authored for is read from _stats", async () 
   assert.equal(authoredGeneration({}), null);
   assert.equal(authoredGeneration(null), null);
   assert.equal(authoredGeneration({ _stats: { coreVersion: "nonsense" } }), null);
+});
+
+test("a source older than this Foundry is reported, a current one is not", async () => {
+  const { driftWarning } = await import("../scripts/patch.mjs");
+  const old = driftWarning("x", { _stats: { coreVersion: "13.344" } }, 14);
+  assert.equal(old.id, "x");
+  assert.match(old.reason, /authored for Foundry 13 and migrated to 14/);
+  assert.equal(driftWarning("x", { _stats: { coreVersion: "14.367" } }, 14), null);
+  assert.equal(driftWarning("x", { _stats: { coreVersion: "15.1" } }, 14), null, "newer is not drift");
+  assert.equal(driftWarning("x", {}, 14), null, "nothing recorded, nothing to say");
+  assert.equal(driftWarning("x", { _stats: { coreVersion: "13.344" } }, NaN), null);
 });

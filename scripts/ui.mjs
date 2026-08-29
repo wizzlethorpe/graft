@@ -291,8 +291,8 @@ export function addPackControl(app, controls) {
  * Types whose directory context menu gets a Copy graft entry.
  *
  * Concrete types only. The API docs name a generic `getDocumentContextOptions`,
- * but Item Piles binds `getActorContextOptions` per type and visibly works,
- * which beats documentation that also got the argument list wrong.
+ * but modules that visibly work in this version bind the per-type name, and a
+ * working module beats documentation that also got the argument list wrong.
  */
 export const CONTEXT_TYPES = [
   "Actor", "Item", "JournalEntry", "Scene", "RollTable",

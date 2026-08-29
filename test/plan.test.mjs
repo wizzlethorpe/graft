@@ -10,26 +10,26 @@ import assert from "node:assert/strict";
 
 import { planOrder, entryUuid, isDocumentId } from "../scripts/plan.mjs";
 
-const MOD = "marlo-mystery";
+const MOD = "my-adventure";
 const entry = (id, source, over = {}) =>
-  ({ id, source, type: "Actor", pack: "marlo-actors", patch: {}, ...over });
+  ({ id, source, type: "Actor", pack: "my-actors", patch: {}, ...over });
 
-const MM = "Compendium.dnd-monster-manual.actors.Actor.mmBandit000000";
+const MM = "Compendium.some-bestiary.actors.Actor.mmBandit000000";
 
 test("an entry is addressable as an ordinary Foundry UUID", () => {
   // This is why `id` is a document id and not a slug: the result has to be
   // nameable by anything, with none of our code in the loop.
   assert.equal(
     entryUuid(entry("banditCaptain001", MM), MOD),
-    "Compendium.marlo-mystery.marlo-actors.Actor.banditCaptain001",
+    "Compendium.my-adventure.my-actors.Actor.banditCaptain001",
   );
 });
 
 test("an id that is not a Foundry id is refused, with the reason", () => {
-  const { invalid, order } = planOrder([entry("marlo-enforcer", MM)], MOD);
+  const { invalid, order } = planOrder([entry("not-a-real-id", MM)], MOD);
   assert.equal(order.length, 0);
   assert.match(invalid[0].reason, /16 characters/);
-  assert.equal(isDocumentId("marlo-enforcer"), false);
+  assert.equal(isDocumentId("not-a-real-id"), false);
   assert.equal(isDocumentId("banditCaptain001"), true);
 });
 
@@ -54,7 +54,7 @@ test("a chain of three resolves end to end", () => {
 });
 
 test("a source outside this module is left alone", () => {
-  // Somebody else's graft, or a Monster Manual entry. Either way `fromUuid`
+  // Somebody else's graft, or a a bestiary entry. Either way `fromUuid`
   // answers at hydration time and Foundry reports a missing dependency
   // better than we could from in here. Nothing to sequence.
   const mine = entry("banditCaptain001", "Compendium.someone-else.pack.Actor.theirEntry00001");
@@ -65,8 +65,8 @@ test("a source outside this module is left alone", () => {
 
 test("entries that graft onto each other are dropped, not half-built", () => {
   // A document in a pack that nobody can explain is worse than an absent one.
-  const a = entry("aaaaaaaaaaaaaaaa", "Compendium.marlo-mystery.marlo-actors.Actor.bbbbbbbbbbbbbbbb");
-  const b = entry("bbbbbbbbbbbbbbbb", "Compendium.marlo-mystery.marlo-actors.Actor.aaaaaaaaaaaaaaaa");
+  const a = entry("aaaaaaaaaaaaaaaa", "Compendium.my-adventure.my-actors.Actor.bbbbbbbbbbbbbbbb");
+  const b = entry("bbbbbbbbbbbbbbbb", "Compendium.my-adventure.my-actors.Actor.aaaaaaaaaaaaaaaa");
 
   const { order, cycles } = planOrder([a, b], MOD);
   assert.deepEqual(order, []);
@@ -83,7 +83,7 @@ test("one bad entry does not take the buildable ones with it", () => {
 });
 
 test("an entry that grafts onto itself is a cycle, not a no-op", () => {
-  const self = entry("aaaaaaaaaaaaaaaa", "Compendium.marlo-mystery.marlo-actors.Actor.aaaaaaaaaaaaaaaa");
+  const self = entry("aaaaaaaaaaaaaaaa", "Compendium.my-adventure.my-actors.Actor.aaaaaaaaaaaaaaaa");
   const { order, cycles } = planOrder([self], MOD);
   assert.deepEqual(order, []);
   assert.equal(cycles.length, 1);
@@ -96,7 +96,7 @@ test("an entry with no source is valid, and carries its own content", () => {
   // it invents belong in the same pack as the things it borrows, and pressing
   // Copy graft on a document you wrote yourself should produce something the
   // format can express.
-  const own = { id: "myOwnCreation001", type: "Actor", pack: "marlo-actors",
+  const own = { id: "myOwnCreation001", type: "Actor", pack: "my-actors",
                 patch: { name: "The Ashfall Herald" } };
   const { order, invalid } = planOrder([own], MOD);
   assert.deepEqual(invalid, []);
@@ -110,7 +110,7 @@ test("a source that is present but empty is still wrong", () => {
 });
 
 test("sourceless entries do not disturb the ordering of the rest", () => {
-  const own = { id: "myOwnCreation001", type: "Actor", pack: "marlo-actors", patch: {} };
+  const own = { id: "myOwnCreation001", type: "Actor", pack: "my-actors", patch: {} };
   const base = entry("banditCaptain001", MM);
   const derived = entry("banditWarlord001", entryUuid(base, MOD));
   const { order } = planOrder([derived, own, base], MOD);

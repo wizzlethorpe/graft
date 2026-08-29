@@ -6,7 +6,7 @@
 //   Compendium.<module>.<pack>.<Type>.<id>
 //
 // That makes a graft onto a graft unremarkable. B names A's output the same way
-// it would name a Monster Manual entry, and A's module is an ordinary
+// it would name a a bestiary entry, and A's module is an ordinary
 // dependency. Only the order is new: A must exist before B is applied, and
 // within one module that is ours to work out.
 

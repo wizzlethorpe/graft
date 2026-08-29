@@ -6,7 +6,7 @@
 // pack, writing a document.
 
 import {
-  applyPatch, authoredGeneration, diff, expandSources, folderPath, folderSegments,
+  applyPatch, diff, driftWarning, expandSources, folderPath, folderSegments,
   referenceSources, stripVolatile,
 } from "./patch.mjs";
 import {
@@ -76,15 +76,8 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
     if (!base) {
       throw new Error(`source ${entry.source} did not resolve; is its module installed and enabled?`);
     }
-    // Migration handles fields that moved, but not a field that was removed
-    // outright or a value that stopped being valid, so this is worth saying
-    // even though it is no longer the disaster it was.
-    const authored = authoredGeneration(base);
-    const current = Number(game.release?.generation);
-    if (authored && current && authored < current) {
-      warnings.push({ id: entry.id,
-        reason: `authored for Foundry ${authored} and migrated to ${current}; worth checking it looks right` });
-    }
+    const drift = driftWarning(entry.id, base, Number(game.release?.generation));
+    if (drift) warnings.push(drift);
   }
 
   const collection = `${moduleId}.${entry.pack}`;

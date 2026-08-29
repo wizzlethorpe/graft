@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { adventureSourceUuid, parseAdventureSource } from "../scripts/origin.mjs";
 
 const ORIGIN = {
-  adventure: "Compendium.madv-fleshmountain.madv-fleshmountain-adventure.Adventure.CeteW6YgiNUi0Ykn",
+  adventure: "Compendium.their-module.their-adventures.Adventure.CeteW6YgiNUi0Ykn",
   id: "azXUvCHjdm7k31my",
 };
 
