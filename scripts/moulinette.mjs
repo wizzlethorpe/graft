@@ -16,7 +16,7 @@
 // graft's own, no ids to collide. Anywhere inside a patch it names a *file*,
 // which is downloaded and rewritten to a local path.
 
-import { applyPatch, driftWarning, stripVolatile } from "./patch.mjs";
+import { applyPatch, currentWorld, driftWarnings, stripVolatile } from "./patch.mjs";
 import * as progress from "./progress.mjs";
 
 export const MOULINETTE_PREFIX = "@moulinette/";
@@ -219,8 +219,7 @@ async function hydrateEntries(entries) {
       // Checked here rather than at build time: this is the only place the
       // document still has its `_stats`, and the entry it becomes carries no
       // source for the builder to resolve and check for itself.
-      const drift = driftWarning(entry.id, document, Number(game.release?.generation));
-      if (drift) warnings.push(drift);
+      warnings.push(...driftWarnings(entry.id, document, currentWorld()));
       // The patch applied to the fetched JSON, carried whole with no source.
       // `hydrateOne` already treats a missing source as "the patch is the
       // document", so this needs nothing new from the builder.

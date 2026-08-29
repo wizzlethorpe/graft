@@ -497,12 +497,95 @@ test("the generation a document was authored for is read from _stats", async () 
 });
 
 test("a source older than this Foundry is reported, a current one is not", async () => {
-  const { driftWarning } = await import("../scripts/patch.mjs");
-  const old = driftWarning("x", { _stats: { coreVersion: "13.344" } }, 14);
-  assert.equal(old.id, "x");
-  assert.match(old.reason, /authored for Foundry 13 and migrated to 14/);
-  assert.equal(driftWarning("x", { _stats: { coreVersion: "14.367" } }, 14), null);
-  assert.equal(driftWarning("x", { _stats: { coreVersion: "15.1" } }, 14), null, "newer is not drift");
-  assert.equal(driftWarning("x", {}, 14), null, "nothing recorded, nothing to say");
-  assert.equal(driftWarning("x", { _stats: { coreVersion: "13.344" } }, NaN), null);
+  const { driftWarnings } = await import("../scripts/patch.mjs");
+  const world = { generation: 14, systemId: "dnd5e", systemVersion: "5.3.3" };
+  const at = (v) => driftWarnings("x", { _stats: { coreVersion: v, systemId: "dnd5e", systemVersion: "5.3.3" } }, world);
+
+  assert.match(at("13.344")[0].reason, /authored for Foundry 13 and migrated to 14/);
+  assert.deepEqual(at("14.367"), []);
+  assert.deepEqual(at("15.1"), [], "newer is not drift");
+  assert.deepEqual(driftWarnings("x", {}, world), [], "nothing recorded, nothing to say");
+  assert.deepEqual(driftWarnings("x", { _stats: { coreVersion: "13.344" } }, {}), [], "no world, no comparison");
+});
+
+// ── drift ───────────────────────────────────────────────────────────────────
+
+test("a different system is reported, and a newer minor is not", async () => {
+  const { driftWarnings } = await import("../scripts/patch.mjs");
+  const world = { generation: 14, systemId: "dnd5e", systemVersion: "5.3.3" };
+
+  const wrongSystem = driftWarnings("x", { _stats: { systemId: "pf2e", systemVersion: "6.0" } }, world);
+  assert.match(wrongSystem[0].reason, /authored for the pf2e system/);
+
+  const oldMajor = driftWarnings("x", { _stats: { systemId: "dnd5e", systemVersion: "3.1.2" } }, world);
+  assert.match(oldMajor[0].reason, /3\.x, and this world runs 5\.x/);
+
+  // Systems ship minors constantly and most break nothing; warning on each
+  // would train people to skip the section.
+  assert.deepEqual(driftWarnings("x", { _stats: { systemId: "dnd5e", systemVersion: "5.0.1" } }, world), []);
+  assert.deepEqual(driftWarnings("x", {}, world), [], "nothing recorded, nothing to say");
+});
+
+test("a projection covers what the patch touches and nothing else", async () => {
+  const { project } = await import("../scripts/patch.mjs");
+  const source = {
+    name: "Bandit", system: { hp: { value: 11 }, ac: 12 },
+    items: [{ _id: "itemBow00000000a", name: "Bow", quantity: 1 },
+            { _id: "itemAxe00000000b", name: "Axe" }],
+  };
+  const patch = { system: { hp: { value: 45 } }, items: [{ _id: "itemBow00000000a", quantity: 3 }] };
+
+  assert.deepEqual(project(source, patch), {
+    system: { hp: { value: 11 } },
+    items: [{ _id: "itemBow00000000a", quantity: 1 }],
+  });
+});
+
+test("only a change to what the patch touches trips the hash", async () => {
+  // The whole point of projecting. An upstream typo fix in a description you
+  // never touched must not warn, or the warning gets skipped.
+  const { sourceHash, driftFromSource } = await import("../scripts/patch.mjs");
+  const source = { name: "Bandit", system: { hp: { value: 11 }, ac: 12 } };
+  const patch = { system: { hp: { value: 45 } } };
+  const recorded = sourceHash(source, patch);
+
+  const unrelated = { name: "Bandit Captain", system: { hp: { value: 11 }, ac: 15 } };
+  assert.equal(driftFromSource("x", recorded, unrelated, patch), null);
+
+  const relevant = { name: "Bandit", system: { hp: { value: 12 }, ac: 12 } };
+  assert.match(driftFromSource("x", recorded, relevant, patch).reason, /source has changed/);
+});
+
+test("reordering a keyed array is not drift", async () => {
+  const { sourceHash } = await import("../scripts/patch.mjs");
+  const a = { items: [{ _id: "itemBow00000000a", q: 1 }, { _id: "itemAxe00000000b", q: 2 }] };
+  const b = { items: [{ _id: "itemAxe00000000b", q: 2 }, { _id: "itemBow00000000a", q: 1 }] };
+  const patch = { items: [{ _id: "itemBow00000000a", q: 3 }] };
+  assert.equal(sourceHash(a, patch), sourceHash(b, patch));
+});
+
+test("key order in the source is not drift either", async () => {
+  // `JSON.stringify` preserves insertion order, so hashing it directly would
+  // report drift between two sources carrying identical content.
+  const { sourceHash } = await import("../scripts/patch.mjs");
+  const patch = { system: { hp: 1, ac: 2 } };
+  assert.equal(sourceHash({ system: { hp: 9, ac: 8 } }, patch),
+               sourceHash({ system: { ac: 8, hp: 9 } }, patch));
+});
+
+test("an entry with no recorded hash is silent", async () => {
+  // Absent means "not recorded", not "verified clean": every grafts.json
+  // written before this existed has none.
+  const { driftFromSource } = await import("../scripts/patch.mjs");
+  assert.equal(driftFromSource("x", undefined, { a: 1 }, { a: 2 }), null);
+  assert.equal(driftFromSource("x", "", { a: 1 }, { a: 2 }), null);
+});
+
+test("an embedded graft answers for itself", async () => {
+  // A sourced entry has its own source and its own hash; projecting it here
+  // would hash somebody else's document into ours.
+  const { project } = await import("../scripts/patch.mjs");
+  const source = { items: [{ _id: "itemBow00000000a", name: "Bow" }] };
+  const patch = { items: [{ _id: "itemAmulet00000c", source: "Compendium.a.b.Item.c", patch: {} }] };
+  assert.deepEqual(project(source, patch), {});
 });

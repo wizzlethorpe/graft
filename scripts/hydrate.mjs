@@ -6,8 +6,8 @@
 // pack, writing a document.
 
 import {
-  applyPatch, diff, driftWarning, expandSources, folderPath, folderSegments,
-  referenceSources, stripVolatile,
+  applyPatch, currentWorld, diff, driftFromSource, driftWarnings, expandSources,
+  folderPath, folderSegments, referenceSources, sourceHash, stripVolatile,
 } from "./patch.mjs";
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
@@ -76,8 +76,11 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
     if (!base) {
       throw new Error(`source ${entry.source} did not resolve; is its module installed and enabled?`);
     }
-    const drift = driftWarning(entry.id, base, Number(game.release?.generation));
-    if (drift) warnings.push(drift);
+    warnings.push(...driftWarnings(entry.id, base, currentWorld()));
+    // Stripped on both sides, because the hash was recorded against a stripped
+    // source and `flags.graft` alone would otherwise differ.
+    const changed = driftFromSource(entry.id, entry.sourceHash, stripVolatile(base), entry.patch ?? {});
+    if (changed) warnings.push(changed);
   }
 
   const collection = `${moduleId}.${entry.pack}`;
@@ -295,7 +298,11 @@ export async function exportDiff(document) {
   // against the full source and null out every field it did not mention.
   const whole = new Set();
   const delta = diff(before, mine, whole) ?? {};
-  return { ...base, source: sourceUuid, patch: await withRefs(delta, (id) => whole.has(id)) };
+  const patch = await withRefs(delta, (id) => whole.has(id));
+  // Only when there is something to have drifted. A pure reference patches
+  // nothing, so its hash would be the same constant on every entry.
+  const hash = Object.keys(patch).length > 0 ? { sourceHash: sourceHash(before, patch) } : {};
+  return { ...base, source: sourceUuid, ...hash, patch };
 }
 
 /**

@@ -2,13 +2,6 @@
 
 Short, and meant to stay short. Anything settled belongs in the README instead.
 
-## Drift detection
-
-A source whose `_stats.coreVersion` predates this Foundry generation is
-migrated through `Document.fromImport` and warned about. What is not built is
-the same check against `systemVersion`, and anything finer than a generation
-number.
-
 ## Known limits
 
 - Removing an entry from a keyed array is not representable. `mergeById` only
@@ -22,5 +15,8 @@ number.
   scene that arrived without one and writes it back after the build has
   re-locked the pack. Cosmetic, only on first creation, and not worth a timing
   hack to chase.
+- Drift is reported, never refused, and a source with no recorded `sourceHash`
+  is silent. Both deliberate: refusing would strand a reader over an upstream
+  typo, and every `grafts.json` written before hashes existed has none.
 - `exportDiff` has no test coverage. It needs Foundry, so every bug in it so far
   has been found by hand in a live world.

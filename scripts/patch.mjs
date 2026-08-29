@@ -276,15 +276,153 @@ export function authoredGeneration(data) {
 }
 
 /**
- * A `{ id, reason }` warning when `data` predates the running Foundry, or null.
+ * What a source says about the world it was written for.
  *
- * `fromImport` migrates fields that moved, but not one removed outright or a
- * value that stopped being valid, so it is still worth saying.
+ * `_stats` records this on anything Foundry has written, and it is the one part
+ * of `_stats` describing the document rather than this copy of it.
  */
-export function driftWarning(id, data, current) {
-  const authored = authoredGeneration(data);
-  if (!authored || !current || authored >= current) return null;
-  return { id, reason: `authored for Foundry ${authored} and migrated to ${current}; worth checking it looks right` };
+function authoredFor(data) {
+  const stats = data?._stats ?? {};
+  return {
+    generation: authoredGeneration(data),
+    systemId: typeof stats.systemId === "string" ? stats.systemId : null,
+    systemMajor: major(stats.systemVersion),
+  };
+}
+
+function major(version) {
+  const n = Number(String(version ?? "").split(".")[0]);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * `{ id, reason }` warnings for a source written against a different world, or
+ * an empty array.
+ *
+ * All warnings, never refusals. A document from an older generation usually
+ * still builds, and a system mismatch is often deliberate. Refusing would
+ * strand a reader over something the author already decided was fine.
+ *
+ * @param world `{ generation, systemId, systemVersion }` for the running world.
+ */
+export function driftWarnings(id, data, world = {}) {
+  const src = authoredFor(data);
+  const now = { generation: Number(world.generation), systemId: world.systemId, systemMajor: major(world.systemVersion) };
+  const out = [];
+
+  if (src.generation && now.generation && src.generation < now.generation) {
+    out.push({ id, reason: `authored for Foundry ${src.generation} and migrated to ${now.generation}; worth checking it looks right` });
+  }
+  // A different system is not drift, it is incompatibility, and it currently
+  // builds in silence and produces nonsense.
+  if (src.systemId && now.systemId && src.systemId !== now.systemId) {
+    out.push({ id, reason: `authored for the ${src.systemId} system, and this world runs ${now.systemId}` });
+  } else if (src.systemMajor && now.systemMajor && src.systemMajor < now.systemMajor) {
+    // Majors only. Systems ship minors constantly and most break nothing, so
+    // warning on each would train people to skip the section.
+    out.push({ id, reason: `authored for ${src.systemId ?? "system"} ${src.systemMajor}.x, and this world runs ${now.systemMajor}.x` });
+  }
+  return out;
+}
+
+/** The running world, as `driftWarnings` wants it. Foundry-side, hence tiny. */
+export function currentWorld() {
+  return {
+    generation: Number(globalThis.game?.release?.generation),
+    systemId: globalThis.game?.system?.id ?? null,
+    systemVersion: globalThis.game?.system?.version ?? null,
+  };
+}
+
+// ── drift, at document granularity ──────────────────────────────────────────
+//
+// A version number says the world moved. It cannot say that the *particular
+// thing you patched* moved, which is the drift that changes what a patch means.
+//
+// So an entry records a hash of the source projected onto the patch's shape:
+// only the fields the patch touches. An upstream typo fix in a description you
+// never touched must not trip it, or the warning becomes noise and gets
+// skipped. A change to something you actually patched is the one that can
+// alter your meaning.
+
+/**
+ * The parts of `source` that `patch` reaches, and nothing else.
+ *
+ * Keyed arrays project to the entries the patch names, in the patch's order, so
+ * a source reordering forty items does not read as a change to the one you
+ * touched. An entry naming its own `source` is skipped: it is a graft in its
+ * own right and answers for itself.
+ */
+export function project(source, patch) {
+  if (!isPlainObject(patch) || !isPlainObject(source)) return source ?? null;
+  const out = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (!(key in source)) continue;          // the patch adds it; nothing to drift
+    const before = source[key];
+    if (isKeyedArray(value) && isKeyedArray(before)) {
+      const byId = new Map(before.map((e) => [e._id, e]));
+      const entries = [];
+      for (const entry of value) {
+        if (isSourcedEntry(entry)) continue;
+        const prior = byId.get(entry._id);
+        if (prior) entries.push({ _id: entry._id, ...project(prior, entry) });
+      }
+      if (entries.length > 0) out[key] = entries;
+    } else if (isPlainObject(value) && isPlainObject(before)) {
+      out[key] = project(before, value);
+    } else {
+      out[key] = before;
+    }
+  }
+  return out;
+}
+
+/**
+ * Deterministic JSON: keys sorted at every depth.
+ *
+ * `JSON.stringify` preserves insertion order, which differs between two sources
+ * carrying the same content, so hashing its output would report drift that is
+ * not there.
+ */
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (!isPlainObject(value)) return JSON.stringify(value) ?? "null";
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`).join(",")}}`;
+}
+
+/**
+ * A short stable digest of what a patch was written against.
+ *
+ * Two rounds of FNV-1a with different offsets, giving 64 bits as hex. Not
+ * cryptographic and does not need to be: this detects an upstream edit, not an
+ * adversary.
+ */
+export function sourceHash(source, patch) {
+  const text = canonical(project(source, patch));
+  const fnv = (offset) => {
+    let h = offset;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  };
+  return fnv(0x811c9dc5) + fnv(0x7fffffff);
+}
+
+/**
+ * `{ id, reason }` when the source no longer matches what the patch was written
+ * against, or null.
+ *
+ * An entry with no recorded hash is silent. Absent means "not recorded", not
+ * "verified clean", and every `grafts.json` written before this existed has
+ * none.
+ */
+export function driftFromSource(id, recorded, source, patch) {
+  if (typeof recorded !== "string" || !recorded) return null;
+  if (sourceHash(source, patch) === recorded) return null;
+  return { id, reason: "the source has changed where this patch touches it; check the result still means what you intended" };
 }
 
 /** `"/Magic Items//Bags/"` to `["Magic Items", "Bags"]`. */

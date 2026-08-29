@@ -197,6 +197,25 @@ The second is recovered automatically — Foundry recorded where the item came f
 
 Nothing else, and in particular **no other module's flags**. Tidying those would be an editorial judgement about somebody else's data.
 
+### Drift
+
+A patch is written against a source at a moment in time. Three things say that moment has passed, and all three **warn** rather than refuse — a changed source usually still patches correctly, and refusing would strand a reader over an upstream typo.
+
+- **A different system.** `_stats.systemId` says what a document was authored for. A pf2e actor grafted into a dnd5e world is not drift, it is incompatible, and it otherwise builds in silence.
+- **An older generation.** Foundry or system majors only. Systems ship minors constantly and most break nothing, so warning on each would train people to skip the section.
+- **The source itself changed.** An entry records `sourceHash`, a digest of the source **projected onto the patch's shape** — only the fields the patch touches:
+
+```yaml
+source: Compendium.some-bestiary.actors.Actor.mmBandit000000
+sourceHash: 7f3a91c2e40b8d15
+patch:
+  system: { attributes: { hp: { value: 45 } } }
+```
+
+Projecting is what makes it usable. An upstream typo fix in a description you never touched must not warn, or the warning becomes noise. Reordering a keyed array is not drift either, and neither is key order in the source.
+
+An entry with no `sourceHash` is silent: absent means "not recorded", not "verified clean".
+
 ### Old documents are migrated
 
 Everything is created through `Document.fromImport`, Foundry's own migration path. Creating directly lands old data unchanged against the current schema, and the failure is quiet: a Foundry 13 scene arrives with v13 tile coordinates read under v14 anchor semantics, so every tile sits half its own size out of place.
