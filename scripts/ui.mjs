@@ -7,6 +7,7 @@
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
 import { registeredProviders, runProviders } from "./providers.mjs";
+import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
 
 const MODULE_ID = "graft";
@@ -71,15 +72,27 @@ export async function buildAndReport(moduleId) {
     return null;
   }
 
-  // No count: this would be the number declared, and progress reports the
-  // number that survived planning. The dialog gives both, accurately.
-  ui.notifications.info(`Building grafts for ${moduleId}…`);
-  // Providers rewrite entries before anything is built. Their failures use the
-  // same shape as build failures so the reader sees one report, not two.
-  const prepared = await runProviders(entries);
-  const { built, skipped } = await hydrate(moduleId, prepared.entries, {
-    onProgress: (i, total, entry) => console.log(`Graft | ${i}/${total} ${entry.id}`),
-  });
+  const title = game.modules.get(moduleId)?.title ?? moduleId;
+  progress.begin(`Graft: ${title}`);
+  let prepared, built, skipped;
+  try {
+    // Providers rewrite entries before anything is built. Their failures use
+    // the same shape as build failures, so the reader sees one report.
+    prepared = await runProviders(entries, undefined, {
+      onProvider: (p) => progress.phase(p.label),
+    });
+    ({ built, skipped } = await hydrate(moduleId, prepared.entries, {
+      // The total is only known once planning has dropped what it cannot
+      // build, which is the first thing the callback is told.
+      onProgress: (i, total, entry) => {
+        if (i === 1) progress.phase("Building", total);
+        progress.step(entry.id);
+        console.log(`Graft | ${i}/${total} ${entry.id}`);
+      },
+    }));
+  } finally {
+    progress.end();
+  }
   const allSkipped = [...prepared.skipped, ...skipped];
 
   // Building answers the prompt, so stop suppressing it: if entries go missing

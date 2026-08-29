@@ -290,6 +290,21 @@ A module's packs are locked by default, so each is unlocked for the write and pu
 `game.modules.get("graft").api` exposes the same things for scripting: `buildPacks(moduleId)`, `unbuilt(moduleId)`, `exportDiff(document)`.
 
 Run the tests with `node --test 'test/*.test.mjs'`.
+## Moulinette
+
+Shipped with graft, registered only when the Moulinette module is enabled, so a reader who does not use it never sees it mentioned.
+
+```
+@moulinette/<pack_ref>/<filepath>
+@moulinette/10698/scenes/abandoned-mine-entrance.webp
+```
+
+`pack_ref` is the number in a marketplace URL. The two slugs beside it there are display names run through `.slugify()`, so they change when a creator renames a pack; the number does not.
+
+As an entry's `source` it names a **document**, which is fetched, patched, and returned as a sourceless entry carrying the result. Anywhere inside a patch it names a **file**, which is downloaded and rewritten to a local path. A reference that will not resolve takes its container with it and no further: a `background` with no `src` is worse than no background, but one missing ambience must not discard a whole scene. Everything dropped is named in the build report.
+
+Nothing is redistributed. The reader's own subscriptions decide what they get, which is the same argument as referencing a compendium they own, extended to a cloud they have rights to.
+
 ## Providers
 
 A provider rewrites entries before anything is built. Register one at the `graftRegisterProviders` hook, which fires at `ready` so a provider never has to care whether its module loaded first:

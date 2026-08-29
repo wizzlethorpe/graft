@@ -6,6 +6,7 @@ import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { readGrafts, unbuilt } from "./modules.mjs";
 import { registerProvider, registeredProviders } from "./providers.mjs";
+import { moulinetteProvider } from "./moulinette.mjs";
 import {
   registerSettings, promptForUnbuilt, addPackControl, copyOne,
   buildAndReport, addCopyGraftContext, addCopyFolderGrafts, CONTEXT_TYPES,
@@ -27,6 +28,9 @@ Hooks.once("init", () => {
 // Providers register here rather than at init, so they never have to care
 // whether their own module loaded before this one.
 Hooks.once("ready", async () => {
+  // Shipped with graft but inert without Moulinette, so a reader who does not
+  // use it never sees it named in a build prompt.
+  if (game.modules.get("moulinette")?.active) registerProvider(moulinetteProvider());
   Hooks.callAll("graftRegisterProviders", { registerProvider });
   await promptForUnbuilt();
 });

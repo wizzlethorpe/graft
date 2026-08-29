@@ -47,7 +47,7 @@ export function registeredProviders() {
  *   build report can section by it, and uses the same shape hydration does, so
  *   a reader sees one list rather than two.
  */
-export async function runProviders(entries, providers = registeredProviders(), { maxRuns = DEFAULT_MAX_RUNS } = {}) {
+export async function runProviders(entries, providers = registeredProviders(), { maxRuns = DEFAULT_MAX_RUNS, onProvider } = {}) {
   const byId = new Map(providers.map((p) => [p.id, p]));
   const queue = providers.map((p) => p.id);
   // Membership of the queue, not history. A provider may run several times
@@ -82,6 +82,7 @@ export async function runProviders(entries, providers = registeredProviders(), {
 
     let result;
     try {
+      onProvider?.(provider);
       result = await provider.hydrate(current);
     } catch (err) {
       // One provider failing is not a reason to abandon the rest, or the
