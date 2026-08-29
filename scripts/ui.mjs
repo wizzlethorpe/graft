@@ -1,81 +1,36 @@
-// Getting a module built without anybody opening a console.
+// Everything on screen: the controls, the menus, the dialogs.
 //
-// Two entry points, deliberately: one that finds the reader and one the reader
-// can find. A module that only builds when prompted is broken the first time
-// somebody dismisses the prompt, and a module that only builds from a button
-// nobody knows about never gets built at all.
+// Building has to be reachable two ways. A module that only builds when
+// prompted is broken the first time somebody dismisses the prompt, and one that
+// only builds from a control nobody has found never gets built at all.
 
 import { hydrate, exportDiff } from "./hydrate.mjs";
+import { graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
 import { toYaml } from "./yaml.mjs";
 
 const MODULE_ID = "graft";
 const SUPPRESSED = "suppressedPrompts";
+const BULK_CONFIRM_AT = 100;
 
-/** Enabled modules that declare graft as a requirement, which is the convention. */
-export function graftModules() {
-  return game.modules.filter((m) => m.active
-    && [...(m.relationships?.requires ?? [])].some((r) => r.id === MODULE_ID));
+/** The setting the prompt remembers itself in. */
+export function registerSettings() {
+  game.settings.register(MODULE_ID, SUPPRESSED, {
+    name: "Modules whose build prompt has been declined",
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  });
 }
 
-/**
- * A module's entries, or [] when it ships none.
- *
- * `flags.graft.entries` says where to look, so a module with hundreds of
- * entries across six packs can split them by pack, by chapter, by whatever
- * suits it. Defaulting to `grafts.json` keeps every existing module working and
- * keeps the simple case free of ceremony.
- */
-export async function readGrafts(moduleId) {
-  const declared = game.modules.get(moduleId)?.flags?.graft?.entries;
-  const files = Array.isArray(declared) ? declared
-    : typeof declared === "string" ? [declared]
-    : null;
-
-  const entries = [];
-  for (const file of files ?? ["grafts.json"]) {
-    let parsed = null;
-    try {
-      const res = await fetch(`modules/${moduleId}/${file}`);
-      if (res.ok) parsed = await res.json();
-    } catch { /* reported below */ }
-
-    if (parsed === null) {
-      // A module that ships no grafts.json is not an error; a module that names
-      // a file it does not ship is, and would otherwise build nothing at all
-      // and say nothing about why.
-      if (files) console.warn(`Graft | ${moduleId} declares ${file}, which could not be read.`);
-      continue;
-    }
-    entries.push(...(Array.isArray(parsed) ? parsed : parsed.entries ?? []));
-  }
-  return entries;
-}
-
-/**
- * The entries a module declares that are not in its packs.
- *
- * Compared against the pack index rather than a stored "have I built this"
- * flag, so the answer stays true when somebody deletes a document by hand or
- * the module ships new entries in an update.
- */
-export async function unbuilt(moduleId) {
-  const entries = await readGrafts(moduleId);
-  const missing = [];
-  for (const entry of entries) {
-    const pack = game.packs.get(`${moduleId}.${entry.pack}`);
-    if (!pack) continue;                       // a pack Foundry has not read yet
-    const index = await pack.getIndex();
-    if (!index.get(entry.id)) missing.push(entry);
-  }
-  return missing;
-}
+// ── building ────────────────────────────────────────────────────────────────
 
 /**
  * Offer to build anything a newly-enabled module has not built yet.
  *
- * Asked once per module and remembered, because a prompt that returns on every
- * world load is one people learn to dismiss without reading. Declining is not
- * permanent: the header control on the module's own packs is always there.
+ * Asked once per module and remembered: a prompt that returns on every world
+ * load is one people learn to dismiss without reading. Declining is not
+ * permanent, since the pack control is always there.
  */
 export async function promptForUnbuilt() {
   if (!game.user.isGM) return;
@@ -106,105 +61,90 @@ export async function promptForUnbuilt() {
   }
 }
 
-/**
- * A Build control in the header of a graft module's own compendium windows.
- *
- * On the pack rather than replacing it: the reader still browses the contents
- * the ordinary way, and the one thing this adds sits where they are already
- * looking when they wonder why a pack is empty.
- */
-export function addPackControl(app, controls) {
-  const moduleId = app?.collection?.metadata?.packageName;
-  if (!game.user.isGM || !moduleId) return;
-  if (!graftModules().some((m) => m.id === moduleId)) return;
-  controls.push({
-    icon: "fa-solid fa-code-branch",
-    label: "Build grafts",
-    action: "graftBuild",
-    onClick: () => buildAndReport(moduleId),
-  });
-}
-
-/**
- * A "Copy grafts" control on every compendium window.
- *
- * On every one, not only a graft module's own, because the pack an author
- * assembles their work in is an ordinary world compendium: make a pack, drag
- * in the things you have imported and edited and the things you invented, and
- * take the whole array in one go. Doing it a document at a time is the same
- * work done fifty times.
- */
-export function addCopyControl(app, controls) {
-  const pack = app?.collection;
-  if (!game.user.isGM || !pack) return;
-  controls.push({
-    icon: "fa-solid fa-clipboard-list",
-    label: "Copy grafts",
-    action: "graftCopyAll",
-    onClick: () => copyPackGrafts(pack),
-  });
-}
-
-/**
- * Export every document in a pack as a grafts array.
- *
- * `getDocuments` fetches the lot, which is why a large pack asks first: a
- * thousand-document compendium is a long wait and rarely what somebody meant
- * to press.
- */
-export async function copyPackGrafts(pack) {
-  const index = await pack.getIndex();
-  if (index.size === 0) {
-    ui.notifications.warn(`${pack.title} is empty.`);
+/** Build one module and say what happened, on screen and in the console. */
+export async function buildAndReport(moduleId) {
+  const entries = await readGrafts(moduleId);
+  if (entries.length === 0) {
+    ui.notifications.warn(`${moduleId} declares no graft entries.`);
     return null;
   }
-  // Asked from the index, before `getDocuments` loads the lot, because loading
-  // is the expensive part and rarely what somebody meant to press.
-  if (index.size > 100 && !await confirmMany(index.size, pack.title)) return null;
-  return copyMany(await pack.getDocuments(), pack.title, { confirmed: true });
+
+  // No count: this would be the number declared, and progress reports the
+  // number that survived planning. The dialog gives both, accurately.
+  ui.notifications.info(`Building grafts for ${moduleId}…`);
+  const { built, skipped } = await hydrate(moduleId, entries, {
+    onProgress: (i, total, entry) => console.log(`Graft | ${i}/${total} ${entry.id}`),
+  });
+
+  // Building answers the prompt, so stop suppressing it: if entries go missing
+  // later the reader should be asked again.
+  const suppressed = new Set(game.settings.get(MODULE_ID, SUPPRESSED));
+  if (suppressed.delete(moduleId)) {
+    await game.settings.set(MODULE_ID, SUPPRESSED, [...suppressed]);
+  }
+
+  // Logged as well as shown, because a console line can go into a bug report.
+  if (skipped.length > 0) {
+    console.group(`Graft | ${skipped.length} skipped`);
+    for (const { id, reason } of skipped) console.warn(`${id}: ${reason}`);
+    console.groupEnd();
+  }
+  await reportBuild(moduleId, built, skipped);
+  return { built, skipped };
 }
 
 /**
- * Fill in the pack an entry belongs in, when there is only one it could be.
+ * What happened, in a window rather than a notification.
  *
- * `exportDiff` cannot know which module is being authored, but the answer is
- * usually forced: one graft module is enabled and it declares one pack of that
- * document type. Guessing there saves editing every entry by hand.
- *
- * Left out when it is genuinely ambiguous, because a wrong pack fails at build
- * time with a confusing message about types, and a missing one fails with an
- * obvious message about a missing field.
+ * The reasons are the part worth reading: a missing dependency and an invalid
+ * entry want different responses, and only one is the reader's to fix.
  */
-export function withPack(entry) {
-  if (entry.pack) return entry;
-  const declared = [];
-  const candidates = [];
-  for (const module of graftModules()) {
-    const named = module.flags?.graft?.packs?.[entry.type];
-    if (named) declared.push(named);
-    for (const pack of module.packs ?? []) {
-      if (pack.type === entry.type) candidates.push(pack.name);
-    }
+async function reportBuild(moduleId, built, skipped) {
+  const title = game.modules.get(moduleId)?.title ?? moduleId;
+  const parts = [
+    `<p><strong>${built.length}</strong> built`
+    + (skipped.length ? `, <strong>${skipped.length}</strong> not built` : "")
+    + `.</p>`,
+  ];
+
+  if (skipped.length > 0) {
+    const rows = skipped.map(({ id, reason }) =>
+      `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
+      + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
+    parts.push(`<p><strong>Not built</strong></p><ul>${rows}</ul>`);
   }
-  // A declaration is the answer when there is one, which is the case the
-  // inference cannot handle: two Actor packs and no way to tell which is meant.
-  if (declared.length === 1) return { ...entry, pack: declared[0] };
-  return candidates.length === 1 ? { ...entry, pack: candidates[0] } : entry;
+
+  if (built.length > 0) {
+    // Collapsed and last: a successful entry needs no action, and a hundred of
+    // them would bury the few that do.
+    const rows = built.map((uuid) => {
+      const id = uuid.split(".").pop();
+      const pack = game.packs.get(uuid.split(".").slice(1, 3).join("."));
+      const name = pack?.index?.get(id)?.name ?? id;
+      // `data-link` is what Foundry's click handler selects on; the class is
+      // only styling.
+      return `<li><a class="content-link" data-link draggable="true" data-uuid="${uuid}">`
+        + `${foundry.utils.escapeHTML(name)}</a></li>`;
+    }).join("");
+    parts.push(`<details><summary>${built.length} built</summary><ul>${rows}</ul></details>`);
+  }
+
+  await foundry.applications.api.DialogV2.prompt({
+    window: { title: `Graft: ${title}` },
+    content: `<div style="max-height:24rem;overflow:auto">${parts.join("")}</div>`,
+    ok: { label: "Close" },
+    position: { width: 520 },
+  }).catch(() => {});
 }
 
-async function confirmMany(count, label) {
-  return foundry.applications.api.DialogV2.confirm({
-    window: { title: "Graft" },
-    content: `<p>${label} holds <strong>${count}</strong> documents. Export a graft for every one?</p>`,
-  }).catch(() => false);
-}
+// ── copying ─────────────────────────────────────────────────────────────────
 
 /** One document to the clipboard, as a graft entry. */
 export async function copyOne(doc) {
   try {
     const entry = withPack(await exportDiff(doc));
     // JSON, because grafts.json is JSON and what you copy should be what you
-    // paste. `toYaml` is for the other destination: a vault page's frontmatter.
+    // paste. YAML is for the other destination, a vault page's frontmatter.
     const text = JSON.stringify(entry, null, 2);
     await game.clipboard.copyPlainText(text);
     ui.notifications.info(
@@ -224,16 +164,14 @@ export async function copyOne(doc) {
 /**
  * Several documents as one grafts array.
  *
- * One failure does not lose the rest: a reader missing one dependency should
- * still get everything else, and the names of what was skipped.
+ * One failure does not lose the rest; the names of what was skipped go to the
+ * console.
  */
-export async function copyMany(docs, label, { confirmed = false } = {}) {
+export async function copyMany(docs, label) {
   if (docs.length === 0) {
     ui.notifications.warn(`${label} has nothing to export.`);
     return null;
   }
-  if (!confirmed && docs.length > 100 && !await confirmMany(docs.length, label)) return null;
-
   const entries = [];
   const failed = [];
   for (const doc of docs) {
@@ -242,8 +180,7 @@ export async function copyMany(docs, label, { confirmed = false } = {}) {
   }
 
   await game.clipboard.copyPlainText(JSON.stringify(entries, null, 2));
-  console.log(`Graft | ${entries.length} entr(ies) from ${label}`,
-    JSON.stringify(entries, null, 2));
+  console.log(`Graft | ${entries.length} entr(ies) from ${label}`, JSON.stringify(entries, null, 2));
   if (failed.length > 0) {
     console.group(`Graft | ${failed.length} could not be exported`);
     for (const f of failed) console.warn(f);
@@ -256,113 +193,71 @@ export async function copyMany(docs, label, { confirmed = false } = {}) {
   return entries;
 }
 
-/** Build one module and say what happened, in the console and on screen. */
-export async function buildAndReport(moduleId) {
-  const entries = await readGrafts(moduleId);
-  if (entries.length === 0) {
-    ui.notifications.warn(`${moduleId} ships no grafts.json.`);
+/** Confirm before a bulk export large enough that nobody meant to press it. */
+async function confirmBulk(count, label) {
+  if (count <= BULK_CONFIRM_AT) return true;
+  return foundry.applications.api.DialogV2.confirm({
+    window: { title: "Graft" },
+    content: `<p>${label} holds <strong>${count}</strong> documents. Export a graft for every one?</p>`,
+  }).catch(() => false);
+}
+
+/** Every document in a pack. Asked from the index, before loading the lot. */
+export async function copyPackGrafts(pack) {
+  const index = await pack.getIndex();
+  if (index.size === 0) {
+    ui.notifications.warn(`${pack.title} is empty.`);
     return null;
   }
-
-  // No count here. It would be the number declared, and the number attempted is
-  // whatever survives planning, so the two disagree in exactly the situation
-  // somebody is most likely to be reading carefully. The dialog reports both.
-  ui.notifications.info(`Building grafts for ${moduleId}…`);
-  const { built, skipped } = await hydrate(moduleId, entries, {
-    onProgress: (i, total, entry) => console.log(`Graft | ${i}/${total} ${entry.id}`),
-  });
-
-  // Building is the answer to the prompt, so stop suppressing it: if entries
-  // go missing later the reader should be asked again.
-  const suppressed = new Set(game.settings.get(MODULE_ID, SUPPRESSED));
-  if (suppressed.delete(moduleId)) {
-    await game.settings.set(MODULE_ID, SUPPRESSED, [...suppressed]);
-  }
-
-  // Still logged, because a console line can be copied into a bug report and a
-  // dialog cannot. The dialog is what somebody actually reads.
-  if (skipped.length > 0) {
-    console.group(`Graft | ${skipped.length} skipped`);
-    for (const { id, reason } of skipped) console.warn(`${id}: ${reason}`);
-    console.groupEnd();
-  }
-  await reportBuild(moduleId, built, skipped);
-
-  return { built, skipped };
+  if (!await confirmBulk(index.size, pack.title)) return null;
+  return copyMany(await pack.getDocuments(), pack.title);
 }
 
-/** The setting the prompt remembers itself in. */
-export function registerSettings() {
-  game.settings.register(MODULE_ID, SUPPRESSED, {
-    name: "Modules whose build prompt has been declined",
-    scope: "world",
-    config: false,
-    type: Array,
-    default: [],
+// ── compendium controls ─────────────────────────────────────────────────────
+
+/** A Build control on a graft module's own packs, where an empty one is noticed. */
+export function addPackControl(app, controls) {
+  const moduleId = app?.collection?.metadata?.packageName;
+  if (!game.user.isGM || !moduleId) return;
+  if (!graftModules().some((m) => m.id === moduleId)) return;
+  controls.push({
+    icon: "fa-solid fa-code-branch",
+    label: "Build grafts",
+    action: "graftBuild",
+    onClick: () => buildAndReport(moduleId),
   });
 }
 
 /**
- * What happened, in a window rather than a notification.
+ * A Copy grafts control on every compendium, not only a graft module's own.
  *
- * "See the console" is a reasonable thing to tell a developer and a poor thing
- * to tell anybody else, and the reasons are the part worth reading: a source
- * that is not installed and an entry that was never valid want different
- * responses, and only one of them is the reader's to fix.
+ * The pack an author assembles their work in is an ordinary world compendium,
+ * and taking the array in one go beats doing it fifty times.
  */
-async function reportBuild(moduleId, built, skipped) {
-  const title = game.modules.get(moduleId)?.title ?? moduleId;
-  const parts = [
-    `<p><strong>${built.length}</strong> built`
-    + (skipped.length ? `, <strong>${skipped.length}</strong> not built` : "")
-    + `.</p>`,
-  ];
-
-  if (skipped.length > 0) {
-    const rows = skipped.map(({ id, reason }) =>
-      `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
-      + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
-    parts.push(`<p><strong>Not built</strong></p><ul>${rows}</ul>`);
-  }
-
-  if (built.length > 0) {
-    // Collapsed, and after the failures: a successful entry needs no action,
-    // and a hundred of them would bury the handful that do.
-    const rows = built.map((uuid) => {
-      const id = uuid.split(".").pop();
-      const pack = game.packs.get(uuid.split(".").slice(1, 3).join("."));
-      const name = pack?.index?.get(id)?.name ?? id;
-      // The attribute Foundry's click handler actually selects on, so these
-      // open the document rather than looking like they might.
-      return `<li><a class="content-link" data-link draggable="true" data-uuid="${uuid}">`
-        + `${foundry.utils.escapeHTML(name)}</a></li>`;
-    }).join("");
-    parts.push(`<details><summary>${built.length} built</summary><ul>${rows}</ul></details>`);
-  }
-
-  await foundry.applications.api.DialogV2.prompt({
-    window: { title: `Graft: ${title}` },
-    content: `<div style="max-height:24rem;overflow:auto">${parts.join("")}</div>`,
-    ok: { label: "Close" },
-    position: { width: 520 },
-  }).catch(() => {});
+export function addCopyControl(app, controls) {
+  const pack = app?.collection;
+  if (!game.user.isGM || !pack) return;
+  controls.push({
+    icon: "fa-solid fa-clipboard-list",
+    label: "Copy grafts",
+    action: "graftCopyAll",
+    onClick: () => copyPackGrafts(pack),
+  });
 }
 
-// ── the world sidebar ───────────────────────────────────────────────────────
+// ── world sidebar ───────────────────────────────────────────────────────────
 //
-// A graft is an edit *of* something from a compendium, and you make that edit
-// in the world: the actor with the items on it, the scene you have walled. So
-// the sidebar is where exporting belongs, and the sheet control is the
-// convenience rather than the main road. The compendium menu keeps its own
-// purpose, which is chaining onto a pack graft built.
+// Where a graft is actually made: you edit the actor with the items on it, or
+// the scene you have walled, and that edit is the graft. The sheet control is
+// the convenience for something already open; the compendium controls are for
+// chaining onto a pack graft built.
 
 /**
- * Document types whose directory context menu gets a Copy graft entry.
+ * Types whose directory context menu gets a Copy graft entry.
  *
  * Concrete types only. The API docs name a generic `getDocumentContextOptions`,
- * but Item Piles, which visibly works in this version, binds
- * `getActorContextOptions` per type, and a working module beats documentation
- * that also got the argument list wrong.
+ * but Item Piles binds `getActorContextOptions` per type and visibly works,
+ * which beats documentation that also got the argument list wrong.
  */
 export const CONTEXT_TYPES = [
   "Actor", "Item", "JournalEntry", "Scene", "RollTable",
@@ -370,12 +265,11 @@ export const CONTEXT_TYPES = [
 ];
 
 /**
- * Add "Copy graft" to a directory entry's context menu.
+ * Add Copy graft to a directory entry's context menu.
  *
- * The first hook argument is the rendered HTML, *not* the application, whatever
- * the API docs say. So the document is found from the element's own dataset and
- * the type this hook was registered for, rather than from an application's
- * collection.
+ * The hook's first argument is the rendered HTML rather than the application,
+ * so the type is passed in: an element's id cannot say which collection it
+ * belongs to.
  */
 export function addCopyGraftContext(documentName, menuItems) {
   if (!game.user.isGM || !Array.isArray(menuItems)) return;
@@ -384,14 +278,16 @@ export function addCopyGraftContext(documentName, menuItems) {
     name: "Copy graft",
     icon: '<i class="fa-solid fa-code-branch"></i>',
     callback: async (target) => {
-      const doc = documentFromEntry(documentName, target);
+      const el = elementOf(target);
+      const id = el?.dataset?.documentId ?? el?.dataset?.entryId;
+      const doc = id ? game.collections.get(documentName)?.get(id) : null;
       if (doc) await copyOne(doc);
       else ui.notifications.warn("Graft could not identify that document.");
     },
   });
 }
 
-/** And "Copy grafts" on a folder, which is how people actually group work. */
+/** And Copy grafts on a folder, which is how people group work. */
 export function addCopyFolderGrafts(html, menuItems) {
   if (!game.user.isGM || !Array.isArray(menuItems)) return;
   if (menuItems.some((i) => i?.name === "Copy grafts")) return;
@@ -402,19 +298,19 @@ export function addCopyFolderGrafts(html, menuItems) {
       const el = elementOf(target);
       const folder = folderFrom(el);
       if (!folder) {
-        // Logged rather than only reported, because the useful thing is which
-        // attribute this version actually uses, and that is invisible from a
-        // notification.
+        // The dataset is logged because which attribute this version uses is
+        // invisible from a notification.
         console.warn("Graft | could not identify a folder from", el,
           "dataset:", el?.dataset ? { ...el.dataset } : el);
         return ui.notifications.warn("Graft could not identify that folder.");
       }
-      await copyMany(folderContents(folder), folder.name);
+      const docs = folderContents(folder);
+      if (await confirmBulk(docs.length, folder.name)) await copyMany(docs, folder.name);
     },
   });
 }
 
-/** A folder's documents, and its subfolders' documents. */
+/** A folder's documents, and its subfolders'. */
 function folderContents(folder, into = []) {
   for (const doc of folder.contents ?? []) into.push(doc);
   for (const child of folder.children ?? []) folderContents(child.folder ?? child, into);
@@ -429,10 +325,9 @@ function elementOf(target) {
 /**
  * The folder a context menu was opened on.
  *
- * Every plausible spelling, and a walk up the tree, because the directory
- * markup is not documented and the element handed to a callback is not
- * necessarily the one carrying the id. Cheap to try them all; expensive to
- * guess wrong, since a wrong guess fails with no clue which part was wrong.
+ * Every plausible spelling and a walk up the tree: the directory markup is
+ * undocumented, and the element handed to a callback is not necessarily the one
+ * carrying the id.
  */
 function folderFrom(el) {
   if (!el) return null;
@@ -442,12 +337,4 @@ function folderFrom(el) {
     ?? el.closest?.("[data-folder-id]")?.dataset?.folderId
     ?? el.closest?.("[data-entry-id]")?.dataset?.entryId;
   return id ? game.folders.get(id) ?? null : null;
-}
-
-function documentFromEntry(documentName, target) {
-  const el = elementOf(target);
-  // Both spellings, because Item Piles reads both and it is in a position to
-  // know which one this version actually uses.
-  const id = el?.dataset?.documentId ?? el?.dataset?.entryId;
-  return id ? game.collections.get(documentName)?.get(id) ?? null : null;
 }

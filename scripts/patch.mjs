@@ -1,37 +1,23 @@
-// The diff format. Pure: no Foundry, no I/O, so it can be reasoned about and
-// tested on its own, which is the whole point of prototyping this separately.
+// The diff format: RFC 7386 (JSON Merge Patch) with one addition.
 //
-// RFC 7386 (JSON Merge Patch), with exactly one addition. Merge patch is the
-// right default because a patch mirrors the shape of the thing it patches, so
-// it reads as YAML a person can write, and `null` already means "delete this
-// key" without inventing a sentinel.
+// Merge patch suits this because a patch mirrors the shape of what it patches,
+// so it reads as JSON a person can write, and `null` already means "delete this
+// key". Its one weakness is arrays, which it replaces wholesale. Foundry's
+// arrays are collections of embedded documents that each carry an `_id` and
+// whose order is not meaningful, so:
 //
-// The addition is for arrays. Merge patch replaces an array wholesale, and
-// JSON Patch (RFC 6902) addresses array members by index. Neither suits
-// Foundry, where an array is a collection of embedded documents that each
-// carry an `_id` and whose order is not meaningful. Changing one item's price
-// should not mean restating forty items, and should not break when the source
-// reorders them. So:
+//   Arrays whose members all carry `_id` merge by that key. Everything else
+//   replaces.
 //
-//   **Arrays whose members all carry `_id` merge by that key. Everything else
-//   replaces.**
-//
-// That one rule is the only place this departs from a published standard, and
-// it exists because Foundry's data model gave those arrays keys.
+// No Foundry and no I/O in this file, so the format can be tested on its own.
 
 /**
- * A plain data object, and not merely "an object".
+ * A plain data object, as opposed to any object.
  *
- * The distinction is load-bearing. A patch is always plain JSON, but the
- * *source* it is diffed against arrives from Foundry, and a live Document is a
- * class instance whose embedded collections hold a `model` back-reference to
- * the document that owns them: Actor to items to model to Actor. Walking one
- * recursively never returns, which is how the first real export died with
- * "Maximum call stack size exceeded".
- *
- * Callers are expected to pass `toObject()` output. Checking the prototype
- * means a caller who forgets gets a wrong answer immediately rather than a
- * stack overflow several seconds later.
+ * Load-bearing: a live Foundry Document holds back-references from its embedded
+ * collections to itself, so walking one recursively never returns. Callers pass
+ * `toObject()` output, and checking the prototype turns a forgotten call into a
+ * wrong answer rather than a stack overflow.
  */
 function isPlainObject(v) {
   if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
@@ -44,13 +30,7 @@ export function isKeyedArray(v) {
   return Array.isArray(v) && v.length > 0 && v.every((e) => isPlainObject(e) && typeof e._id === "string");
 }
 
-/**
- * Apply a merge patch to a document, returning a new object.
- *
- * `target` is never mutated: hydration applies a patch to somebody else's
- * document, and mutating the source in place would corrupt the pack it was
- * read from.
- */
+/** Apply a merge patch, returning a new object. `target` is never mutated. */
 export function applyPatch(target, patch) {
   if (!isPlainObject(patch)) return structuredClone(patch);
   const out = isPlainObject(target) ? structuredClone(target) : {};
@@ -71,13 +51,10 @@ export function applyPatch(target, patch) {
 /**
  * Merge one keyed array into another.
  *
- * Entries present in both are patched. Entries only in the patch are appended,
- * which is how you add an item to a statblock. Entries only in the target
- * survive, which is what makes a patch a diff rather than a replacement: you
- * are saying what differs, not restating the whole collection.
- *
- * Removing an entry is the one thing this cannot express, and deliberately so
- * (see `diff`).
+ * Entries in both are patched, entries only in the patch are appended, and
+ * entries only in the target survive. That last is what makes a patch a diff
+ * rather than a replacement, and is also why removal is not representable: an
+ * omitted entry means "leave it alone".
  */
 function mergeById(target, patch) {
   const byId = new Map(target.map((e) => [e._id, e]));
@@ -89,14 +66,13 @@ function mergeById(target, patch) {
 }
 
 /**
- * The merge patch that turns `source` into `result`.
+ * The merge patch that turns `source` into `result`, or `undefined` if nothing
+ * differs.
  *
- * This is the authoring half, and the reason the whole idea is usable: you
- * import somebody's monster, edit it in the ordinary sheet, and this recovers
- * what you changed. Nobody writes one of these by hand.
- *
- * Returns `undefined` when nothing differs, so an unchanged branch is omitted
- * rather than emitted as `{}`.
+ * `whole` is an optional Set that collects the `_id` of every entry emitted as
+ * a complete document rather than a delta. A merge patch is shaped like the
+ * document it patches, so the two are indistinguishable afterwards, and
+ * `referenceSources` needs to tell them apart.
  */
 export function diff(source, result, whole) {
   if (!isPlainObject(source) || !isPlainObject(result)) {
@@ -118,40 +94,25 @@ export function diff(source, result, whole) {
       const sub = diff(before, value, whole);
       if (sub !== undefined) patch[key] = sub;
     } else if (!equal(before, value)) {
-      // A subtree replaced rather than merged, which is where an empty or
-      // absent array lands: `isKeyedArray` needs a member to recognise one, so
-      // the first entry added to an empty collection never reaches `diffById`.
+      // Replaced rather than merged, which is where an empty or absent array
+      // lands: `isKeyedArray` needs a member, so the first entry added to an
+      // empty collection never reaches `diffById`.
       patch[key] = markWhole(structuredClone(value), whole);
     }
   }
-  // A key the source had and the result does not is a deletion, which merge
-  // patch spells as null.
   for (const key of Object.keys(source)) {
     if (!(key in result)) patch[key] = null;
   }
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
-/**
- * Changed and added entries only, each carrying its `_id` so it can be found
- * again.
- *
- * An entry the result dropped is *not* representable: merge-by-id has no way
- * to say "remove this one", because a patch that omits an entry means "leave
- * it alone". That is a real limit and the honest place to stop. A format that
- * needed deletions would reach for RFC 6902 `remove` ops, and pay for it by
- * addressing members positionally, which is the thing keying by `_id` avoids.
- */
+/** Changed and added entries only, each carrying its `_id`. */
 function diffById(source, result, whole) {
   const before = new Map(source.map((e) => [e._id, e]));
   const entries = [];
   for (const entry of result) {
     const prior = before.get(entry._id);
     if (!prior) {
-      // Nothing to diff against, so the entry travels whole. Recorded because
-      // the caller cannot tell afterwards: a merge patch is shaped like the
-      // document it patches, which is what makes it readable and what makes
-      // the two indistinguishable once the base has gone out of scope.
       whole?.add(entry._id);
       entries.push(structuredClone(entry));
       continue;
@@ -162,21 +123,15 @@ function diffById(source, result, whole) {
   return entries.length > 0 ? entries : undefined;
 }
 
-/**
- * Record every `_id` inside a subtree the diff is emitting wholesale.
- *
- * Nothing in it had a prior, so every document in it is whole. Returns its
- * argument so it can wrap a `structuredClone` in place.
- */
+/** Record every `_id` in a subtree being emitted wholesale. Returns its argument. */
 function markWhole(value, whole) {
   if (!whole) return value;
   if (Array.isArray(value)) {
     for (const v of value) markWhole(v, whole);
-    return value;
+  } else if (isPlainObject(value)) {
+    if (typeof value._id === "string") whole.add(value._id);
+    for (const v of Object.values(value)) markWhole(v, whole);
   }
-  if (!isPlainObject(value)) return value;
-  if (typeof value._id === "string") whole.add(value._id);
-  for (const v of Object.values(value)) markWhole(v, whole);
   return value;
 }
 
@@ -184,51 +139,22 @@ function equal(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/**
- * Fields that describe *this copy* of a document rather than the document, and
- * so are noise in a diff.
- *
- * `_stats` is timestamps and the id of whoever last touched it: two documents
- * with identical content differ here, so leaving it in reports every embedded
- * item as changed when none are. `ownership` is a map of user ids from one
- * world. `folder` is a folder id from one world. None of the three mean
- * anything on the machine that will apply the patch, and the user id is not
- * ours to ship.
- */
+// Fields describing *this copy* rather than the document. Each earns removal by
+// making a patch wrong or making applying one do the wrong thing; a third
+// party's flags do neither, so they travel untouched.
+//
+//   _stats         timestamps and a user id, so an unchanged document reads as changed
+//   flags.graft    our own record of where this copy came from
+//   folder         a folder id from one world, and only at the root: inside an
+//                  Adventure it points into that adventure's own `folders`
+//                  array, which travels with it
+//   ownership      thinned rather than dropped. Per-user entries are ids from
+//                  one world; `default` is how you say "players can see this"
 const VOLATILE = new Set(["_stats"]);
-
-// `folder` is stripped at the root only, and the depth is the whole point.
-// On the document itself an id names a folder in one world or pack and
-// resolves to nothing elsewhere, so it travels as a path of names instead.
-// Inside an Adventure it means something entirely different: an Adventure
-// carries its own `folders` array, and its embedded documents point into that,
-// which travels with them. Stripping at depth would ship the folders empty and
-// dump every document at the root.
 const ROOT_ONLY = new Set(["folder"]);
-
-// `ownership` is half world-local and half not, so it is thinned rather than
-// dropped. The per-user entries are ids from one world and mean nothing
-// anywhere else; `default` is a real authorial decision, and the only way to
-// say "players can see this" about a handout, a player-facing item, or a scene
-// they can navigate to.
 const OWNERSHIP_KEEP = new Set(["default"]);
 
-// Nothing else is removed, and in particular no other module's flags. Each of
-// the three above earns it: `_stats` makes an unchanged document read as
-// changed, `folder` would file the result in a folder that does not exist on
-// the reader's machine, and `ownership` would write permissions for user ids
-// from another world. A third party's flag does neither. It may be noise in
-// the patch, but tidying it is an editorial judgement about somebody else's
-// data, and acting on it would commit this to maintaining a list of other
-// people's module names.
-
-
-/**
- * A copy with the volatile fields removed, at every depth.
- *
- * Every depth because embedded documents carry their own `_stats`: stripping
- * only the top level leaves each item in an actor's inventory looking edited.
- */
+/** A copy with the volatile fields removed, at every depth. */
 export function stripVolatile(value, root = true) {
   if (Array.isArray(value)) return value.map((v) => stripVolatile(v, false));
   if (!isPlainObject(value)) return value;
@@ -237,55 +163,42 @@ export function stripVolatile(value, root = true) {
     if (VOLATILE.has(k)) continue;
     if (root && ROOT_ONLY.has(k)) continue;
     if (k === "flags" && isPlainObject(v)) {
-      // Our own namespace describes where *this copy* came from, so it is
-      // exactly as volatile as `_stats` and would be a lie on the other end.
-      // Every other module's flags stay: inert if the reader lacks the module,
-      // possibly wanted if they have it, and not ours to curate either way.
       const { graft: _ours, ...rest } = v;
       out[k] = stripVolatile(rest, false);
-      continue;
-    }
-    if (k === "ownership" && isPlainObject(v)) {
+    } else if (k === "ownership" && isPlainObject(v)) {
       const kept = Object.fromEntries(
         Object.entries(v).filter(([who]) => OWNERSHIP_KEEP.has(who)));
-      // Omitted when nothing survives, so a document whose only ownership was
-      // per-user does not read as having lost something.
+      // Omitted when empty, so a purely per-user map does not read as a change.
       if (Object.keys(kept).length > 0) out[k] = kept;
-      continue;
+    } else {
+      out[k] = stripVolatile(v, false);
     }
-    out[k] = stripVolatile(v, false);
   }
   return out;
 }
 
 // ── nested grafts ───────────────────────────────────────────────────────────
 //
-// An embedded document can be somebody else's content too. Adding a magic item
-// to a statblock puts that item's whole body in the patch, description and
-// all, which is the one thing this format exists to avoid: the artifact would
-// be redistributing content rather than pointing at it.
+// An embedded document can be somebody else's content too: adding a magic item
+// to a statblock would otherwise put that item's whole body in the patch. So an
+// entry in a keyed array takes one of two shapes:
 //
-// So an entry in a keyed array takes one of two shapes:
+//   { _id }               patch an entry already there
+//   { _id, source, patch } resolve `source`, patch it, insert it
 //
-//   { _id }              patch an entry that is already there
-//   { _id, source, ... } resolve `source`, patch it, insert it
-//
-// The second is a graft inside a graft, and it addresses its source the same
-// way the outer one does. Resolution is injected rather than imported so the
-// walk stays testable without Foundry.
+// Resolution is injected rather than imported, so the walk stays testable
+// without Foundry.
 
-/** An entry that names content to fetch rather than carrying it. */
-export function isSourcedEntry(v) {
+function isSourcedEntry(v) {
   return isPlainObject(v) && typeof v._id === "string" && typeof v.source === "string";
 }
 
 /**
- * Replace every sourced entry in a patch with the document it names, patched.
+ * Replace every sourced entry with the document it names, patched.
  *
- * Applied before `applyPatch`, so the merge itself stays pure and synchronous.
- * An entry whose source does not resolve throws with the UUID in the message:
- * a statblock silently missing the magic item it was built around is worse
- * than one that refuses to build and says which dependency is absent.
+ * Runs before `applyPatch` so the merge stays synchronous. An unresolvable
+ * source throws: a statblock silently missing the item it was built around is
+ * worse than one that refuses to build and names the dependency.
  */
 export async function expandSources(patch, resolve) {
   if (Array.isArray(patch)) {
@@ -294,7 +207,7 @@ export async function expandSources(patch, resolve) {
       const base = await resolve(entry.source);
       if (!base) throw new Error(`embedded source ${entry.source} did not resolve`);
       const inner = await expandSources(entry.patch ?? {}, resolve);
-      // The id is ours, not the source's: this is our copy of their thing.
+      // The id is ours: this is our copy of their thing.
       return { ...applyPatch(base, inner), _id: entry._id };
     }));
   }
@@ -306,36 +219,28 @@ export async function expandSources(patch, resolve) {
 
 /**
  * The reverse, for authoring: turn a whole embedded document back into a
- * reference plus the little that differs from it.
+ * reference plus what differs from it.
  *
- * `sourceOf` answers what a given embedded id was imported from, which the
- * caller knows because Foundry recorded it before the volatile fields were
- * stripped. An entry with no recorded source stays as it is: content the
- * author wrote themselves is theirs to ship.
+ * `sourceOf` says what an embedded id was imported from. `isWhole` says whether
+ * the entry is a complete document rather than a delta, which only the caller
+ * can know: `diff` recorded it, or there was no diff and everything is whole.
+ * Referencing a delta would diff it against the full source and null out every
+ * field it did not mention.
  */
 export async function referenceSources(patch, { sourceOf, resolve, isWhole }) {
   if (Array.isArray(patch)) {
     return Promise.all(patch.map(async (entry) => {
       if (!isPlainObject(entry) || typeof entry._id !== "string") return entry;
       const source = sourceOf(entry._id);
-      // Only a *whole* entry can be referenced, and whether it is one is the
-      // caller's to say: `diff` recorded it, or there was no diff and every
-      // entry is whole by construction. Guessing from shape got it wrong both
-      // ways, missing documents with no `type` field (journals, scenes, tables)
-      // and mistaking a rename-and-retype for a whole document, which then
-      // diffed against the full source and nulled out everything it did not
-      // mention.
       if (!source || !isWhole(entry._id)) return referenceSources(entry, { sourceOf, resolve, isWhole });
       const base = await resolve(source);
       if (!base) return entry;
-      // Both sides without their ids: the source's is theirs and ours is ours,
-      // and spreading `_id: undefined` would leave the key present and read as a
-      // change rather than removing it.
+      // Ids dropped from both sides; spreading `_id: undefined` would leave the
+      // key present and read as a change.
       const { _id: _mine, ...body } = entry;
       const { _id: _theirs, ...theirBody } = stripVolatile(base);
-      // `base` is a document at its own root, so its folder is world-local and
-      // goes. `body` is already an embedded entry, so its folder is an
-      // adventure-internal pointer and stays.
+      // `base` is a document at its root, so its folder is world-local. `body`
+      // is already embedded, so its folder points inside an adventure.
       const inner = diff(theirBody, stripVolatile(body, false));
       return { _id: entry._id, source, ...(inner ? { patch: inner } : {}) };
     }));
@@ -347,12 +252,10 @@ export async function referenceSources(patch, { sourceOf, resolve, isWhole }) {
 }
 
 /**
- * A document's folder as a path of names, or undefined when it is not in one.
+ * A document's folder as a path of names, or undefined if it is not in one.
  *
- * Names, not ids. `folder` is stripped from a patch because an id names a
- * folder in one particular world or pack and resolves to nothing anywhere
- * else, but the *shape* an author organised their work into is worth keeping,
- * and a path can be rebuilt on the other side.
+ * Names rather than the id, which resolves to nothing on another machine, so
+ * the organisation survives even though the pointer cannot.
  */
 export function folderPath(document) {
   const names = [];
@@ -360,7 +263,7 @@ export function folderPath(document) {
   return names.length > 0 ? names.join("/") : undefined;
 }
 
-/** "/Magic Items//Bags/" -> ["Magic Items", "Bags"]. Tolerates what people type. */
+/** `"/Magic Items//Bags/"` to `["Magic Items", "Bags"]`. */
 export function folderSegments(path) {
   return typeof path === "string" ? path.split("/").map((s) => s.trim()).filter(Boolean) : [];
 }

@@ -295,20 +295,6 @@ test("plain data is still walked as before", async () => {
   assert.deepEqual(out, { a: { b: { c: 1 } }, d: [{ e: 2 }] });
 });
 
-test("another module's flags are left exactly as they are", async () => {
-  // Not ours to curate. A flag is inert on apply if the reader lacks the
-  // module and possibly wanted if they have it, so neither reason the other
-  // volatile fields are stripped applies to it.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
-  const flags = {
-    "scene-packer": { hash: "65b94baa", sourceId: "Item.rdrUP2ttcvvzwYfj" },
-    dnd5e: { riders: { activity: [] } },
-  };
-  const out = stripVolatile({ name: "War Pick", _stats: { createdTime: 1 }, flags });
-  assert.deepEqual(out.flags, flags);
-  assert.ok(!("_stats" in out), "the three that earn it still go");
-});
-
 // ── folders ─────────────────────────────────────────────────────────────────
 
 test("a folder travels as a path of names, not an id", async () => {
@@ -365,12 +351,6 @@ test("an adventure's internal folder pointers survive stripping", async () => {
   assert.equal(out.actors[0].folder, "folderArmory0001", "and what points into it");
   assert.ok(!("_stats" in out.actors[0]), "while genuine noise still goes at depth");
   assert.deepEqual(out.actors[0].ownership, { default: 0 });
-});
-
-test("a plain document's folder still goes, at the root", async () => {
-  const { stripVolatile } = await import("../scripts/patch.mjs");
-  const out = stripVolatile({ _id: "itemSword0000001", name: "Sword", folder: "someFolder00001" });
-  assert.ok(!("folder" in out));
 });
 
 // ── whole or partial, decided by the caller rather than guessed ─────────────

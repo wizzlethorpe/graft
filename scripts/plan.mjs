@@ -1,17 +1,14 @@
 // Deciding what to hydrate, and in what order.
 //
-// An entry's `id` is a Foundry document id, not a slug, because the whole
-// point of chaining is that somebody can graft onto what you produced. Your
-// output has to be addressable as an ordinary UUID, resolvable by `fromUuid`
-// with nothing of ours in the loop:
+// An entry's `id` is a Foundry document id rather than a slug so that its
+// output is addressable as an ordinary UUID:
 //
 //   Compendium.<module>.<pack>.<Type>.<id>
 //
-// Which means a graft onto a graft is not a special case. B names A's output
-// the same way it would name a Monster Manual entry, and A's module is an
-// ordinary dependency of B's. The only thing that is genuinely new is order:
-// A must exist before B is applied, and within one module that ordering is
-// ours to work out.
+// That makes a graft onto a graft unremarkable. B names A's output the same way
+// it would name a Monster Manual entry, and A's module is an ordinary
+// dependency. Only the order is new: A must exist before B is applied, and
+// within one module that is ours to work out.
 
 const DOCUMENT_ID = /^[a-zA-Z0-9]{16}$/;
 
@@ -26,17 +23,14 @@ export function entryUuid(entry, moduleId) {
 }
 
 /**
- * Order entries so that anything grafted onto a sibling comes after it, and
- * report what cannot be built.
+ * Order entries so anything grafted onto a sibling comes after it.
  *
- * Sources pointing outside this module are somebody else's problem in the good
- * sense: `fromUuid` either resolves them or it does not, and Foundry's own
- * dependency reporting explains why. Only edges *within* the module need
- * sequencing, because only those are ours to sequence.
+ * Only edges *within* the module need sequencing. A source pointing outside it
+ * either resolves at hydration or does not, and Foundry reports a missing
+ * dependency better than we could.
  *
- * @returns `{ order, invalid, cycles }`. `invalid` is entries that cannot be
- *   addressed at all; `cycles` is entries that graft onto each other, which is
- *   not buildable and would otherwise hang or half-build.
+ * @returns `{ order, invalid, cycles }`. `invalid` cannot be addressed at all;
+ *   `cycles` graft onto each other and are not buildable.
  */
 export function planOrder(entries, moduleId) {
   const invalid = [];
@@ -58,8 +52,7 @@ export function planOrder(entries, moduleId) {
     const uuid = entryUuid(entry, moduleId);
     if (done.has(uuid)) return;
     if (chain.has(uuid)) {
-      // Record the loop itself rather than "something is circular", since the
-      // useful thing to print is which entries form it.
+      // The loop itself, since the useful thing to print is which entries form it.
       cycles.push([...chain, uuid]);
       return;
     }
@@ -75,8 +68,8 @@ export function planOrder(entries, moduleId) {
 
   for (const entry of usable) visit(entry, new Set());
 
-  // An entry in a cycle is not buildable, and half-building one is worse than
-  // skipping it: it would appear in the pack as a document nobody can explain.
+  // Half-building one is worse than skipping it: the pack would hold a
+  // document nobody can explain.
   const looped = new Set(cycles.flat());
   return {
     order: order.filter((e) => !looped.has(entryUuid(e, moduleId))),
@@ -89,10 +82,8 @@ function describeInvalid(entry) {
   if (!isDocumentId(entry?.id)) {
     return `id must be 16 characters of [a-zA-Z0-9] so the result has a real UUID, got ${JSON.stringify(entry?.id)}`;
   }
-  // Optional. An entry with no source is content the author wrote themselves,
-  // carried whole: a graft module is an adventure, not only a pile of
-  // derivatives, and the things it invents belong in the same pack as the
-  // things it borrows.
+  // Optional: an entry with no source is the author's own content, carried
+  // whole, and belongs in the same pack as the things it borrows.
   if ("source" in entry && (typeof entry.source !== "string" || !entry.source)) {
     return "source, when given, must name the document this grafts onto";
   }
