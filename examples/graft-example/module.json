@@ -54,6 +54,17 @@
         "PLAYER": "NONE",
         "ASSISTANT": "OWNER"
       }
+    },
+    {
+      "name": "graft-example-playlists",
+      "label": "Graft Example: Playlists",
+      "path": "packs/graft-example-playlists",
+      "type": "Playlist",
+      "system": "dnd5e",
+      "ownership": {
+        "PLAYER": "NONE",
+        "ASSISTANT": "OWNER"
+      }
     }
   ],
   "relationships": {

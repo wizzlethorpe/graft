@@ -1,33 +1,47 @@
 [
   {
-    "_comment": "1. A document source. The scene JSON is fetched from the reader's own library, the patch is applied to it, and the result is carried whole. Nothing of the map ships in this file.",
+    "_comment": "1. A document source. The scene JSON is fetched from the reader's own library, the patch is applied to that JSON, and the result is carried whole with no source. Nothing of the map is in this file.",
     "id": "moulinetteScene1",
     "type": "Scene",
     "pack": "graft-example-scenes",
     "folder": "Moulinette",
-    "source": "@moulinette/13648/json/scene/06-junkyard-empty.json",
+    "source": "@moulinette/43/scenes/downtown.json",
     "patch": {
-      "name": "The Junkyard (grafted)",
+      "name": "Downtown (grafted)",
       "navigation": true
     }
   },
   {
-    "_comment": "2. A media reference inside a patch, on an entry with no source of its own. The image is downloaded and the string is rewritten to wherever it landed.",
-    "id": "moulinetteMedia1",
+    "_comment": "2. A media reference inside a patch, on an entry with no source. The file is downloaded and the string is rewritten to wherever it landed. Object branch: losing background.src would drop the whole background.",
+    "id": "moulinetteVideo1",
     "type": "Scene",
     "pack": "graft-example-scenes",
     "folder": "Moulinette",
     "patch": {
-      "name": "Junkyard (background only)",
-      "background": { "src": "@moulinette/13648/images/maps/06-junkyard.webp" }
+      "name": "Steam (video background)",
+      "background": { "src": "@moulinette/16/steam-1.webm" }
     }
   },
   {
-    "_comment": "3. A pack nobody is subscribed to, on purpose. Should be skipped and named under a Moulinette heading in the build report, not silently missing.",
+    "_comment": "3. Audio, which reaches the array branch: a sound that loses its path is dropped from the list rather than left pointing at nothing. Both should resolve.",
+    "id": "moulinettePlay01",
+    "type": "Playlist",
+    "pack": "graft-example-playlists",
+    "folder": "Moulinette",
+    "patch": {
+      "name": "Grafted Ambience",
+      "sounds": [
+        { "_id": "moulinetteSnd01", "name": "Path of the Elders", "path": "@moulinette/212/Music/Exploration/PathOfTheElders.ogg" },
+        { "_id": "moulinetteSnd02", "name": "Airship", "path": "@moulinette/854/music/airship.ogg" }
+      ]
+    }
+  },
+  {
+    "_comment": "4. A pack nobody is subscribed to, on purpose. Skipped and named under a Moulinette heading rather than silently missing.",
     "id": "moulinetteAbsent",
     "type": "Scene",
     "pack": "graft-example-scenes",
-    "source": "@moulinette/99999999/json/scene/does-not-exist.json",
+    "source": "@moulinette/99999999/scenes/does-not-exist.json",
     "patch": { "name": "Should never build" }
   }
 ]
