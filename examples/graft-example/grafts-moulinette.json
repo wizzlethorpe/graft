@@ -1,0 +1,33 @@
+[
+  {
+    "_comment": "1. A document source. The scene JSON is fetched from the reader's own library, the patch is applied to it, and the result is carried whole. Nothing of the map ships in this file.",
+    "id": "moulinetteScene1",
+    "type": "Scene",
+    "pack": "graft-example-scenes",
+    "folder": "Moulinette",
+    "source": "@moulinette/13648/json/scene/06-junkyard-empty.json",
+    "patch": {
+      "name": "The Junkyard (grafted)",
+      "navigation": true
+    }
+  },
+  {
+    "_comment": "2. A media reference inside a patch, on an entry with no source of its own. The image is downloaded and the string is rewritten to wherever it landed.",
+    "id": "moulinetteMedia1",
+    "type": "Scene",
+    "pack": "graft-example-scenes",
+    "folder": "Moulinette",
+    "patch": {
+      "name": "Junkyard (background only)",
+      "background": { "src": "@moulinette/13648/images/maps/06-junkyard.webp" }
+    }
+  },
+  {
+    "_comment": "3. A pack nobody is subscribed to, on purpose. Should be skipped and named under a Moulinette heading in the build report, not silently missing.",
+    "id": "moulinetteAbsent",
+    "type": "Scene",
+    "pack": "graft-example-scenes",
+    "source": "@moulinette/99999999/json/scene/does-not-exist.json",
+    "patch": { "name": "Should never build" }
+  }
+]

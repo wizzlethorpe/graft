@@ -88,5 +88,13 @@
         "type": "module"
       }
     ]
+  },
+  "flags": {
+    "graft": {
+      "entries": [
+        "grafts.json",
+        "grafts-moulinette.json"
+      ]
+    }
   }
 }
