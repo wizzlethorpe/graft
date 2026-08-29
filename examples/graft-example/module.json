@@ -67,6 +67,21 @@
       }
     }
   ],
+  "packFolders": [
+    {
+      "name": "Graft Example",
+      "sorting": "m",
+      "color": "#4a6fa5",
+      "packs": [
+        "graft-example-actors",
+        "graft-example-items",
+        "graft-example-scenes",
+        "graft-example-adventures",
+        "graft-example-journals",
+        "graft-example-playlists"
+      ]
+    }
+  ],
   "relationships": {
     "requires": [
       {
