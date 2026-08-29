@@ -1,31 +1,37 @@
 [
   {
-    "_comment": "1. A document source. The scene JSON is fetched from the reader's own library, the patch is applied to that JSON, and the result is carried whole with no source. Nothing of the map is in this file.",
+    "_comment": "1. A document source. The scene JSON is fetched from the reader's own library, the patch applied to that JSON, and the result carried whole with no source. Nothing of the map is in this file.",
     "id": "moulinetteScene1",
     "type": "Scene",
     "pack": "graft-example-scenes",
     "folder": "Moulinette",
-    "source": "@moulinette/43/scenes/downtown.json",
+    "source": "@moulinette/12470/json/scene/03-brawler-s-barge.json",
     "patch": {
-      "name": "Downtown (grafted)",
+      "name": "Brawler's Barge (grafted)",
       "navigation": true
     }
   },
   {
-    "_comment": "2. A media reference inside a patch, on an entry with no source. The file is downloaded and the string is rewritten to wherever it landed. Object branch: losing background.src would drop the whole background.",
+    "_comment": "2. A media reference inside a patch, on an entry with no source. Object branch: a level that lost its background src would be dropped rather than left pointing at nothing. Note levels[] — v14 moved background off the Scene root.",
     "id": "moulinetteVideo1",
     "type": "Scene",
     "pack": "graft-example-scenes",
     "folder": "Moulinette",
     "patch": {
       "name": "Steam (video background)",
-      "background": {
-        "src": "@moulinette/16/steam-1.webm"
-      }
+      "width": 1920,
+      "height": 1080,
+      "levels": [
+        {
+          "_id": "defaultLevel0000",
+          "name": "Level",
+          "background": { "src": "@moulinette/16/steam-1.webm" }
+        }
+      ]
     }
   },
   {
-    "_comment": "3. Audio, which reaches the array branch: a sound that loses its path is dropped from the list rather than left pointing at nothing. Both should resolve.",
+    "_comment": "3. Audio, which reaches the array branch: a sound that loses its path is dropped from the list rather than left pointing at nothing.",
     "id": "moulinettePlay01",
     "type": "Playlist",
     "pack": "graft-example-playlists",
@@ -33,27 +39,26 @@
     "patch": {
       "name": "Grafted Ambience",
       "sounds": [
-        {
-          "_id": "moulinetteSnd010",
-          "name": "Path of the Elders",
-          "path": "@moulinette/212/Music/Exploration/PathOfTheElders.ogg"
-        },
-        {
-          "_id": "moulinetteSnd020",
-          "name": "Airship",
-          "path": "@moulinette/854/music/airship.ogg"
-        }
+        { "_id": "moulinetteSnd010", "name": "Path of the Elders", "path": "@moulinette/212/Music/Exploration/PathOfTheElders.ogg" },
+        { "_id": "moulinetteSnd020", "name": "Airship", "path": "@moulinette/854/music/airship.ogg" }
       ]
     }
   },
   {
-    "_comment": "4. A pack nobody is subscribed to, on purpose. Skipped and named under a Moulinette heading rather than silently missing.",
+    "_comment": "4. Schema drift, and a real one rather than an invented failure. This scene was authored when WALL_MOVEMENT_TYPES.NORMAL was 1; it is 20 now, so all eighty walls are rejected. Nothing graft can fix: the data is right for the Foundry it was written for. Kept because the report it produces is what a reader should see.",
+    "id": "moulinetteDrift1",
+    "type": "Scene",
+    "pack": "graft-example-scenes",
+    "folder": "Moulinette",
+    "source": "@moulinette/43/scenes/downtown.json",
+    "patch": { "name": "Downtown (drifted)" }
+  },
+  {
+    "_comment": "5. A pack nobody is subscribed to, on purpose. Skipped and named under a Moulinette heading rather than silently missing.",
     "id": "moulinetteAbsent",
     "type": "Scene",
     "pack": "graft-example-scenes",
     "source": "@moulinette/99999999/scenes/does-not-exist.json",
-    "patch": {
-      "name": "Should never build"
-    }
+    "patch": { "name": "Should never build" }
   }
 ]
