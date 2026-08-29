@@ -111,3 +111,19 @@ test("enqueueing something unregistered is reported, not ignored", async () => {
   ]);
   assert.match(skipped[0].reason, /not registered/);
 });
+
+test("a provider's warnings reach the report alongside its failures", async () => {
+  // A document that builds but not as intended is neither a success nor a
+  // failure, and only the provider knows: it strips `_stats` on the way past,
+  // so the builder cannot check the source generation for itself.
+  const { entries, skipped, warnings } = await runProviders([{ id: "a" }], [
+    { id: "moulinette", label: "Moulinette", hydrate: (e) => ({
+      entries: e,
+      warnings: [{ id: "a", reason: "authored for Foundry 13, and this is 14" }],
+    }) },
+  ]);
+  assert.deepEqual(entries.map((x) => x.id), ["a"]);
+  assert.deepEqual(skipped, []);
+  assert.deepEqual(warnings, [{ provider: "moulinette", id: "a",
+    reason: "authored for Foundry 13, and this is 14" }]);
+});

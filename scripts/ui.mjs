@@ -94,6 +94,7 @@ export async function buildAndReport(moduleId) {
     progress.end();
   }
   const allSkipped = [...prepared.skipped, ...skipped];
+  const allWarnings = [...prepared.warnings, ...warnings];
 
   // Building answers the prompt, so stop suppressing it: if entries go missing
   // later the reader should be asked again.
@@ -103,9 +104,11 @@ export async function buildAndReport(moduleId) {
   }
 
   // Logged as well as shown, because a console line can go into a bug report.
-  if (warnings.length > 0) {
-    console.group(`Graft | ${warnings.length} built with warnings`);
-    for (const { id, reason } of warnings) console.warn(`${id}: ${reason}`);
+  if (allWarnings.length > 0) {
+    console.group(`Graft | ${allWarnings.length} built with warnings`);
+    for (const { provider, id, reason } of allWarnings) {
+      console.warn(`${provider ? `[${provider}] ` : ""}${id}: ${reason}`);
+    }
     console.groupEnd();
   }
   if (allSkipped.length > 0) {
@@ -115,8 +118,8 @@ export async function buildAndReport(moduleId) {
     }
     console.groupEnd();
   }
-  await reportBuild(moduleId, built, allSkipped, warnings);
-  return { built, skipped: allSkipped, warnings };
+  await reportBuild(moduleId, built, allSkipped, allWarnings);
+  return { built, skipped: allSkipped, warnings: allWarnings };
 }
 
 /** Build failures first, then each provider's, each under its own heading. */

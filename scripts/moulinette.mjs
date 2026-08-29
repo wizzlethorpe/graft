@@ -17,7 +17,7 @@
 // graft's own, no ids to collide. Anywhere inside a patch it names a *file*,
 // which is downloaded and rewritten to a local path.
 
-import { applyPatch, stripVolatile } from "./patch.mjs";
+import { applyPatch, authoredGeneration, stripVolatile } from "./patch.mjs";
 import * as progress from "./progress.mjs";
 
 export const MOULINETTE_PREFIX = "@moulinette/";
@@ -174,6 +174,7 @@ async function hydrateEntries(entries) {
 
   const files = new Map();      // reference -> local path, or null
   const skipped = [];
+  const warnings = [];
   const out = [];
 
   // The provider knows its own unit of work better than the loop that called
@@ -216,6 +217,15 @@ async function hydrateEntries(entries) {
         skipped.push({ id: entry.id, reason: err.message });
         continue;
       }
+      // Checked here rather than at build time: this is the only place the
+      // document still has its `_stats`, and the entry it becomes carries no
+      // source for the builder to resolve and check for itself.
+      const authored = authoredGeneration(document);
+      const current = Number(game.release?.generation);
+      if (authored && current && authored < current) {
+        warnings.push({ id: entry.id,
+          reason: `authored for Foundry ${authored}, and this is ${current}: fields that moved since will not carry over` });
+      }
       // The patch applied to the fetched JSON, carried whole with no source.
       // `hydrateOne` already treats a missing source as "the patch is the
       // document", so this needs nothing new from the builder.
@@ -235,7 +245,7 @@ async function hydrateEntries(entries) {
     out.push(next);
   }
 
-  return { entries: out, skipped };
+  return { entries: out, skipped, warnings };
 }
 
 /** Cheap enough to run over every entry before touching the network. */

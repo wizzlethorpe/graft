@@ -263,6 +263,18 @@ export function folderPath(document) {
   return names.length > 0 ? names.join("/") : undefined;
 }
 
+/**
+ * The Foundry generation a document was authored for, or null.
+ *
+ * `_stats.coreVersion` is recorded on anything Foundry has written, and is the
+ * one piece of `_stats` that says something about the document rather than
+ * about this copy of it.
+ */
+export function authoredGeneration(data) {
+  const major = Number(String(data?._stats?.coreVersion ?? "").split(".")[0]);
+  return Number.isInteger(major) && major > 0 ? major : null;
+}
+
 /** `"/Magic Items//Bags/"` to `["Magic Items", "Bags"]`. */
 export function folderSegments(path) {
   return typeof path === "string" ? path.split("/").map((s) => s.trim()).filter(Boolean) : [];

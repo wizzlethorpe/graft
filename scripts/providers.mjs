@@ -43,9 +43,9 @@ export function registeredProviders() {
 /**
  * Run every provider over the entries, in order, until the queue empties.
  *
- * @returns `{ entries, skipped }`. `skipped` carries the provider id so the
- *   build report can section by it, and uses the same shape hydration does, so
- *   a reader sees one list rather than two.
+ * @returns `{ entries, skipped, warnings }`. Both lists carry the provider id
+ *   and use the same shape hydration does, so a reader sees one report rather
+ *   than three.
  */
 export async function runProviders(entries, providers = registeredProviders(), { maxRuns = DEFAULT_MAX_RUNS, onProvider } = {}) {
   const byId = new Map(providers.map((p) => [p.id, p]));
@@ -60,6 +60,7 @@ export async function runProviders(entries, providers = registeredProviders(), {
 
   let current = entries;
   const skipped = [];
+  const warnings = [];
 
   while (queue.length > 0) {
     const id = queue.shift();
@@ -91,9 +92,10 @@ export async function runProviders(entries, providers = registeredProviders(), {
       continue;
     }
 
-    const { entries: next, skipped: theirs, enqueue } = normalize(result);
+    const { entries: next, skipped: theirs, warnings: theirWarnings, enqueue } = normalize(result);
     if (next) current = next;
     for (const item of theirs) skipped.push({ provider: id, ...item });
+    for (const item of theirWarnings) warnings.push({ provider: id, ...item });
 
     for (const wanted of enqueue) {
       if (wanted === id) {
@@ -114,16 +116,19 @@ export async function runProviders(entries, providers = registeredProviders(), {
     }
   }
 
-  return { entries: current, skipped };
+  return { entries: current, skipped, warnings };
 }
 
-/** An array, or `{ entries, skipped, enqueue }`, or nothing. */
+/** An array, or `{ entries, skipped, warnings, enqueue }`, or nothing. */
 function normalize(result) {
-  if (Array.isArray(result)) return { entries: result, skipped: [], enqueue: [] };
-  if (!result || typeof result !== "object") return { entries: null, skipped: [], enqueue: [] };
+  const empty = { entries: null, skipped: [], warnings: [], enqueue: [] };
+  if (Array.isArray(result)) return { ...empty, entries: result };
+  if (!result || typeof result !== "object") return empty;
+  const list = (v) => (Array.isArray(v) ? v : []);
   return {
     entries: Array.isArray(result.entries) ? result.entries : null,
-    skipped: Array.isArray(result.skipped) ? result.skipped : [],
-    enqueue: Array.isArray(result.enqueue) ? result.enqueue : [],
+    skipped: list(result.skipped),
+    warnings: list(result.warnings),
+    enqueue: list(result.enqueue),
   };
 }

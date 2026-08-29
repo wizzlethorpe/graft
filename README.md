@@ -322,7 +322,9 @@ Hooks.on("graftRegisterProviders", ({ registerProvider }) => {
 });
 ```
 
-`hydrate` receives the merged array and returns an array, or `{ entries, skipped, enqueue }`, or nothing to leave things alone. `skipped` uses the same `{ id, reason }` shape the builder does, so provider failures reach the same report the reader already reads, sectioned by provider. Build as much as possible and report the rest.
+`hydrate` receives the merged array and returns an array, or `{ entries, skipped, warnings, enqueue }`, or nothing to leave things alone. `skipped` and `warnings` both use the `{ id, reason }` shape the builder does, so they reach the same report the reader already reads, sectioned by provider. Build as much as possible and report the rest.
+
+Warnings are for a document that builds but not as intended, and a provider often knows things the builder cannot. Moulinette strips `_stats` on the way past and hands back an entry with no source, so it is the only place that can tell whether the fetched document predates this Foundry.
 
 **Providers run from a queue, not to a fixed point.** "Is there work left" is answerable; "has anything changed" is not. A provider that emits syntax another provider handles names it in `enqueue`, because the one producing the syntax is the only one that knows it did. The queue deduplicates against what is *pending* rather than what has run, so a provider re-runs for input that did not exist when it first ran, which is the point. Two providers can still take turns forever, so each is capped and the report names whichever one would not settle.
 

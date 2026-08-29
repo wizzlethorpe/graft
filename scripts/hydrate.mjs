@@ -6,7 +6,7 @@
 // pack, writing a document.
 
 import {
-  applyPatch, diff, expandSources, folderPath, folderSegments,
+  applyPatch, authoredGeneration, diff, expandSources, folderPath, folderSegments,
   referenceSources, stripVolatile,
 } from "./patch.mjs";
 import {
@@ -51,18 +51,6 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
     refreshSidebar(touched);
   }
   return { built, skipped, warnings };
-}
-
-/**
- * The Foundry generation a document was authored for, or null.
- *
- * `_stats.coreVersion` is recorded on anything Foundry has written, and is the
- * one piece of `_stats` that says something about the document rather than
- * about this copy of it.
- */
-export function authoredGeneration(data) {
-  const major = Number(String(data?._stats?.coreVersion ?? "").split(".")[0]);
-  return Number.isInteger(major) && major > 0 ? major : null;
 }
 
 /**
