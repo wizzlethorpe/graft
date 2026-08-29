@@ -12,7 +12,7 @@ import {
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
 } from "./origin.mjs";
-import { planOrder, entryUuid } from "./plan.mjs";
+import { planOrder, entryUuid, sourcesOf } from "./plan.mjs";
 
 /**
  * Hydrate a module's entries into its own compendium packs.
@@ -119,16 +119,28 @@ async function resolveData(uuid) {
 async function hydrateOne(entry, moduleId, touched, warnings = []) {
   // No source means the entry carries its own content: the patch is the document.
   let base = {};
-  if (entry.source) {
-    base = await resolveData(entry.source);
-    if (!base) {
-      throw new Error(`source ${entry.source} did not resolve; is its module installed and enabled?`);
+  let source = null;
+  const candidates = sourcesOf(entry);
+  if (candidates.length > 0) {
+    // First that resolves. A list lets an author prefer better content without
+    // requiring it, so exhausting the list is the failure, not missing the
+    // first one.
+    for (const candidate of candidates) {
+      const data = await resolveData(candidate);
+      if (data) { base = data; source = candidate; break; }
+    }
+    if (!source) {
+      throw new Error(candidates.length === 1
+        ? `source ${candidates[0]} did not resolve; is its module installed and enabled?`
+        : `none of ${candidates.length} sources resolved: ${candidates.join(", ")}`);
     }
     warnings.push(...driftWarnings(entry.id, base, currentWorld()));
-    // Stripped on both sides, because the hash was recorded against a stripped
-    // source and `flags.graft` alone would otherwise differ.
-    const changed = driftFromSource(entry.id, entry.sourceHash, stripVolatile(base), entry.patch ?? {});
-    if (changed) warnings.push(changed);
+    // Only when one source was named. A hash is recorded against the document
+    // an author diffed, and a list does not say which of them that was.
+    if (candidates.length === 1) {
+      const changed = driftFromSource(entry.id, entry.sourceHash, stripVolatile(base), entry.patch ?? {});
+      if (changed) warnings.push(changed);
+    }
   }
 
   const collection = `${moduleId}.${entry.pack}`;
@@ -152,7 +164,7 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
   const data = applyPatch(base, patch);
   data._id = entry.id;
   data.folder = await ensureFolderPath(pack, entry.folder);
-  recordSource(data, entry.source);
+  recordSource(data, source);
   // What makes a document reclaimable later. Without it, pruning could not tell
   // graft's output from something an author put in the pack by hand.
   foundry.utils.setProperty(data, "flags.graft.built", true);

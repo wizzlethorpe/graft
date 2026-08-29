@@ -12,6 +12,20 @@
 
 const DOCUMENT_ID = /^[a-zA-Z0-9]{16}$/;
 
+/**
+ * The sources an entry names, in the order to try them.
+ *
+ * A list is a fallback: "the bestiary copy if that module is installed,
+ * otherwise the reference one". The first that resolves wins, so an author can
+ * target better content without requiring it.
+ */
+export function sourcesOf(entry) {
+  const source = entry?.source;
+  if (typeof source === "string") return source ? [source] : [];
+  if (Array.isArray(source)) return source.filter((s) => typeof s === "string" && s);
+  return [];
+}
+
 /** Foundry's own rule, from `isValidId`. */
 export function isDocumentId(id) {
   return typeof id === "string" && DOCUMENT_ID.test(id);
@@ -57,8 +71,12 @@ export function planOrder(entries, moduleId) {
       return;
     }
     chain.add(uuid);
-    const parent = byUuid.get(entry.source);
-    if (parent) visit(parent, chain);
+    // Any candidate naming a sibling is an edge: the parent has to be built
+    // before this entry, whichever of them ends up resolving.
+    for (const candidate of sourcesOf(entry)) {
+      const parent = byUuid.get(candidate);
+      if (parent) visit(parent, chain);
+    }
     chain.delete(uuid);
     if (!done.has(uuid)) {
       done.add(uuid);
@@ -84,8 +102,8 @@ function describeInvalid(entry) {
   }
   // Optional: an entry with no source is the author's own content, carried
   // whole, and belongs in the same pack as the things it borrows.
-  if ("source" in entry && (typeof entry.source !== "string" || !entry.source)) {
-    return "source, when given, must name the document this grafts onto";
+  if ("source" in entry && sourcesOf(entry).length === 0) {
+    return "source, when given, must name the document this grafts onto, or list documents to try in order";
   }
   if (typeof entry.type !== "string" || !entry.type) {
     return "type must name a document type, since it decides the UUID and the pack";

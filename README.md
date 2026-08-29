@@ -54,6 +54,16 @@ Ids mean nothing on another machine, but the shape you organised your work into 
 
 **`source`** is optional. Without one, the patch *is* the document, carried whole — a graft module is an adventure, not only a pile of derivatives. Present but empty is an error.
 
+It may also list fallbacks, tried in order:
+
+```yaml
+source:
+  - Compendium.premium-bestiary.actors.Actor.mmBandit000000   # if they own it
+  - Compendium.dnd5e.actors.Actor.srdBandit000000             # otherwise this
+```
+
+The first that resolves wins, so an author can prefer better content without requiring it. Exhausting the list is the failure, not missing the first entry. A listed source records no `sourceHash`, since a hash is taken against the document an author diffed and a list does not say which that was.
+
 ## Authoring
 
 **1. Make the module.** A directory in `Data/modules/` with a `module.json` declaring your packs, `requires` for graft and your system, and `recommends` for each source you graft onto. `examples/graft-example/` is a working one.

@@ -118,3 +118,30 @@ test("sourceless entries do not disturb the ordering of the rest", () => {
   assert.ok(ids.indexOf("banditCaptain001") < ids.indexOf("banditWarlord001"));
   assert.ok(ids.includes("myOwnCreation001"));
 });
+
+// ── a source that lists fallbacks ───────────────────────────────────────────
+
+test("a list of sources is valid, and any of them can be an edge", async () => {
+  // "The bestiary copy if that module is installed, otherwise the reference
+  // one." Whichever resolves, a candidate naming a sibling still has to be
+  // built first.
+  const { sourcesOf } = await import("../scripts/plan.mjs");
+  const base = entry("banditCaptain001", MM);
+  const derived = { id: "banditWarlord001", type: "Actor", pack: "my-actors", patch: {},
+                    source: ["Compendium.premium.actors.Actor.aaaaaaaaaaaaaaaa", entryUuid(base, MOD)] };
+
+  assert.deepEqual(sourcesOf(derived).length, 2);
+  const { order, invalid } = planOrder([derived, base], MOD);
+  assert.deepEqual(invalid, []);
+  assert.deepEqual(order.map((e) => e.id), ["banditCaptain001", "banditWarlord001"]);
+});
+
+test("an empty list is a source somebody meant to fill in", async () => {
+  const { sourcesOf } = await import("../scripts/plan.mjs");
+  assert.deepEqual(sourcesOf({ source: [] }), []);
+  assert.deepEqual(sourcesOf({ source: [42, ""] }), []);
+  assert.deepEqual(sourcesOf({}), [], "absent is not empty: it means the content is the author's");
+
+  const { invalid } = planOrder([{ id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", source: [] }], MOD);
+  assert.match(invalid[0].reason, /list documents to try in order/);
+});
