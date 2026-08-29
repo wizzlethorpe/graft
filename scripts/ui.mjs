@@ -17,16 +17,38 @@ export function graftModules() {
     && [...(m.relationships?.requires ?? [])].some((r) => r.id === MODULE_ID));
 }
 
-/** A module's entries, or [] when it ships none. */
+/**
+ * A module's entries, or [] when it ships none.
+ *
+ * `flags.graft.entries` says where to look, so a module with hundreds of
+ * entries across six packs can split them by pack, by chapter, by whatever
+ * suits it. Defaulting to `grafts.json` keeps every existing module working and
+ * keeps the simple case free of ceremony.
+ */
 export async function readGrafts(moduleId) {
-  try {
-    const res = await fetch(`modules/${moduleId}/grafts.json`);
-    if (!res.ok) return [];
-    const parsed = await res.json();
-    return Array.isArray(parsed) ? parsed : parsed.entries ?? [];
-  } catch {
-    return [];
+  const declared = game.modules.get(moduleId)?.flags?.graft?.entries;
+  const files = Array.isArray(declared) ? declared
+    : typeof declared === "string" ? [declared]
+    : null;
+
+  const entries = [];
+  for (const file of files ?? ["grafts.json"]) {
+    let parsed = null;
+    try {
+      const res = await fetch(`modules/${moduleId}/${file}`);
+      if (res.ok) parsed = await res.json();
+    } catch { /* reported below */ }
+
+    if (parsed === null) {
+      // A module that ships no grafts.json is not an error; a module that names
+      // a file it does not ship is, and would otherwise build nothing at all
+      // and say nothing about why.
+      if (files) console.warn(`Graft | ${moduleId} declares ${file}, which could not be read.`);
+      continue;
+    }
+    entries.push(...(Array.isArray(parsed) ? parsed : parsed.entries ?? []));
   }
+  return entries;
 }
 
 /**
@@ -154,12 +176,19 @@ export async function copyPackGrafts(pack) {
  * obvious message about a missing field.
  */
 export function withPack(entry) {
+  if (entry.pack) return entry;
+  const declared = [];
   const candidates = [];
   for (const module of graftModules()) {
+    const named = module.flags?.graft?.packs?.[entry.type];
+    if (named) declared.push(named);
     for (const pack of module.packs ?? []) {
       if (pack.type === entry.type) candidates.push(pack.name);
     }
   }
+  // A declaration is the answer when there is one, which is the case the
+  // inference cannot handle: two Actor packs and no way to tell which is meant.
+  if (declared.length === 1) return { ...entry, pack: declared[0] };
   return candidates.length === 1 ? { ...entry, pack: candidates[0] } : entry;
 }
 

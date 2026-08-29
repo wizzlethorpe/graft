@@ -2,25 +2,6 @@
 
 Short, and meant to stay short. Anything settled belongs in the README instead.
 
-## Declare grafts in `module.json`
-
-`readGrafts` fetches `modules/<id>/grafts.json`: hardcoded name, hardcoded
-location, exactly one file per module. A module with hundreds of entries across
-six packs cannot split them, and nothing in the manifest hints the file exists.
-
-```json
-"flags": { "graft": {
-  "entries": ["grafts/actors.json", "grafts/scenes.json"],
-  "packs": { "Actor": "my-main-actors" }
-} }
-```
-
-`entries` defaults to `["grafts.json"]` so nothing existing breaks. `packs`
-tells `withPack` which pack to prefer per type: an entry already names its own
-pack and always has, so multiple packs of one type build correctly today, but
-the export-time guess gives up when more than one candidate exists and every
-entry has to be hand-edited.
-
 ## Drift detection
 
 `_stats.coreVersion` and `systemVersion` record what a source looked like when a

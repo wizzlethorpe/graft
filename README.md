@@ -107,6 +107,23 @@ The second form addresses its source exactly as the outer entry does, and is rec
 
 An embedded source that does not resolve refuses the whole entry rather than building it without. A statblock quietly missing the magic item it was built around is worse than one that will not build and names the dependency.
 
+### Declaring where the entries are
+
+A module's entries are read from `grafts.json` beside its `module.json`. A larger one can split them, and say which pack an export should default to, in the manifest:
+
+```json
+"flags": {
+  "graft": {
+    "entries": ["grafts/actors.json", "grafts/scenes.json"],
+    "packs": { "Actor": "my-main-actors" }
+  }
+}
+```
+
+Both are optional. `entries` defaults to `grafts.json`, and a file that is named but cannot be read is a warning, where a missing default one simply means the module ships no grafts.
+
+`packs` is only about **Copy graft**. An entry has always named its own pack, so a module with two Actor packs builds correctly either way; what it fixes is the guess made at export time, which fills the field in for you when exactly one pack of that type exists and gives up when there are two, leaving every entry to be edited by hand.
+
 ### What is stripped, and what is not
 
 Before diffing, at every depth:
