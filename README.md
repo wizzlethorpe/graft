@@ -113,6 +113,8 @@ Before diffing, at every depth:
 
 - **`_stats` is removed.** Its timestamps and last-editor id differ between two identical documents, so leaving it in reports every embedded item as changed when none are.
 - **`folder` is removed at the root**, because an id names a folder in one world or pack. The path of names is carried on the entry instead, and rebuilt on the way in. It is *kept* at depth, which matters for Adventures: an Adventure carries its own `folders` array and its embedded documents point into it, and that array travels with them, so those ids stay meaningful on the other side.
+  Checking this by hand is misleading: `folder` on an embedded document is a `ForeignDocumentField`, so on an instantiated Adventure it resolves against `game.folders`, finds nothing, and reads as `null` even when the data is perfectly intact. Compare `adventure.toObject()` against the source instead.
+
 - **`ownership` is thinned, not removed.** The per-user entries are ids from one world and mean nothing elsewhere. `default` stays: it is the only way to say "players can see this" about a handout or a player-facing item, and that is an authorial decision rather than an accident of where the document was edited.
 
 Nothing else, and in particular **no other module's flags**. A patch will carry whatever Scene Packer or anything else stamped on a document. That is noise, but a third-party flag is inert on apply if the reader lacks the module and possibly wanted if they have it. Tidying it would be an editorial judgement about somebody else's data, and would commit this to maintaining a list of other people's module names.
