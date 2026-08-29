@@ -163,14 +163,23 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
   // scene with v13 tile coordinates read under v14 anchor semantics, shifting
   // every tile by half its own size, and with no `levels` for its background.
   //
-  // It validates too, and unlike `create` it throws: `create` reports a
-  // validation failure to the GM and carries on, so the reason would otherwise
-  // never reach the build report.
+  // It is not usable everywhere: `Adventure.fromImport` throws on an unmodified
+  // adventure taken straight out of a pack, before anything of ours touches it.
+  // So a failure falls back to constructing directly, which is what happened
+  // before migration existed. Unmigrated is worse than migrated; losing the
+  // entry over somebody else's bug is worse than both.
+  //
+  // Construction validates and throws, where `create` reports a validation
+  // failure to the GM and carries on, so the reason reaches the build report.
   let prepared;
   try {
     prepared = (await cls.fromImport(data)).toObject();
   } catch (err) {
-    throw new Error(summarizeValidation(err));
+    try {
+      prepared = new cls(data, { pack: collection }).toObject();
+    } catch (invalid) {
+      throw new Error(summarizeValidation(invalid));
+    }
   }
   prepared._id = entry.id;   // `fromImport` is free to assign its own
 

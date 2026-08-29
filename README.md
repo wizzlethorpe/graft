@@ -240,6 +240,8 @@ Everything is created through `Document.fromImport`, Foundry's own migration pat
 
 A source older than the running generation is still reported, since migration handles fields that moved but not one removed outright.
 
+Where `fromImport` itself fails — `Adventure` throws on an unmodified document straight out of a pack — the document is constructed directly instead. That is unmigrated, which is worse than migrated, but losing the entry over somebody else's bug is worse than both.
+
 ### `compendiumSource` is not provenance
 
 Foundry stamps it on anything imported from a pack, which is what lets **Copy graft** recover a diff without you typing a UUID. But it records where a document was last imported from *by whoever imported it*. Publishers often assemble in a private work module, and that id survives into published content, naming something nobody else can install.

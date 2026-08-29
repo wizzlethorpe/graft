@@ -16,5 +16,12 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 - Drift is reported, never refused, and a source with no recorded `sourceHash`
   is silent. Both deliberate: refusing would strand a reader over an upstream
   typo, and every `grafts.json` written before hashes existed has none.
+- `Adventure.fromImport` throws in Foundry 14 on an unmodified adventure from a
+  pack, so adventures are built without migration. Reported upstream-shaped, not
+  ours to fix; the fallback keeps them building.
+- The first prune after upgrading reclaims nothing. Only documents carrying
+  `flags.graft.built` are eligible, and that flag did not exist before 0.2.0, so
+  anything an earlier graft built is left alone. Correct and conservative: it
+  refuses to delete what it cannot prove it made.
 - `hydrate`, `ui` and `modules` have no test coverage. `exportDiff` now does,
   through a stub, and the same approach would cover the rest if it earns it.
