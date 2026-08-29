@@ -4,9 +4,10 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 
 ## Drift detection
 
-The cheap half is built: a source whose `_stats.coreVersion` predates this
-Foundry generation is built and warned about. What is not built is the same
-check against `systemVersion`, and anything finer than a generation number.
+A source whose `_stats.coreVersion` predates this Foundry generation is
+migrated through `Document.fromImport` and warned about. What is not built is
+the same check against `systemVersion`, and anything finer than a generation
+number.
 
 ## Known limits
 
@@ -16,10 +17,6 @@ check against `systemVersion`, and anything finer than a generation number.
   Foundry has real nullable fields.
 - Stale entries are not removed: deleting an entry from `grafts.json` leaves
   what it built behind.
-- A pre-14 Scene keeps a `background` that nothing reads: Foundry moves it into
-  `levels` during a world migration, not on document creation, and
-  `migrateData` does not do it either. Graft warns rather than rewriting it,
-  since editing somebody's data to suit ours is what this module does not do.
 - Creating a Scene in a pack can log "you may not update documents in the
   locked compendium" once, afterwards. Foundry generates a thumbnail for a
   scene that arrived without one and writes it back after the build has

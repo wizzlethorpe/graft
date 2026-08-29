@@ -76,14 +76,14 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
     if (!base) {
       throw new Error(`source ${entry.source} did not resolve; is its module installed and enabled?`);
     }
-    // Fields that moved between generations do not carry over, and the failure
-    // is not always loud: a pre-14 scene keeps a `background` nothing reads any
-    // more, and builds looking fine. Said before the build rather than after.
+    // Migration handles fields that moved, but not a field that was removed
+    // outright or a value that stopped being valid, so this is worth saying
+    // even though it is no longer the disaster it was.
     const authored = authoredGeneration(base);
     const current = Number(game.release?.generation);
     if (authored && current && authored < current) {
       warnings.push({ id: entry.id,
-        reason: `authored for Foundry ${authored}, and this is ${current}: fields that moved since will not carry over` });
+        reason: `authored for Foundry ${authored} and migrated to ${current}; worth checking it looks right` });
     }
   }
 
@@ -110,20 +110,28 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
   data.folder = await ensureFolderPath(pack, entry.folder);
   recordSource(data, entry.source);
 
+  const cls = getDocumentClass(entry.type);
+  // Foundry's own migration for data authored on an older generation, and what
+  // Moulinette uses for every document type it imports. Skipping it lands a v13
+  // scene with v13 tile coordinates read under v14 anchor semantics, shifting
+  // every tile by half its own size, and with no `levels` for its background.
+  //
+  // It validates too, and unlike `create` it throws: `create` reports a
+  // validation failure to the GM and carries on, so the reason would otherwise
+  // never reach the build report.
+  let prepared;
+  try {
+    prepared = (await cls.fromImport(data)).toObject();
+  } catch (err) {
+    throw new Error(summarizeValidation(err));
+  }
+  prepared._id = entry.id;   // `fromImport` is free to assign its own
+
   const existing = await pack.getDocument(entry.id);
   if (existing) {
-    await existing.update(data, { diff: false, recursive: false });
+    await existing.update(prepared, { diff: false, recursive: false });
   } else {
-    const cls = getDocumentClass(entry.type);
-    // Validated by constructing first, because `create` does not throw on a
-    // validation failure: it reports to the GM and carries on, so the reason
-    // would never reach the build report. Same validation, and this one throws.
-    try {
-      new cls(data, { pack: collection });
-    } catch (err) {
-      throw new Error(summarizeValidation(err));
-    }
-    await cls.create(data, { pack: collection, keepId: true, keepEmbeddedIds: true });
+    await cls.create(prepared, { pack: collection, keepId: true, keepEmbeddedIds: true });
     if (!await pack.getDocument(entry.id)) {
       throw new Error("Foundry rejected the document; see the console for the reason");
     }

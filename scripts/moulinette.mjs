@@ -224,7 +224,7 @@ async function hydrateEntries(entries) {
       const current = Number(game.release?.generation);
       if (authored && current && authored < current) {
         warnings.push({ id: entry.id,
-          reason: `authored for Foundry ${authored}, and this is ${current}: fields that moved since will not carry over` });
+          reason: `authored for Foundry ${authored} and migrated to ${current}; worth checking it looks right` });
       }
       // The patch applied to the fetched JSON, carried whole with no source.
       // `hydrateOne` already treats a missing source as "the patch is the

@@ -305,6 +305,12 @@ As an entry's `source` it names a **document**, which is fetched, patched, and r
 
 Nothing is redistributed. The reader's own subscriptions decide what they get, which is the same argument as referencing a compendium they own, extended to a cloud they have rights to.
 
+## Old documents are migrated
+
+Everything is created through `Document.fromImport`, which is Foundry's own migration path and what Moulinette uses for every document type it imports. Creating directly instead lands old data unchanged against the current schema, and the failure is quiet: a Foundry 13 scene arrives with v13 tile coordinates read under v14 anchor semantics, so every tile sits half its own size out of place, and its background never reaches the `levels` that replaced it.
+
+A source older than the running generation is still reported, since migration handles fields that moved but not one removed outright or a value that stopped being valid.
+
 ## Providers
 
 A provider rewrites entries before anything is built. Register one at the `graftRegisterProviders` hook, which fires at `ready` so a provider never has to care whether its module loaded first:
