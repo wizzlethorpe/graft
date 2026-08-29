@@ -304,17 +304,32 @@ export function addCopyFolderGrafts(html, menuItems) {
           "dataset:", el?.dataset ? { ...el.dataset } : el);
         return ui.notifications.warn("Graft could not identify that folder.");
       }
-      const docs = folderContents(folder);
+      const docs = await folderContents(folder);
       if (await confirmBulk(docs.length, folder.name)) await copyMany(docs, folder.name);
     },
   });
 }
 
-/** A folder's documents, and its subfolders'. */
-function folderContents(folder, into = []) {
-  for (const doc of folder.contents ?? []) into.push(doc);
-  for (const child of folder.children ?? []) folderContents(child.folder ?? child, into);
-  return into;
+/**
+ * A folder's documents, and its subfolders'.
+ *
+ * `getSubfolders(true)` rather than `children`, which holds tree nodes rather
+ * than Folders. Inside a compendium, `contents` is the pack index rather than
+ * documents, so those are loaded.
+ */
+async function folderContents(folder) {
+  const all = [folder, ...folder.getSubfolders(true)];
+  if (!folder.pack) return all.flatMap((f) => f.contents ?? []);
+
+  const pack = game.packs.get(folder.pack);
+  const docs = [];
+  for (const f of all) {
+    for (const entry of f.contents ?? []) {
+      const doc = await pack?.getDocument(entry._id ?? entry.id);
+      if (doc) docs.push(doc);
+    }
+  }
+  return docs;
 }
 
 /** Callbacks are handed the list element, jQuery-wrapped on some paths. */
