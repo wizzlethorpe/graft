@@ -290,3 +290,28 @@ A module's packs are locked by default, so each is unlocked for the write and pu
 `game.modules.get("graft").api` exposes the same things for scripting: `buildPacks(moduleId)`, `unbuilt(moduleId)`, `exportDiff(document)`.
 
 Run the tests with `node --test 'test/*.test.mjs'`.
+## Providers
+
+A provider rewrites entries before anything is built. Register one at the `graftRegisterProviders` hook, which fires at `ready` so a provider never has to care whether its module loaded first:
+
+```js
+Hooks.on("graftRegisterProviders", ({ registerProvider }) => {
+  registerProvider({
+    id: "moulinette",
+    label: "Moulinette",
+    async hydrate(entries) {
+      // Every entry the module declares, from every file it declares them in.
+      return { entries, skipped: [], enqueue: [] };
+    },
+  });
+});
+```
+
+`hydrate` receives the merged array and returns an array, or `{ entries, skipped, enqueue }`, or nothing to leave things alone. `skipped` uses the same `{ id, reason }` shape the builder does, so provider failures reach the same report the reader already reads, sectioned by provider. Build as much as possible and report the rest.
+
+**Providers run from a queue, not to a fixed point.** "Is there work left" is answerable; "has anything changed" is not. A provider that emits syntax another provider handles names it in `enqueue`, because the one producing the syntax is the only one that knows it did. The queue deduplicates against what is *pending* rather than what has run, so a provider re-runs for input that did not exist when it first ran, which is the point. Two providers can still take turns forever, so each is capped and the report names whichever one would not settle.
+
+`hydrate` should be idempotent, and a provider may not enqueue itself: the honest version of that is "I have not finished", which is something to do before returning.
+
+**The shape to aim for.** A provider does not need a pack of its own. Fetch what an entry names, apply its patch to that JSON, and return a sourceless entry carrying the result: `hydrateOne` treats a missing `source` as "the patch is the document", so there are no ids to collide and no compendium to own. Record where it came from in `flags.graft`, since a blank `source` otherwise loses the trail. Doing it this way also keeps the provider a plain array-to-array transform, which is testable without Foundry.
+

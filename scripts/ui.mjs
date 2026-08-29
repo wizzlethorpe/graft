@@ -6,6 +6,7 @@
 
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
+import { registeredProviders, runProviders } from "./providers.mjs";
 import { toYaml } from "./yaml.mjs";
 
 const MODULE_ID = "graft";
@@ -46,8 +47,9 @@ export async function promptForUnbuilt() {
       content: `<p><strong>${module.title}</strong> has `
         + `<strong>${missing.length}</strong> entr${missing.length === 1 ? "y" : "ies"} `
         + `that have not been built yet.</p>`
-        + `<p>Building fetches them from the compendiums you already have. Nothing is downloaded, `
-        + `and anything whose source is missing is skipped and named.</p>`,
+        + `<p>Building assembles them from the compendiums you already have, and anything whose `
+        + `source is missing is skipped and named.</p>`
+        + providerNotice(),
       yes: { label: "Build" },
       no: { label: "Not now" },
       modal: false,
@@ -72,9 +74,13 @@ export async function buildAndReport(moduleId) {
   // No count: this would be the number declared, and progress reports the
   // number that survived planning. The dialog gives both, accurately.
   ui.notifications.info(`Building grafts for ${moduleId}…`);
-  const { built, skipped } = await hydrate(moduleId, entries, {
+  // Providers rewrite entries before anything is built. Their failures use the
+  // same shape as build failures so the reader sees one report, not two.
+  const prepared = await runProviders(entries);
+  const { built, skipped } = await hydrate(moduleId, prepared.entries, {
     onProgress: (i, total, entry) => console.log(`Graft | ${i}/${total} ${entry.id}`),
   });
+  const allSkipped = [...prepared.skipped, ...skipped];
 
   // Building answers the prompt, so stop suppressing it: if entries go missing
   // later the reader should be asked again.
@@ -84,13 +90,36 @@ export async function buildAndReport(moduleId) {
   }
 
   // Logged as well as shown, because a console line can go into a bug report.
-  if (skipped.length > 0) {
-    console.group(`Graft | ${skipped.length} skipped`);
-    for (const { id, reason } of skipped) console.warn(`${id}: ${reason}`);
+  if (allSkipped.length > 0) {
+    console.group(`Graft | ${allSkipped.length} skipped`);
+    for (const { provider, id, reason } of allSkipped) {
+      console.warn(`${provider ? `[${provider}] ` : ""}${id}: ${reason}`);
+    }
     console.groupEnd();
   }
-  await reportBuild(moduleId, built, skipped);
-  return { built, skipped };
+  await reportBuild(moduleId, built, allSkipped);
+  return { built, skipped: allSkipped };
+}
+
+/** Build failures first, then each provider's, each under its own heading. */
+function groupByProvider(skipped) {
+  const labels = new Map(registeredProviders().map((p) => [p.id, p.label]));
+  const groups = new Map();
+  for (const item of skipped) {
+    const key = item.provider ? labels.get(item.provider) ?? item.provider : null;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  // Nulls first: a build failure is graft's own, and reads oddly after a
+  // section named for somebody else.
+  return [...groups].sort((a, b) => (a[0] === null ? -1 : b[0] === null ? 1 : 0));
+}
+
+/** Said only when there is something to say, so it stays worth reading. */
+function providerNotice() {
+  const names = registeredProviders().map((p) => p.label);
+  if (names.length === 0) return `<p>Nothing is downloaded.</p>`;
+  return `<p>${names.join(", ")} will also run, and may fetch content from outside this world.</p>`;
 }
 
 /**
@@ -107,11 +136,15 @@ async function reportBuild(moduleId, built, skipped) {
     + `.</p>`,
   ];
 
-  if (skipped.length > 0) {
-    const rows = skipped.map(({ id, reason }) =>
+  // Sectioned by whoever reported it. A provider failing to reach a service and
+  // an entry that was never valid want different responses from the reader, and
+  // one undifferentiated list hides which is which.
+  for (const [provider, items] of groupByProvider(skipped)) {
+    const rows = items.map(({ id, reason }) =>
       `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
       + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
-    parts.push(`<p><strong>Not built</strong></p><ul>${rows}</ul>`);
+    parts.push(`<p><strong>Not built${provider ? ` — ${foundry.utils.escapeHTML(provider)}` : ""}`
+      + `</strong></p><ul>${rows}</ul>`);
   }
 
   if (built.length > 0) {

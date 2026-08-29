@@ -5,6 +5,7 @@
 import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { readGrafts, unbuilt } from "./modules.mjs";
+import { registerProvider, registeredProviders } from "./providers.mjs";
 import {
   registerSettings, promptForUnbuilt, addPackControl, copyOne,
   buildAndReport, addCopyGraftContext, addCopyFolderGrafts, CONTEXT_TYPES,
@@ -16,13 +17,19 @@ Hooks.once("init", () => {
   registerSettings();
   game.modules.get(MODULE_ID).api = {
     hydrate, exportDiff, readGrafts, unbuilt, buildPacks: buildAndReport,
+    registerProvider, registeredProviders,
   };
 });
 
 // Offers to build anything an enabled graft module has not built yet. Once per
 // module, remembered, because a prompt on every world load is one people learn
 // to dismiss without reading.
-Hooks.once("ready", () => promptForUnbuilt());
+// Providers register here rather than at init, so they never have to care
+// whether their own module loaded before this one.
+Hooks.once("ready", async () => {
+  Hooks.callAll("graftRegisterProviders", { registerProvider });
+  await promptForUnbuilt();
+});
 
 // A Build control in the header of a graft module's own compendium windows,
 // which is where somebody looks when they wonder why a pack is empty.
