@@ -103,6 +103,11 @@ export async function buildAndReport(moduleId) {
   }
 
   // Logged as well as shown, because a console line can go into a bug report.
+  if (warnings.length > 0) {
+    console.group(`Graft | ${warnings.length} built with warnings`);
+    for (const { id, reason } of warnings) console.warn(`${id}: ${reason}`);
+    console.groupEnd();
+  }
   if (allSkipped.length > 0) {
     console.group(`Graft | ${allSkipped.length} skipped`);
     for (const { provider, id, reason } of allSkipped) {
