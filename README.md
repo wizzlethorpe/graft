@@ -240,7 +240,7 @@ Everything is created through `Document.fromImport`, Foundry's own migration pat
 
 A source older than the running generation is still reported, since migration handles fields that moved but not one removed outright.
 
-Where `fromImport` itself fails — `Adventure` throws on an unmodified document straight out of a pack — the document is constructed directly instead. That is unmigrated, which is worse than migrated, but losing the entry over somebody else's bug is worse than both.
+Foundry 14 has two bugs there, both worked around. `fromImport` throws on an unmodified `Adventure` straight out of a pack, so those are constructed directly instead: unmigrated is worse than migrated, but losing the entry over somebody else's bug is worse than both. And it empties every `SetField` it touches, so a tile's `occlusion.modes` of `[1]` returns as `[]` and a roof stops fading; the migrated result is repaired against its input, restoring only arrays that were non-empty and came back empty.
 
 ### `compendiumSource` is not provenance
 

@@ -24,9 +24,11 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 - Drift is reported, never refused, and a source with no recorded `sourceHash`
   is silent. Both deliberate: refusing would strand a reader over an upstream
   typo, and every `grafts.json` written before hashes existed has none.
-- `Adventure.fromImport` throws in Foundry 14 on an unmodified adventure from a
-  pack, so adventures are built without migration. Reported upstream-shaped, not
-  ours to fix; the fallback keeps them building.
+- Two Foundry 14 bugs in `Document.fromImport`, the documented migration path.
+  It throws on an unmodified Adventure taken straight from a pack, so adventures
+  build without migration via the fallback. And it empties every `SetField` it
+  touches, so the migrated result is repaired against its input. Neither is ours
+  to fix; both are worked around and both would hit anyone using `fromImport`.
 - The first prune after upgrading reclaims nothing. Only documents carrying
   `flags.graft.built` are eligible, and that flag did not exist before 0.2.0, so
   anything an earlier graft built is left alone. Correct and conservative: it
