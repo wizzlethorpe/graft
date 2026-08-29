@@ -104,14 +104,46 @@ async function hydrateOne(entry, moduleId, touched) {
   if (existing) {
     await existing.update(data, { diff: false, recursive: false });
   } else {
-    await getDocumentClass(entry.type).create(data, { pack: collection, keepId: true, keepEmbeddedIds: true });
-    // A settled promise is not proof: Foundry reports a validation failure to
-    // the GM and carries on, so a caller counting successes would be wrong.
+    const cls = getDocumentClass(entry.type);
+    // Validated by constructing first, because `create` does not throw on a
+    // validation failure: it reports to the GM and carries on, so the reason
+    // would never reach the build report. Same validation, and this one throws.
+    try {
+      new cls(data, { pack: collection });
+    } catch (err) {
+      throw new Error(summarizeValidation(err));
+    }
+    await cls.create(data, { pack: collection, keepId: true, keepEmbeddedIds: true });
     if (!await pack.getDocument(entry.id)) {
-      throw new Error("Foundry rejected the document; see the console for the validation error");
+      throw new Error("Foundry rejected the document; see the console for the reason");
     }
   }
   return entryUuid(entry, moduleId);
+}
+
+/**
+ * A validation failure in one line rather than eighty.
+ *
+ * Foundry reports one failure per element, so a scene whose walls were authored
+ * for an older schema produces the same message eighty times over. The useful
+ * content is the field, the reason, and how many, which is what a reader needs
+ * to decide whether it is their problem.
+ */
+export function summarizeValidation(err) {
+  const raw = String(err?.message ?? err);
+  const counts = new Map();
+  let field = null;
+  for (const line of raw.split("\n")) {
+    const text = line.trim();
+    if (!text) continue;
+    const named = /^([A-Za-z_][\w.]*): \w+#_validateRecursive$/.exec(text);
+    if (named) { field = named[1]; continue; }
+    if (/_validateRecursive$/.test(text)) continue;      // the root, and array indices
+    const key = field ? `${field}: ${text}` : text;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  if (counts.size === 0) return raw.slice(0, 200);
+  return [...counts].map(([k, n]) => (n > 1 ? `${k} (×${n})` : k)).join("; ");
 }
 
 /**

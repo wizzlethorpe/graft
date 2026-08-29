@@ -19,7 +19,9 @@
     "folder": "Moulinette",
     "patch": {
       "name": "Steam (video background)",
-      "background": { "src": "@moulinette/16/steam-1.webm" }
+      "background": {
+        "src": "@moulinette/16/steam-1.webm"
+      }
     }
   },
   {
@@ -31,8 +33,16 @@
     "patch": {
       "name": "Grafted Ambience",
       "sounds": [
-        { "_id": "moulinetteSnd01", "name": "Path of the Elders", "path": "@moulinette/212/Music/Exploration/PathOfTheElders.ogg" },
-        { "_id": "moulinetteSnd02", "name": "Airship", "path": "@moulinette/854/music/airship.ogg" }
+        {
+          "_id": "moulinetteSnd010",
+          "name": "Path of the Elders",
+          "path": "@moulinette/212/Music/Exploration/PathOfTheElders.ogg"
+        },
+        {
+          "_id": "moulinetteSnd020",
+          "name": "Airship",
+          "path": "@moulinette/854/music/airship.ogg"
+        }
       ]
     }
   },
@@ -42,6 +52,8 @@
     "type": "Scene",
     "pack": "graft-example-scenes",
     "source": "@moulinette/99999999/scenes/does-not-exist.json",
-    "patch": { "name": "Should never build" }
+    "patch": {
+      "name": "Should never build"
+    }
   }
 ]

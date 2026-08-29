@@ -443,3 +443,41 @@ test("our own flags do not travel, and other modules' still do", async () => {
   assert.ok(!("graft" in out.journal[0].flags), "at depth too");
   assert.deepEqual(out.journal[0].flags.other, { keep: 1 });
 });
+
+// ── reporting a validation failure ──────────────────────────────────────────
+
+test("eighty identical validation failures read as one line", async () => {
+  // A Moulinette scene authored when WALL_MOVEMENT_TYPES.NORMAL was 1 fails
+  // once per wall. The reader needs the field, the reason and the count, not
+  // eighty copies and an invitation to open the console.
+  const { summarizeValidation } = await import("../scripts/hydrate.mjs");
+  const message = [
+    "[Compendium.x.y.Scene.z] validation errors: SchemaField#_validateRecursive",
+    "  walls: EmbeddedCollectionField#_validateRecursive",
+    ...Array.from({ length: 80 }, (_, i) =>
+      `    ${i}: SchemaField#_validateRecursive\n      move: 1 is not a valid choice`),
+  ].join("\n");
+
+  assert.equal(summarizeValidation(new Error(message)),
+    "walls: move: 1 is not a valid choice (×80)");
+});
+
+test("distinct failures are all kept", async () => {
+  const { summarizeValidation } = await import("../scripts/hydrate.mjs");
+  const message = [
+    "[Compendium.x.y.Playlist.z] validation errors: SchemaField#_validateRecursive",
+    "  sounds: EmbeddedCollectionField#_validateRecursive",
+    "    0: SchemaField#_validateRecursive",
+    "      _id: must be a valid 16-character alphanumeric ID",
+    "    1: SchemaField#_validateRecursive",
+    "      path: may not be undefined",
+  ].join("\n");
+  const out = summarizeValidation(new Error(message));
+  assert.match(out, /_id: must be a valid 16-character/);
+  assert.match(out, /path: may not be undefined/);
+});
+
+test("an unrecognised error is passed through rather than lost", async () => {
+  const { summarizeValidation } = await import("../scripts/hydrate.mjs");
+  assert.equal(summarizeValidation(new Error("something else entirely")), "something else entirely");
+});
