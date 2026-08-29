@@ -1,5 +1,9 @@
 # Graft
 
+[![tests](https://github.com/wizzlethorpe/graft/actions/workflows/test.yml/badge.svg)](https://github.com/wizzlethorpe/graft/actions/workflows/test.yml)
+[![license](https://img.shields.io/github/license/wizzlethorpe/graft)](LICENSE)
+[![release](https://img.shields.io/github/v/release/wizzlethorpe/graft?display_name=tag&sort=semver)](https://github.com/wizzlethorpe/graft/releases/latest)
+
 Package your changes to somebody else's compendium content as a **diff**, and hydrate it on the reader's machine. The artifact carries pointers and patches, never the content.
 
 A graft joins your scion to somebody else's rootstock. The result grows as one plant, but you only supplied the shoot.
@@ -8,6 +12,12 @@ A graft joins your scion to somebody else's rootstock. The result grows as one p
 > **Your content is your responsibility.** Graft ships pointers and patches by design, but that is a design property, not a legal opinion. A patch can still reproduce protected material: a description rewritten in full, a stat block restated, a map's whole wall layout. Graft cannot tell the difference, and it does not check entitlement — it resolves whatever UUIDs an entry names against whatever the reader has installed.
 >
 > Check what your grafts contain before publishing, and honour the licences of what you build on.
+
+**Install:** paste this into Foundry's *Install Module* dialog.
+
+```
+https://github.com/wizzlethorpe/graft/releases/latest/download/module.json
+```
 
 **Status:** working prototype, exercised in a live world across Actors, Items, Scenes, Journals, Playlists and Adventures. Not on Foundry's package registry; the format may change.
 
@@ -127,7 +137,15 @@ Optional, in your `module.json`:
 }
 ```
 
-`entries` defaults to `grafts.json`; a declared file that cannot be read is a warning, a missing default one is not. `packs` only affects **Copy graft**, which otherwise guesses when your module has exactly one pack of that type and gives up when it has two.
+`entries` defaults to `grafts.json`; a declared file that cannot be read is a warning, a missing default one is not.
+
+A grafts file may be a bare array, or an object declaring the format it was written for:
+
+```json
+{ "format": 1, "entries": [ … ] }
+```
+
+Absent means 1. A file declaring a newer format is refused rather than half-read, since the fields it relies on would otherwise be ignored in silence. `packs` only affects **Copy graft**, which otherwise guesses when your module has exactly one pack of that type and gives up when it has two.
 
 ## Providers
 

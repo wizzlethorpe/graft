@@ -11,13 +11,22 @@ import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
 
 const MODULE_ID = "graft";
+
+/**
+ * Localised text.
+ *
+ * Only what a reader sees. The reasons attached to skipped and warned entries
+ * stay as they are: they name ids, UUIDs and package names, and translating the
+ * frame around a UUID helps nobody read it.
+ */
+const t = (key, data) => (data ? game.i18n.format(key, data) : game.i18n.localize(key));
 const SUPPRESSED = "suppressedPrompts";
 const BULK_CONFIRM_AT = 100;
 
 /** The setting the prompt remembers itself in. */
 export function registerSettings() {
   game.settings.register(MODULE_ID, SUPPRESSED, {
-    name: "Modules whose build prompt has been declined",
+    name: "GRAFT.SettingSuppressed",
     scope: "world",
     config: false,
     type: Array,
@@ -44,15 +53,10 @@ export async function promptForUnbuilt() {
     if (missing.length === 0) continue;
 
     const build = await foundry.applications.api.DialogV2.confirm({
-      window: { title: `Graft: ${module.title}` },
-      content: `<p><strong>${module.title}</strong> has `
-        + `<strong>${missing.length}</strong> entr${missing.length === 1 ? "y" : "ies"} `
-        + `that have not been built yet.</p>`
-        + `<p>Building assembles them from the compendiums you already have, and anything whose `
-        + `source is missing is skipped and named.</p>`
-        + providerNotice(),
-      yes: { label: "Build" },
-      no: { label: "Not now" },
+      window: { title: t("GRAFT.PromptTitle", { module: module.title }) },
+      content: t("GRAFT.PromptBody", { module: module.title, count: missing.length }) + providerNotice(),
+      yes: { label: t("GRAFT.PromptBuild") },
+      no: { label: t("GRAFT.PromptLater") },
       modal: false,
     }).catch(() => false);
 
@@ -68,24 +72,24 @@ export async function promptForUnbuilt() {
 export async function buildAndReport(moduleId) {
   const entries = await readGrafts(moduleId);
   if (entries.length === 0) {
-    ui.notifications.warn(`${moduleId} declares no graft entries.`);
+    ui.notifications.warn(t("GRAFT.NoEntries", { module: moduleId }));
     return null;
   }
 
   const title = game.modules.get(moduleId)?.title ?? moduleId;
   progress.begin(`Graft: ${title}`);
-  let prepared, built, skipped, warnings;
+  let prepared, built, skipped, warnings, removed;
   try {
     // Providers rewrite entries before anything is built. Their failures use
     // the same shape as build failures, so the reader sees one report.
     prepared = await runProviders(entries, undefined, {
       onProvider: (p) => progress.phase(p.label),
     });
-    ({ built, skipped, warnings } = await hydrate(moduleId, prepared.entries, {
+    ({ built, skipped, warnings, removed } = await hydrate(moduleId, prepared.entries, {
       // The total is only known once planning has dropped what it cannot
       // build, which is the first thing the callback is told.
       onProgress: (i, total, entry) => {
-        if (i === 1) progress.phase("Building", total);
+        if (i === 1) progress.phase(t("GRAFT.PhaseBuilding"), total);
         progress.step(entry.id);
         console.log(`Graft | ${i}/${total} ${entry.id}`);
       },
@@ -104,6 +108,11 @@ export async function buildAndReport(moduleId) {
   }
 
   // Logged as well as shown, because a console line can go into a bug report.
+  if (removed.length > 0) {
+    console.group(`Graft | ${removed.length} removed`);
+    for (const { id, name, pack } of removed) console.log(`${name} (${id}) from ${pack}`);
+    console.groupEnd();
+  }
   if (allWarnings.length > 0) {
     console.group(`Graft | ${allWarnings.length} built with warnings`);
     for (const { provider, id, reason } of allWarnings) {
@@ -118,8 +127,8 @@ export async function buildAndReport(moduleId) {
     }
     console.groupEnd();
   }
-  await reportBuild(moduleId, built, allSkipped, allWarnings);
-  return { built, skipped: allSkipped, warnings: allWarnings };
+  await reportBuild(moduleId, built, allSkipped, allWarnings, removed);
+  return { built, skipped: allSkipped, warnings: allWarnings, removed };
 }
 
 /** Build failures first, then each provider's, each under its own heading. */
@@ -139,8 +148,8 @@ function groupByProvider(skipped) {
 /** Said only when there is something to say, so it stays worth reading. */
 function providerNotice() {
   const names = registeredProviders().map((p) => p.label);
-  if (names.length === 0) return `<p>Nothing is downloaded.</p>`;
-  return `<p>${names.join(", ")} will also run, and may fetch content from outside this world.</p>`;
+  if (names.length === 0) return t("GRAFT.PromptNoDownload");
+  return t("GRAFT.PromptProviders", { providers: names.join(", ") });
 }
 
 /**
@@ -149,13 +158,22 @@ function providerNotice() {
  * The reasons are the part worth reading: a missing dependency and an invalid
  * entry want different responses, and only one is the reader's to fix.
  */
-async function reportBuild(moduleId, built, skipped, warnings = []) {
+async function reportBuild(moduleId, built, skipped, warnings = [], removed = []) {
   const title = game.modules.get(moduleId)?.title ?? moduleId;
   const parts = [
-    `<p><strong>${built.length}</strong> built`
-    + (skipped.length ? `, <strong>${skipped.length}</strong> not built` : "")
+    `<p>${t("GRAFT.ReportBuilt", { count: built.length })}`
+    + (skipped.length ? t("GRAFT.ReportNotBuilt", { count: skipped.length }) : "")
+    + (removed.length ? t("GRAFT.ReportRemoved", { count: removed.length }) : "")
     + `.</p>`,
   ];
+
+  if (removed.length > 0) {
+    // Named rather than counted: a document disappearing from somebody's pack
+    // should say what it was.
+    const rows = removed.map(({ name, pack }) =>
+      `<li>${foundry.utils.escapeHTML(name)} <span class="notes">${foundry.utils.escapeHTML(pack)}</span></li>`).join("");
+    parts.push(`<p><strong>${t("GRAFT.SectionRemoved")}</strong></p><ul>${rows}</ul>`);
+  }
 
   // Sectioned by whoever reported it. A provider failing to reach a service and
   // an entry that was never valid want different responses from the reader, and
@@ -164,8 +182,10 @@ async function reportBuild(moduleId, built, skipped, warnings = []) {
     const rows = items.map(({ id, reason }) =>
       `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
       + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
-    parts.push(`<p><strong>Not built${provider ? ` — ${foundry.utils.escapeHTML(provider)}` : ""}`
-      + `</strong></p><ul>${rows}</ul>`);
+    const heading = provider
+      ? t("GRAFT.SectionNotBuiltBy", { provider: foundry.utils.escapeHTML(provider) })
+      : t("GRAFT.SectionNotBuilt");
+    parts.push(`<p><strong>${heading}</strong></p><ul>${rows}</ul>`);
   }
 
   if (warnings.length > 0) {
@@ -174,7 +194,7 @@ async function reportBuild(moduleId, built, skipped, warnings = []) {
     const rows = warnings.map(({ id, reason }) =>
       `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
       + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
-    parts.push(`<p><strong>Built, with warnings</strong></p><ul>${rows}</ul>`);
+    parts.push(`<p><strong>${t("GRAFT.SectionWarnings")}</strong></p><ul>${rows}</ul>`);
   }
 
   if (built.length > 0) {
@@ -189,13 +209,13 @@ async function reportBuild(moduleId, built, skipped, warnings = []) {
       return `<li><a class="content-link" data-link draggable="true" data-uuid="${uuid}">`
         + `${foundry.utils.escapeHTML(name)}</a></li>`;
     }).join("");
-    parts.push(`<details><summary>${built.length} built</summary><ul>${rows}</ul></details>`);
+    parts.push(`<details><summary>${t("GRAFT.SectionSuccess", { count: built.length })}</summary><ul>${rows}</ul></details>`);
   }
 
   await foundry.applications.api.DialogV2.prompt({
     window: { title: `Graft: ${title}` },
     content: `<div style="max-height:24rem;overflow:auto">${parts.join("")}</div>`,
-    ok: { label: "Close" },
+    ok: { label: t("GRAFT.Close") },
     position: { width: 520 },
   }).catch(() => {});
 }
@@ -212,14 +232,14 @@ export async function copyOne(doc) {
     await game.clipboard.copyPlainText(text);
     ui.notifications.info(
       Object.keys(entry.patch).length > 0
-        ? `Copied a graft for ${doc.name}.`
-        : `${doc.name} is unchanged from its source, so the graft is empty.`,
+        ? t("GRAFT.Copied", { name: doc.name })
+        : t("GRAFT.CopiedUnchanged", { name: doc.name }),
     );
     console.log(`Graft | ${doc.name}\n${text}`);
     console.log(`Graft | as YAML, for a vault page:\n${toYaml(entry)}`);
     return entry;
   } catch (err) {
-    ui.notifications.error(`Could not build a graft: ${err.message}`);
+    ui.notifications.error(t("GRAFT.CopyFailed", { reason: err.message }));
     return null;
   }
 }
@@ -232,7 +252,7 @@ export async function copyOne(doc) {
  */
 export async function copyMany(docs, label) {
   if (docs.length === 0) {
-    ui.notifications.warn(`${label} has nothing to export.`);
+    ui.notifications.warn(t("GRAFT.NothingToExport", { label }));
     return null;
   }
   const entries = [];
@@ -249,10 +269,9 @@ export async function copyMany(docs, label) {
     for (const f of failed) console.warn(f);
     console.groupEnd();
   }
-  ui.notifications.info(
-    `Copied ${entries.length} graft(s) from ${label}`
-    + (failed.length ? `, ${failed.length} skipped. See the console.` : "."),
-  );
+  ui.notifications.info(failed.length
+    ? t("GRAFT.CopiedManySkipped", { count: entries.length, label, failed: failed.length })
+    : t("GRAFT.CopiedMany", { count: entries.length, label }));
   return entries;
 }
 
@@ -261,7 +280,7 @@ async function confirmBulk(count, label) {
   if (count <= BULK_CONFIRM_AT) return true;
   return foundry.applications.api.DialogV2.confirm({
     window: { title: "Graft" },
-    content: `<p>${label} holds <strong>${count}</strong> documents. Export a graft for every one?</p>`,
+    content: t("GRAFT.ConfirmBulk", { label, count }),
   }).catch(() => false);
 }
 
@@ -274,7 +293,7 @@ export function addPackControl(app, controls) {
   if (!graftModules().some((m) => m.id === moduleId)) return;
   controls.push({
     icon: "fa-solid fa-code-branch",
-    label: "Build grafts",
+    label: t("GRAFT.BuildControl"),
     action: "graftBuild",
     onClick: () => buildAndReport(moduleId),
   });
@@ -308,16 +327,16 @@ export const CONTEXT_TYPES = [
  */
 export function addCopyGraftContext(documentName, menuItems) {
   if (!game.user.isGM || !Array.isArray(menuItems)) return;
-  if (menuItems.some((i) => i?.name === "Copy graft")) return;
+  if (menuItems.some((i) => i?.name === t("GRAFT.CopyOne"))) return;
   menuItems.push({
-    name: "Copy graft",
+    name: t("GRAFT.CopyOne"),
     icon: '<i class="fa-solid fa-code-branch"></i>',
     callback: async (target) => {
       const el = elementOf(target);
       const id = el?.dataset?.documentId ?? el?.dataset?.entryId;
       const doc = id ? game.collections.get(documentName)?.get(id) : null;
       if (doc) await copyOne(doc);
-      else ui.notifications.warn("Graft could not identify that document.");
+      else ui.notifications.warn(t("GRAFT.NoDocument"));
     },
   });
 }
@@ -325,9 +344,9 @@ export function addCopyGraftContext(documentName, menuItems) {
 /** And Copy grafts on a folder, which is how people group work. */
 export function addCopyFolderGrafts(html, menuItems) {
   if (!game.user.isGM || !Array.isArray(menuItems)) return;
-  if (menuItems.some((i) => i?.name === "Copy grafts")) return;
+  if (menuItems.some((i) => i?.name === t("GRAFT.CopyMany"))) return;
   menuItems.push({
-    name: "Copy grafts",
+    name: t("GRAFT.CopyMany"),
     icon: '<i class="fa-solid fa-clipboard-list"></i>',
     callback: async (target) => {
       const el = elementOf(target);
@@ -336,14 +355,14 @@ export function addCopyFolderGrafts(html, menuItems) {
       // you build, the compendium is where graft puts things.
       if (folder && (folder.pack || folder.type === "Compendium")) {
         return ui.notifications.warn(
-          "Graft copies from the world, not from compendiums. Build in a world folder and copy there.");
+          t("GRAFT.WorldOnly"));
       }
       if (!folder) {
         // The dataset is logged because which attribute this version uses is
         // invisible from a notification.
         console.warn("Graft | could not identify a folder from", el,
           "dataset:", el?.dataset ? { ...el.dataset } : el);
-        return ui.notifications.warn("Graft could not identify that folder.");
+        return ui.notifications.warn(t("GRAFT.NoFolder"));
       }
       const docs = folderContents(folder);
       if (await confirmBulk(docs.length, folder.name)) await copyMany(docs, folder.name);

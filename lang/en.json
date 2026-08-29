@@ -1,0 +1,38 @@
+{
+  "GRAFT.BuildControl": "Build grafts",
+  "GRAFT.CopyOne": "Copy graft",
+  "GRAFT.CopyMany": "Copy grafts",
+
+  "GRAFT.PromptTitle": "Graft: {module}",
+  "GRAFT.PromptBody": "<p><strong>{module}</strong> has <strong>{count}</strong> unbuilt entries.</p><p>Building assembles them from the compendiums you already have. Anything whose source is missing is skipped and named.</p>",
+  "GRAFT.PromptNoDownload": "<p>Nothing is downloaded.</p>",
+  "GRAFT.PromptProviders": "<p>{providers} will also run, and may fetch content from outside this world.</p>",
+  "GRAFT.PromptBuild": "Build",
+  "GRAFT.PromptLater": "Not now",
+
+  "GRAFT.PhaseBuilding": "Building",
+  "GRAFT.NoEntries": "{module} declares no graft entries.",
+  "GRAFT.Close": "Close",
+
+  "GRAFT.ReportBuilt": "<strong>{count}</strong> built",
+  "GRAFT.ReportNotBuilt": ", <strong>{count}</strong> not built",
+  "GRAFT.ReportRemoved": ", <strong>{count}</strong> removed",
+  "GRAFT.SectionNotBuilt": "Not built",
+  "GRAFT.SectionNotBuiltBy": "Not built — {provider}",
+  "GRAFT.SectionWarnings": "Built, with warnings",
+  "GRAFT.SectionRemoved": "Removed, no longer declared",
+  "GRAFT.SectionSuccess": "{count} built",
+
+  "GRAFT.Copied": "Copied a graft for {name}.",
+  "GRAFT.CopiedUnchanged": "{name} is unchanged from its source, so the graft is empty.",
+  "GRAFT.CopiedMany": "Copied {count} graft(s) from {label}.",
+  "GRAFT.CopiedManySkipped": "Copied {count} graft(s) from {label}, {failed} skipped. See the console.",
+  "GRAFT.CopyFailed": "Could not build a graft: {reason}",
+  "GRAFT.NothingToExport": "{label} has nothing to export.",
+  "GRAFT.NoDocument": "Graft could not identify that document.",
+  "GRAFT.NoFolder": "Graft could not identify that folder.",
+  "GRAFT.WorldOnly": "Graft copies from the world, not from compendiums. Build in a world folder and copy there.",
+  "GRAFT.ConfirmBulk": "<p>{label} holds <strong>{count}</strong> documents. Export a graft for every one?</p>",
+
+  "GRAFT.SettingSuppressed": "Modules whose build prompt has been declined"
+}

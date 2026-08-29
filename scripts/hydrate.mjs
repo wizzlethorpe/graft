@@ -24,7 +24,7 @@ import { planOrder, entryUuid } from "./plan.mjs";
  * back as it was found: leaving one unlocked invites hand edits that the next
  * build overwrites.
  *
- * @returns `{ built, skipped, warnings }`, all reportable to the reader.
+ * @returns `{ built, skipped, warnings, removed }`, all reportable.
  */
 export async function hydrate(moduleId, entries, { onProgress } = {}) {
   const { order, invalid, cycles } = planOrder(entries, moduleId);
@@ -36,6 +36,7 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
   ];
 
   const touched = new Map();   // collection -> its whole prior config entry
+  let removed = [];
   try {
     for (const [i, entry] of order.entries()) {
       onProgress?.(i + 1, order.length, entry);
@@ -46,11 +47,58 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
         skipped.push({ id: entry.id, reason: err.message });
       }
     }
+    removed = await pruneStale(moduleId, entries, touched);
   } finally {
     await restoreLocks(touched);
     refreshSidebar(touched);
   }
-  return { built, skipped, warnings };
+  return { built, skipped, warnings, removed };
+}
+
+/**
+ * Delete what graft built for entries that no longer exist.
+ *
+ * Dropping an entry from `grafts.json` would otherwise leave what it built in
+ * the reader's pack for good, and a shipped update could never retract
+ * anything.
+ *
+ * Only documents graft built are eligible: `flags.graft.built` is written on
+ * every one, so a document an author added to the pack by hand is never
+ * touched. Anything unbuildable this run is left alone too, since a reader
+ * missing a dependency should not have working content deleted.
+ */
+async function pruneStale(moduleId, entries, touched) {
+  const wanted = new Map();
+  for (const entry of entries) {
+    if (!entry?.pack || !entry?.id) continue;
+    if (!wanted.has(entry.pack)) wanted.set(entry.pack, new Set());
+    wanted.get(entry.pack).add(entry.id);
+  }
+
+  const removed = [];
+  for (const [name, ids] of wanted) {
+    const pack = game.packs.get(`${moduleId}.${name}`);
+    if (!pack) continue;
+    let index;
+    try {
+      index = await pack.getIndex({ fields: ["flags.graft.built"] });
+    } catch {
+      continue;                             // an index we cannot read is not one to delete from
+    }
+    const stale = index.filter((e) => e?.flags?.graft?.built && !ids.has(e._id));
+    if (stale.length === 0) continue;
+
+    await unlock(pack, touched);
+    for (const doc of stale) {
+      try {
+        await pack.getDocument(doc._id).then((d) => d?.delete());
+        removed.push({ id: doc._id, name: doc.name ?? doc._id, pack: name });
+      } catch (err) {
+        console.warn(`Graft | could not remove stale ${doc._id} from ${pack.collection}:`, err);
+      }
+    }
+  }
+  return removed;
 }
 
 /**
@@ -105,6 +153,9 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
   data._id = entry.id;
   data.folder = await ensureFolderPath(pack, entry.folder);
   recordSource(data, entry.source);
+  // What makes a document reclaimable later. Without it, pruning could not tell
+  // graft's output from something an author put in the pack by hand.
+  foundry.utils.setProperty(data, "flags.graft.built", true);
 
   const cls = getDocumentClass(entry.type);
   // Foundry's own migration for data authored on an older generation, and what

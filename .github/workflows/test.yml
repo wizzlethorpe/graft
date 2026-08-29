@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run tests
+        run: node --test 'test/*.test.mjs'
+      - name: Check the manifest parses and matches the module id
+        run: |
+          jq -e '.id == "graft" and (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' module.json
+          jq -e '.languages[0].path == "lang/en.json"' module.json
+          jq -e . lang/en.json > /dev/null
+      - name: Check every localisation key used is defined
+        run: |
+          node -e '
+            const fs = require("fs");
+            const lang = JSON.parse(fs.readFileSync("lang/en.json", "utf8"));
+            const src = fs.readdirSync("scripts").map(f => fs.readFileSync("scripts/" + f, "utf8")).join("");
+            const used = [...src.matchAll(/"(GRAFT\.[A-Za-z]+)"/g)].map(m => m[1]);
+            const missing = [...new Set(used)].filter(k => !(k in lang));
+            if (missing.length) { console.error("undefined keys:", missing); process.exit(1); }
+            console.log(`${new Set(used).size} keys, all defined`);
+          '

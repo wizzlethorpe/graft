@@ -5,6 +5,16 @@
 
 const MODULE_ID = "graft";
 
+/**
+ * The entry format this version understands.
+ *
+ * A file may declare `"format": <n>`. Every change so far has been additive, so
+ * an older file reads fine and an absent version means 1. A file declaring a
+ * newer one is refused rather than half-read: the fields it relies on would be
+ * silently ignored, which is worse than saying the module needs a newer graft.
+ */
+const FORMAT = 1;
+
 /** Enabled modules that require graft, which is the convention for using it. */
 export function graftModules() {
   return game.modules.filter((m) => m.active
@@ -35,6 +45,11 @@ export async function readGrafts(moduleId) {
 
     if (parsed === null) {
       if (files) console.warn(`Graft | ${moduleId} declares ${file}, which could not be read.`);
+      continue;
+    }
+    const format = Array.isArray(parsed) ? FORMAT : Number(parsed.format ?? FORMAT);
+    if (format > FORMAT) {
+      console.warn(`Graft | ${moduleId}/${file} is format ${format}; this graft reads ${FORMAT}. Update graft.`);
       continue;
     }
     entries.push(...(Array.isArray(parsed) ? parsed : parsed.entries ?? []));
