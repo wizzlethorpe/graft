@@ -34,7 +34,7 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
     ...cycles.map((loop) => ({ id: loop[0], reason: `grafts onto itself through ${loop.length - 1} other entries` })),
   ];
 
-  const touched = new Map();   // collection -> the locked state we found it in
+  const touched = new Map();   // collection -> its whole prior config entry
   try {
     for (const [i, entry] of order.entries()) {
       onProgress?.(i + 1, order.length, entry);
@@ -188,17 +188,37 @@ async function ensureFolderPath(pack, path) {
   return parent;
 }
 
+const PACK_CONFIG = "compendiumConfiguration";
+
+/**
+ * Unlock a pack for writing, remembering its whole configuration entry.
+ *
+ * The entry, not just `locked`. `configure` writes the pack's full current
+ * state, so unlocking a pack that had no entry creates one containing
+ * `folder: null`, and an explicit null in world config beats the `packFolders`
+ * declared in a manifest. Building a module once would permanently unfile its
+ * own packs.
+ */
 async function unlock(pack, touched) {
   if (touched.has(pack.collection)) return;
-  touched.set(pack.collection, pack.locked);
+  const config = game.settings.get("core", PACK_CONFIG) ?? {};
+  const prior = config[pack.collection];
+  touched.set(pack.collection, prior ? { ...prior } : null);
   if (pack.locked) await pack.configure({ locked: false });
 }
 
+/** Put every entry back exactly as it was found, including not existing. */
 async function restoreLocks(touched) {
-  for (const [collection, wasLocked] of touched) {
-    if (!wasLocked) continue;
-    try { await game.packs.get(collection)?.configure({ locked: true }); }
-    catch (err) { console.warn(`Graft | could not re-lock ${collection}:`, err); }
+  if (touched.size === 0) return;
+  try {
+    const config = { ...game.settings.get("core", PACK_CONFIG) };
+    for (const [collection, prior] of touched) {
+      if (prior) config[collection] = prior;
+      else delete config[collection];
+    }
+    await game.settings.set("core", PACK_CONFIG, config);
+  } catch (err) {
+    console.warn("Graft | could not restore pack configuration:", err);
   }
 }
 
