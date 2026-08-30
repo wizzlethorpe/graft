@@ -161,7 +161,8 @@ export function moulinetteProvider() {
 async function hydrateEntries(entries) {
   // Only the entries this provider has anything to do with. Counting all of
   // them would report fourteen unrelated grafts as Moulinette work.
-  const mine = new Set(entries.filter((e) => isMoulinetteRef(e?.source) || mentionsRef(e?.patch)));
+  const listed = (e) => Array.isArray(e?.source) && e.source.some(isMoulinetteRef);
+  const mine = new Set(entries.filter((e) => isMoulinetteRef(e?.source) || listed(e) || mentionsRef(e?.patch)));
   if (mine.size === 0) return null;
 
   const index = await loadIndex();
@@ -171,7 +172,7 @@ async function hydrateEntries(entries) {
     throw new Error(index.error);
   }
 
-  const files = new Map();      // reference -> local path, or null
+  const files = new Map();      // reference -> { path, problem }
   const skipped = [];
   const warnings = [];
   const out = [];
@@ -184,23 +185,29 @@ async function hydrateEntries(entries) {
     progress.step(entry.id);
     const problems = [];
     const resolve = async (ref) => {
-      if (files.has(ref)) return files.get(ref);
-      let path = null;
-      const parsed = parseRef(ref);
-      if (!parsed) problems.push(`malformed reference ${ref}`);
-      else {
-        try {
-          // A download takes seconds and is invisible from the entry loop.
-          progress.note(parsed.file.split("/").pop());
-          path = await downloadMedia(parsed, index);
+      if (!files.has(ref)) {
+        const parsed = parseRef(ref);
+        let outcome = { path: null, problem: `malformed reference ${ref}` };
+        if (parsed) {
+          try {
+            progress.note(parsed.file.split("/").pop());
+            outcome = { path: await downloadMedia(parsed, index), problem: null };
+          } catch (err) {
+            outcome = { path: null, problem: err.message };
+          }
         }
-        catch (err) { problems.push(err.message); }
+        files.set(ref, outcome);
       }
-      files.set(ref, path);
+      const { path, problem } = files.get(ref);
+      if (problem) problems.push(problem);
       return path;
     };
 
     let next = entry;
+    if (listed(entry)) {
+      skipped.push({ id: entry.id, reason: "a Moulinette source cannot be one of a fallback list; give it alone" });
+      continue;
+    }
     if (isMoulinetteRef(entry.source)) {
       const parsed = parseRef(entry.source);
       if (!parsed) {

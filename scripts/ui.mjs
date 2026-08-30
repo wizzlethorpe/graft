@@ -86,6 +86,9 @@ export async function buildAndReport(moduleId) {
       onProvider: (p) => progress.phase(p.label),
     });
     ({ built, skipped, warnings, removed } = await hydrate(moduleId, prepared.entries, {
+      // A provider that skipped an entry drops it from its output; the entry
+      // still exists, and what was built for it last time is not stale.
+      declared: entries,
       // The total is only known once planning has dropped what it cannot
       // build, which is the first thing the callback is told.
       onProgress: (i, total, entry) => {

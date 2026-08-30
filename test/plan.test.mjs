@@ -145,3 +145,23 @@ test("an empty list is a source somebody meant to fill in", async () => {
   const { invalid } = planOrder([{ id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", source: [] }], MOD);
   assert.match(invalid[0].reason, /list documents to try in order/);
 });
+
+test("two entries sharing an id in one pack are reported, not silently collapsed", () => {
+  const a = { id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", patch: { name: "first" } };
+  const b = { id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", patch: { name: "second" } };
+  const { order, invalid } = planOrder([a, b], MOD);
+  assert.equal(order.length, 1);
+  assert.equal(invalid.length, 1);
+  assert.match(invalid[0].reason, /duplicates/);
+});
+
+test("a cycle is reported as the loop, not the path that led into it", () => {
+  // A → B → C → B: A is not part of the loop and must still build.
+  const uuid = (id) => `Compendium.${MOD}.p.Actor.${id}`;
+  const a = { id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", source: uuid("bbbbbbbbbbbbbbbb"), patch: {} };
+  const b = { id: "bbbbbbbbbbbbbbbb", type: "Actor", pack: "p", source: uuid("cccccccccccccccc"), patch: {} };
+  const c = { id: "cccccccccccccccc", type: "Actor", pack: "p", source: uuid("bbbbbbbbbbbbbbbb"), patch: {} };
+  const { order, cycles } = planOrder([a, b, c], MOD);
+  assert.deepEqual(cycles, [[uuid("bbbbbbbbbbbbbbbb"), uuid("cccccccccccccccc"), uuid("bbbbbbbbbbbbbbbb")]]);
+  assert.deepEqual(order.map((e) => e.id), ["aaaaaaaaaaaaaaaa"]);
+});

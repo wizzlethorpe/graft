@@ -26,13 +26,13 @@ import { planOrder, entryUuid, sourcesOf } from "./plan.mjs";
  *
  * @returns `{ built, skipped, warnings, removed }`, all reportable.
  */
-export async function hydrate(moduleId, entries, { onProgress } = {}) {
+export async function hydrate(moduleId, entries, { onProgress, declared = entries } = {}) {
   const { order, invalid, cycles } = planOrder(entries, moduleId);
   const built = [];
   const warnings = [];
   const skipped = [
     ...invalid.map(({ entry, reason }) => ({ id: entry?.id ?? "(no id)", reason })),
-    ...cycles.map((loop) => ({ id: loop[0], reason: `grafts onto itself through ${loop.length - 1} other entries` })),
+    ...cycles.map((loop) => ({ id: loop[0].split(".").pop(), reason: `grafts onto itself through ${loop.length - 2} other entries` })),
   ];
 
   const touched = new Map();   // collection -> its whole prior config entry
@@ -47,7 +47,7 @@ export async function hydrate(moduleId, entries, { onProgress } = {}) {
         skipped.push({ id: entry.id, reason: err.message });
       }
     }
-    removed = await pruneStale(moduleId, entries, touched);
+    removed = await pruneStale(moduleId, [...declared, ...entries], touched);
   } finally {
     await restoreLocks(touched);
     refreshSidebar(touched);
@@ -91,7 +91,9 @@ async function pruneStale(moduleId, entries, touched) {
     await unlock(pack, touched);
     for (const doc of stale) {
       try {
-        await pack.getDocument(doc._id).then((d) => d?.delete());
+        const d = await pack.getDocument(doc._id);
+        if (!d) continue;
+        await d.delete();
         removed.push({ id: doc._id, name: doc.name ?? doc._id, pack: name });
       } catch (err) {
         console.warn(`Graft | could not remove stale ${doc._id} from ${pack.collection}:`, err);
@@ -193,10 +195,12 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
         inner._id = doc._id;   // `fromImport` is free to assign its own
         return inner;
       });
+      prepared = new cls(migrated, { pack: collection }).toObject();
+      // After construction: if it throws, the fallback below builds the whole
+      // thing unmigrated and these would claim otherwise.
       for (const f of failures) {
         warnings.push({ id: `${entry.id}/${f._id}`, reason: `${f.field} ${f._id} could not be migrated (${f.message}); built as authored` });
       }
-      prepared = new cls(migrated, { pack: collection }).toObject();
     } else {
       prepared = (await cls.fromImport(data)).toObject();
     }

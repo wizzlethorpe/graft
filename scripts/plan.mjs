@@ -56,7 +56,13 @@ export function planOrder(entries, moduleId) {
   }
 
   // uuid -> entry, so a source naming a sibling is recognisable as an edge.
-  const byUuid = new Map(usable.map((e) => [entryUuid(e, moduleId), e]));
+  // Two entries with one uuid would silently collapse to whichever came last.
+  const byUuid = new Map();
+  for (const entry of usable) {
+    const uuid = entryUuid(entry, moduleId);
+    if (byUuid.has(uuid)) invalid.push({ entry, reason: `duplicates another entry's id in pack "${entry.pack}"` });
+    else byUuid.set(uuid, entry);
+  }
 
   const order = [];
   const done = new Set();
@@ -66,8 +72,8 @@ export function planOrder(entries, moduleId) {
     const uuid = entryUuid(entry, moduleId);
     if (done.has(uuid)) return;
     if (chain.has(uuid)) {
-      // The loop itself, since the useful thing to print is which entries form it.
-      cycles.push([...chain, uuid]);
+      const seq = [...chain];
+      cycles.push([...seq.slice(seq.indexOf(uuid)), uuid]);   // the loop, not the path into it
       return;
     }
     chain.add(uuid);
