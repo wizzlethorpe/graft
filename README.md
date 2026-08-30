@@ -4,14 +4,7 @@
 [![license](https://img.shields.io/github/license/wizzlethorpe/graft)](LICENSE)
 [![release](https://img.shields.io/github/v/release/wizzlethorpe/graft?display_name=tag&sort=semver)](https://github.com/wizzlethorpe/graft/releases/latest)
 
-Package your changes to somebody else's compendium content as a **diff**, and hydrate it on the reader's machine. The artifact carries pointers and patches, never the content.
-
-A graft joins your scion to somebody else's rootstock. The result grows as one plant, but you only supplied the shoot.
-
-> [!IMPORTANT]
-> **Your content is your responsibility.** Graft ships pointers and patches by design, but that is a design property, not a legal opinion. A patch can still reproduce protected material: a description rewritten in full, a stat block restated, a map's whole wall layout. Graft cannot tell the difference, and it does not check entitlement — it resolves whatever UUIDs an entry names against whatever the reader has installed.
->
-> Check what your grafts contain before publishing, and honour the licences of what you build on.
+Graft packages your changes to somebody else's compendium content as a **diff** and rebuilds the result on the reader's machine. A graft module ships pointers and patches, not the content it builds on.
 
 **Install:** paste this into Foundry's *Install Module* dialog.
 
@@ -20,6 +13,13 @@ https://github.com/wizzlethorpe/graft/releases/latest/download/module.json
 ```
 
 **Status:** working prototype, exercised in a live world across Actors, Items, Scenes, Journals, Playlists and Adventures. Not on Foundry's package registry; the format may change.
+
+> [!IMPORTANT]
+> **Your content is your responsibility.** A patch can still reproduce protected material: a description rewritten in full, a stat block restated, a map's whole wall layout. Graft cannot tell the difference and does not check entitlement; it resolves whatever UUIDs an entry names against whatever the reader has installed.
+>
+> Check what your grafts contain before publishing, and honour the licences of what you build on.
+
+The name comes from horticulture: a graft joins a shoot (the scion) to another plant's roots (the rootstock).
 
 ---
 
@@ -42,7 +42,7 @@ patch:
       system: { damage: "2d8" }
 ```
 
-Hydration resolves the source, applies the patch, and creates the result under your id in your pack. An unresolvable source skips that entry and names it; everything else still builds.
+Building resolves the source, applies the patch, and creates the result under your id in your pack. If a source cannot be resolved, that entry is skipped and listed in the report; every other entry still builds.
 
 **`folder`** is optional and is a path of names, not an id:
 
@@ -50,11 +50,11 @@ Hydration resolves the source, applies the patch, and creates the result under y
 folder: Magic Items/Bags
 ```
 
-Ids mean nothing on another machine, but the shape you organised your work into is worth keeping. Folders are created on the way in, matched by name and parent, so renaming one by hand survives the next build.
+Folder ids do not survive to another machine, but the folder structure does. Folders are created during the build and matched by name and parent, so renaming one by hand survives the next build.
 
-**`source`** is optional. Without one, the patch *is* the document, carried whole — a graft module is an adventure, not only a pile of derivatives. Present but empty is an error.
+**`source`** is optional. Without one, the patch is the whole document, so a graft module can also ship original content. A `source` that is present but empty is an error.
 
-It may also list fallbacks, tried in order:
+`source` may also be a list of fallbacks, tried in order:
 
 ```yaml
 source:
@@ -62,50 +62,50 @@ source:
   - Compendium.dnd5e.actors.Actor.srdBandit000000             # otherwise this
 ```
 
-The first that resolves wins, so an author can prefer better content without requiring it. Exhausting the list is the failure, not missing the first entry. A listed source records no `sourceHash`, since a hash is taken against the document an author diffed and a list does not say which that was.
+The first source that resolves is used, so an author can prefer better content without requiring it. The entry fails only if none of them resolve. A list source records no `sourceHash`, because a hash is taken against the specific document the author diffed and a list does not say which one that was.
 
 ## Authoring
 
 **1. Make the module.** A directory in `Data/modules/` with a `module.json` declaring your packs, `requires` for graft and your system, and `recommends` for each source you graft onto. `examples/graft-example/` is a working one.
 
-**2. Restart the Foundry server.** Manifests are read at startup. A browser reload is not enough; the symptom is a build saying your module declares no such pack.
+**2. Restart the Foundry server.** Manifests are read at startup. A browser reload is not enough; the symptom is a build error saying your module declares no such pack.
 
-**3. Build in your world, the ordinary way.** Import a monster and edit it, drag items onto it, make the things that are yours. Nothing here is graft-specific.
+**3. Build in your world, the ordinary way.** Import a monster and edit it, drag items onto it, create your own documents. Nothing in this step is graft-specific.
 
-**4. Take the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to take everything in it and its subfolders. The sheet header has the same control for something already open. Paste into `grafts.json` beside your `module.json`.
+**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Paste the result into `grafts.json` beside your `module.json`.
 
-**5. Build**, from the prompt on load or **Build grafts** in your pack's window header, and read the report.
+**5. Build**, from the prompt on world load or from **Build grafts** in your pack's window header, and read the report.
 
-**6. Test what a reader without your sources gets.** Disable a module you graft onto and build again. Those entries should skip and name themselves while everything else builds.
+**6. Test what a reader without your sources gets.** Disable a module you graft onto and build again. The report should list those entries as skipped and everything else should build.
 
 > [!WARNING]
-> **Do not distribute the `packs/` directory.** Building writes the *resolved* documents into your packs — descriptions, stat blocks, maps and all. Publishing the module directory after testing ships everything this format exists to avoid.
+> **Do not distribute the `packs/` directory.** Building writes the resolved documents into your packs, including descriptions, stat blocks and maps. Publishing the module directory after a test build ships everything this format exists to avoid.
 >
 > A graft module is `module.json`, `grafts.json`, and whatever art and code are yours. Add `packs/` to `.gitignore`.
 
 ### Copying runs one way
 
-**Copy graft** works in the world, not from compendiums. The world is where you build; a compendium is where graft puts what it builds.
+**Copy graft** works on documents in the world, not in compendiums. You build in the world; graft writes to compendiums.
 
 What you get depends on where the document is:
 
 | Document | Result |
 |---|---|
-| In a pack anyone can install | A reference with an empty patch: *include this, unchanged* |
-| In a world pack, or the world, with a recorded source | A real diff against that source |
-| Yours, with no recorded source | Carried whole |
+| In a pack anyone can install | A reference with an empty patch: include this, unchanged |
+| In a world pack, or the world, with a recorded source | A diff against that source |
+| Yours, with no recorded source | The whole document |
 
-The first case is asked first, and it is what makes chaining work: **Copy graft** on a document graft built answers "reference this" rather than replaying the patch that produced it.
+Graft checks the installable-pack case first. That is what makes chaining work: **Copy graft** on a document that graft built produces a reference to it, not a replay of the patch that produced it.
 
 ## Using it
 
-Nothing needs a console.
+Every operation is available from the UI.
 
-- **Installing.** When a graft module has unbuilt entries, graft offers to build on the next world load. Asked once per module and remembered; declining is not permanent.
+- **Installing.** When a graft module has unbuilt entries, graft offers to build on the next world load. It asks once per module and remembers the answer; declining can be reversed.
 - **Rebuilding.** **Build grafts** sits in the header of that module's compendium windows.
-- **The report** shows what was not built and why first, then anything built with warnings, then a collapsed list of successes as clickable links. Results land in the **Compendium** tab.
+- **The report** lists what was not built and why, then anything built with warnings, then a collapsed list of successes as clickable links. Results land in the **Compendium** tab.
 
-Whether an entry is built is read from the pack index, not a stored flag, so hand-deleting a document and shipping new entries both answer honestly. Packs are unlocked for the write and put back exactly as found, including their folder assignment.
+Whether an entry is built is read from the pack index, not from a stored flag, so both a hand-deleted document and a newly shipped entry are detected as unbuilt. Packs are unlocked for the write and restored exactly as found, including their folder assignment.
 
 ```js
 game.modules.get("graft").api    // buildPacks, unbuilt, exportDiff, registerProvider
@@ -115,24 +115,24 @@ Tests: `node --test 'test/*.test.mjs'`
 
 ## Chaining
 
-`id` is a Foundry document id, not a slug, so your output is addressable:
+`id` is a Foundry document id, not a slug, so your output has a normal UUID:
 
 ```
 Compendium.<module>.<pack>.<Type>.<id>
 ```
 
-Grafting onto a graft is therefore not a special case — somebody names your output the way they would name anything else, and your module is an ordinary dependency of theirs.
+Grafting onto a graft is not a special case. Another author names your output the way they would name any document, and your module becomes an ordinary dependency of theirs.
 
-What does change is **order**. `planOrder` sorts entries so anything grafted onto a sibling comes after it, and refuses two that graft onto each other rather than half-building them. Sources outside the module need no sequencing; Foundry reports a missing dependency better than we could.
+Order does matter. `planOrder` sorts entries so that anything grafted onto a sibling in the same module is built after it, and refuses two entries that graft onto each other rather than half-building them. Sources outside the module need no sequencing; Foundry already reports a missing dependency.
 
-The open risk is drift: if the base you built on rebuilds against a new source, your patch may still apply and mean something else.
+The open risk is drift: if the base you built on is rebuilt against a new source, your patch may still apply and produce something different.
 
 ## Dependencies
 
 Declare them through Foundry's own `relationships`, so Foundry reports a missing one itself.
 
-- **`requires`** for what the module cannot work without: graft, and the system its packs declare. Foundry stops the reader disabling these.
-- **`recommends`** for content you graft *onto*. A missing source skips its own entries and builds the rest, so hard-requiring one turns a degradation into a wall — and makes the module untestable against a missing dependency.
+- **`requires`** for what the module cannot work without: graft, and the system its packs declare. Foundry stops the reader from disabling these.
+- **`recommends`** for content you graft onto. A missing source only skips its own entries, so hard-requiring one turns a skipped entry into a module that will not load, and makes the module impossible to test against a missing dependency.
 
 ## Manifest options
 
@@ -147,7 +147,7 @@ Optional, in your `module.json`:
 }
 ```
 
-`entries` defaults to `grafts.json`; a declared file that cannot be read is a warning, a missing default one is not.
+`entries` defaults to `grafts.json`. A declared file that cannot be read is a warning; a missing default file is not.
 
 A grafts file may be a bare array, or an object declaring the format it was written for:
 
@@ -155,7 +155,7 @@ A grafts file may be a bare array, or an object declaring the format it was writ
 { "format": 1, "entries": [ … ] }
 ```
 
-Absent means 1. A file declaring a newer format is refused rather than half-read, since the fields it relies on would otherwise be ignored in silence. `packs` only affects **Copy graft**, which otherwise guesses when your module has exactly one pack of that type and gives up when it has two.
+Absent means 1. A file declaring a newer format is refused rather than partially read, since fields the newer format relies on would otherwise be ignored silently. `packs` only affects **Copy graft**, which otherwise picks the pack when your module has exactly one of that type and gives up when it has two.
 
 ## Providers
 
@@ -173,13 +173,13 @@ Hooks.on("graftRegisterProviders", ({ registerProvider }) => {
 });
 ```
 
-`hydrate` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings, enqueue }`, or nothing. `skipped` and `warnings` use the builder's `{ id, reason }` shape and reach the same report, sectioned by provider. Build as much as possible and report the rest.
+`hydrate` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings, enqueue }`, or nothing. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned by provider. Build as much as possible and report the rest.
 
-**Providers run from a queue, not to a fixed point.** "Is there work left" is answerable; "has anything changed" is not. A provider emitting syntax another handles names it in `enqueue`, since the producer is the only one that knows. The queue deduplicates against what is *pending*, not what has run, so a provider re-runs for input that did not exist when it first ran. Mutual recursion is capped and the report names whichever provider would not settle.
+**Providers run from a queue, not to a fixed point.** "Is there work left" can be answered; "has anything changed" cannot. A provider that emits syntax another provider handles lists that provider in `enqueue`, since only the emitting provider knows which one that is. The queue deduplicates against pending work, not completed work, so a provider re-runs for input that did not exist when it first ran. Mutual recursion is capped, and the report names whichever provider would not settle.
 
 `hydrate` should be idempotent, and may not enqueue itself.
 
-**The shape to aim for:** fetch what an entry names, apply its patch to that JSON, and return a sourceless entry carrying the result. No pack of your own, no ids to collide. Record provenance in `flags.graft`. This also keeps the provider a plain array-to-array transform, which is testable without Foundry — and a provider is often the only thing that sees the original, so warnings usually have to come from there.
+**The recommended shape:** fetch what an entry names, apply its patch to that JSON, and return a sourceless entry carrying the result. This needs no pack of your own and no ids that could collide. Record provenance in `flags.graft`. It also keeps the provider a plain array-to-array transform, testable without Foundry. Since a provider is often the only component that sees the original document, most warnings have to come from it.
 
 ## Moulinette
 
@@ -192,15 +192,15 @@ Ships with graft, registered only when the Moulinette module is enabled.
 
 `pack_ref` is the number in a marketplace URL. The slugs beside it are display names and change when a pack is renamed; the number does not.
 
-As an entry's `source` it names a **document**, fetched and patched. Inside a patch it names a **file**, downloaded and rewritten to a local path. A reference that will not resolve takes its container with it and no further: a `background` with no `src` is worse than no background, but one missing sound must not discard a scene. Everything dropped is named in the report.
+As an entry's `source` it names a **document**, which is fetched and patched. Inside a patch it names a **file**, which is downloaded and rewritten to a local path. A reference that will not resolve drops its immediate container and nothing more: a `background` with no `src` is dropped entirely, but one missing sound does not discard the scene. Everything dropped is listed in the report.
 
-Nothing is redistributed — the reader's own subscriptions decide what they get.
+Nothing is redistributed. The reader's own subscriptions decide what they get.
 
 ## Format details
 
-[RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) (JSON Merge Patch), because a patch that mirrors the document it patches is one a person can read, and `null` already means "delete this key". [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902) is more expressive and its `test` op would give drift detection for free, but it addresses array members positionally.
+Patches use [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) (JSON Merge Patch), because a patch that mirrors the shape of the document is readable, and `null` already means "delete this key". [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902) is more expressive, and its `test` op would give drift detection for free, but it addresses array members by position.
 
-**The one departure: arrays whose members all carry `_id` merge by that key. Everything else replaces.** Foundry's arrays are collections of embedded documents whose order is not meaningful, so changing one item's damage should not mean restating forty, and should not break when the source reorders them.
+**The one departure: arrays whose members all carry `_id` merge by that key. Everything else replaces.** Foundry's arrays are collections of embedded documents with no meaningful order, so changing one item's damage should not require restating forty, and should not break when the source reorders them.
 
 ### Embedded content is a graft too
 
@@ -215,23 +215,23 @@ items:
     patch: { system: { equipped: true } }
 ```
 
-The second is recovered automatically — Foundry recorded where the item came from, so **Copy graft** references it rather than copying it. An embedded source that will not resolve refuses the whole entry, because a statblock quietly missing the item it was built around is worse than one that names the dependency.
+The second shape is produced automatically: Foundry records where the item came from, so **Copy graft** references it rather than copying it. An embedded source that will not resolve fails the whole entry, because a stat block silently missing the item it was built around is worse than a skipped entry that names the dependency.
 
 ### What is stripped
 
 - **`_stats`**, whose timestamps differ between identical documents and would report every embedded item as changed.
-- **`folder`**, at the root only. It is kept at depth, which matters for Adventures: those carry their own `folders` array and their documents point into it.
-- **`ownership`** is thinned rather than dropped. Per-user entries are world-local; `default` stays, since it is how you say "players can see this".
+- **`folder`**, at the root only. It is kept at depth, which matters for Adventures: they carry their own `folders` array and their documents point into it.
+- **`ownership`** is thinned rather than dropped. Per-user entries are world-local and are removed; `default` stays, since it is how you say "players can see this".
 
-Nothing else, and in particular **no other module's flags**. Tidying those would be an editorial judgement about somebody else's data.
+Nothing else is stripped, and in particular **no other module's flags**. Those are that module's data, and graft leaves them alone.
 
-### Drift
+### Drift warnings
 
-A patch is written against a source at a moment in time. Three things say that moment has passed, and all three **warn** rather than refuse — a changed source usually still patches correctly, and refusing would strand a reader over an upstream typo.
+A patch is written against a source at a moment in time. Graft checks for three kinds of drift. All three **warn** rather than refuse, because a changed source usually still patches correctly, and refusing would strand a reader over an upstream typo fix.
 
-- **A different system.** `_stats.systemId` says what a document was authored for. A pf2e actor grafted into a dnd5e world is not drift, it is incompatible, and it otherwise builds in silence.
-- **An older generation.** Foundry or system majors only. Systems ship minors constantly and most break nothing, so warning on each would train people to skip the section.
-- **The source itself changed.** An entry records `sourceHash`, a digest of the source **projected onto the patch's shape** — only the fields the patch touches:
+- **A different system.** `_stats.systemId` records which system a document was authored for. A pf2e actor grafted into a dnd5e world is incompatible rather than merely drifted, and without this check it would build without any warning.
+- **An older generation.** Foundry or system majors only. Systems ship minors constantly and most break nothing, so warning on each would train readers to ignore the section.
+- **The source itself changed.** An entry records `sourceHash`, a digest of the source **projected onto the patch's shape**, so only the fields the patch touches:
 
 ```yaml
 source: Compendium.some-bestiary.actors.Actor.mmBandit000000
@@ -240,55 +240,55 @@ patch:
   system: { attributes: { hp: { value: 45 } } }
 ```
 
-Projecting is what makes it usable. An upstream typo fix in a description you never touched must not warn, or the warning becomes noise. Reordering a keyed array is not drift either, and neither is key order in the source.
+Hashing only the patched fields keeps the warning useful: an upstream fix to a description you never touched does not warn. Reordering a keyed array is not drift, and neither is key order in the source.
 
-An entry with no `sourceHash` is silent: absent means "not recorded", not "verified clean".
+A missing `sourceHash` means the hash was never recorded, so no drift check runs.
 
 ### Old documents are migrated
 
-Everything is created through `Document.fromImport`, Foundry's own migration path. Creating directly lands old data unchanged against the current schema, and the failure is quiet: a Foundry 13 scene arrives with v13 tile coordinates read under v14 anchor semantics, so every tile sits half its own size out of place.
+Everything is created through `Document.fromImport`, Foundry's own migration path. Creating directly would store old data unchanged against the current schema, and the failure is quiet: a Foundry 13 scene arrives with v13 tile coordinates read under v14 anchor semantics, so every tile sits half its own size out of place.
 
-A source older than the running generation is still reported, since migration handles fields that moved but not one removed outright.
+A source older than the running generation is still reported, since migration handles fields that moved but not fields that were removed.
 
-`fromImport` throws on an unmodified `Adventure` straight out of a pack, so those are constructed directly instead: unmigrated is worse than migrated, but losing an entry over somebody else's bug is worse than both.
+`fromImport` throws on an unmodified `Adventure` taken straight from a pack, so Adventures are constructed directly and skip import-time migration. Losing the entry over a Foundry bug would be worse.
 
-Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. A Foundry 13 tile's `occlusion.mode` is dropped rather than converted to the `occlusion.modes` that replaced it, by `fromImport` and `importFromJSON` alike, so a roof set to fade stops fading. Graft does not map fields by hand: that is schema surgery on somebody else's data, and there is no end to it.
+Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. A Foundry 13 tile's `occlusion.mode` is dropped rather than converted to the `occlusion.modes` that replaced it, by `fromImport` and `importFromJSON` alike, so a roof set to fade stops fading. Graft does not migrate fields by hand; the set of moved fields is open-ended.
 
-### `compendiumSource` is not provenance
+### How the source is recovered
 
-Foundry stamps it on anything imported from a pack, which is what lets **Copy graft** recover a diff without you typing a UUID. But it records where a document was last imported from *by whoever imported it*. Publishers often assemble in a private work module, and that id survives into published content, naming something nobody else can install.
+Foundry stamps `compendiumSource` on anything imported from a pack. That is what lets **Copy graft** recover a diff without you typing a UUID. But it only records where a document was last imported from, by whoever imported it. Publishers often assemble content in a private work module, and that id survives into the published content, naming something nobody else can install.
 
-Graft records its own answer where it can: `preImportAdventure` stamps `flags.graft.origin` with the adventure's UUID, which is real, and that is preferred when present. Ordinary imports need no help — `fromCompendium` writes an accurate source itself, regardless of `keepId`.
+Graft records its own answer where it can. `preImportAdventure` stamps `flags.graft.origin` with the adventure's UUID, and that stamp is preferred when present. Ordinary imports need no help: `fromCompendium` writes an accurate source itself, regardless of `keepId`.
 
-That stamp is also what makes adventure content referenceable. An adventure's contents are embedded data, not documents, so they have no UUID of their own. Graft resolves one form itself, written like the embedded UUIDs Foundry already uses:
+That stamp is also what makes adventure content referenceable. An adventure's contents are embedded data, not documents, so they have no UUID of their own. Graft resolves one form, written like the embedded UUIDs Foundry already uses:
 
 ```
 Compendium.<module>.<pack>.Adventure.<advId>.JournalEntry.<docId>
 ```
 
-An unresolvable source splits two ways. **Installed but disabled** is yours to fix, and the export refuses until you enable it. **Not installed at all** may be nobody's to fix, so the document is treated as having no recorded source and travels whole — which puts its content in your `grafts.json`, visible in the file, and your call to make.
+An unresolvable source is handled in one of two ways. If the source module is **installed but disabled**, the export refuses until you enable it. If it is **not installed at all**, graft treats the document as having no recorded source and copies it whole. Its full content then sits in your `grafts.json`, where you can see it and decide whether to ship it.
 
 ### Limits
 
-- **Removing an entry from a keyed array** is not expressible: an omitted entry means "leave it alone". Saying otherwise needs RFC 6902 `remove`, which addresses positionally.
-- **`null` resets, it does not remove.** The key does leave the patched data, but Foundry then loads it against a schema and an absent field takes its declared initial value. True deletion only works where the schema does not describe the key, in practice `flags`.
-- **Sets serialise as ordered arrays.** `SetField` has no meaningful order but compares as a list, so a reordering reads as a change. Not handled, because guessing which arrays are Sets could silently drop a genuine reorder of a list that *is* ordered.
+- **Removing an entry from a keyed array** is not expressible: an omitted entry means "leave it alone". Expressing removal would need RFC 6902 `remove`, which addresses by position.
+- **`null` resets, it does not remove.** The key does leave the patched data, but Foundry then loads it against a schema, and an absent field takes its declared initial value. True deletion only works where the schema does not describe the key, in practice `flags`.
+- **Sets serialise as ordered arrays.** `SetField` has no meaningful order but compares as a list, so a reordering reads as a change. Not handled, because guessing which arrays are Sets could silently drop a genuine reorder of a list that is ordered.
 - **Stale entries are not removed.** Deleting an entry from `grafts.json` leaves what it built behind.
 
 ## Layout
 
 ```
 scripts/patch.mjs      the format: applyPatch, diff, stripVolatile. Pure.
-scripts/plan.mjs       ids, UUIDs, and the order a chain must build in.
+scripts/plan.mjs       ids, UUIDs, and build order for chains.
 scripts/providers.mjs  the provider queue. Pure.
-scripts/yaml.mjs       what lands on the clipboard. Pure.
-scripts/hydrate.mjs    what needs Foundry: resolve, migrate, unlock, write.
-scripts/modules.mjs    what a module declares.
+scripts/yaml.mjs       clipboard output. Pure.
+scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
+scripts/modules.mjs    reads what a module declares.
 scripts/moulinette.mjs the Moulinette provider.
-scripts/origin.mjs     where a document really came from.
+scripts/origin.mjs     recovers a document's true source.
 scripts/progress.mjs   the build's progress bar.
 scripts/ui.mjs         controls, menus, dialogs.
-scripts/main.mjs       hooks, and nothing else.
+scripts/main.mjs       hooks only.
 ```
 
-Graft ships code and no content, and is system-agnostic: the only Foundry fields it knows are `_stats`, `ownership` and `folder`. That is not stylistic — Foundry requires an Actor or Item pack to declare its system, so a module shipping packs cannot be system-agnostic. Your module declares the packs, the system and the dependencies; graft builds them.
+Graft ships code and no content, and is system-agnostic: the only Foundry fields it knows are `_stats`, `ownership` and `folder`. Foundry requires an Actor or Item pack to declare its system, so a module shipping packs cannot be system-agnostic. Your module declares the packs, the system and the dependencies; graft builds them.
