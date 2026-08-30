@@ -175,17 +175,31 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
   // scene with v13 tile coordinates read under v14 anchor semantics, shifting
   // every tile by half its own size, and with no `levels` for its background.
   //
-  // It is not usable everywhere: `Adventure.fromImport` throws on an unmodified
-  // adventure taken straight out of a pack, before anything of ours touches it.
-  // So a failure falls back to constructing directly, which is what happened
-  // before migration existed. Unmigrated is worse than migrated; losing the
-  // entry over somebody else's bug is worse than both.
+  // An Adventure cannot take this path whole: the server migrates with
+  // `db.Adventure`, and Adventures have no world collection, so that class has
+  // no database under it and any version difference at all crashes it. The
+  // documents *inside* an Adventure all have one, so they migrate one at a
+  // time through their own classes instead.
   //
   // Construction validates and throws, where `create` reports a validation
   // failure to the GM and carries on, so the reason reaches the build report.
   let prepared;
   try {
-    prepared = (await cls.fromImport(data)).toObject();
+    if (entry.type === "Adventure") {
+      const fields = Object.fromEntries(
+        Object.entries(cls.contentFields).map(([f, c]) => [f, c.documentName]));
+      const { data: migrated, failures } = await migrateContent(data, fields, async (name, doc) => {
+        const inner = (await getDocumentClass(name).fromImport(doc)).toObject();
+        inner._id = doc._id;   // `fromImport` is free to assign its own
+        return inner;
+      });
+      for (const f of failures) {
+        warnings.push({ id: `${entry.id}/${f._id}`, reason: `${f.field} ${f._id} could not be migrated (${f.message}); built as authored` });
+      }
+      prepared = new cls(migrated, { pack: collection }).toObject();
+    } else {
+      prepared = (await cls.fromImport(data)).toObject();
+    }
   } catch (err) {
     try {
       prepared = new cls(data, { pack: collection }).toObject();
@@ -206,6 +220,32 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
     }
   }
   return entryUuid(entry, moduleId);
+}
+
+/**
+ * Migrate each content document in an Adventure, keeping what fails as it is.
+ *
+ * `importOne(documentName, doc)` returns the migrated document or throws. A
+ * document that cannot migrate stays as authored and is named in `failures`,
+ * so one bad scene costs a warning rather than the whole Adventure.
+ */
+export async function migrateContent(data, fields, importOne) {
+  const out = { ...data };
+  const failures = [];
+  for (const [field, documentName] of Object.entries(fields)) {
+    const docs = data[field];
+    if (!Array.isArray(docs) || docs.length === 0) continue;
+    out[field] = [];
+    for (const doc of docs) {
+      try {
+        out[field].push(await importOne(documentName, doc));
+      } catch (err) {
+        failures.push({ field, _id: doc?._id, message: err.message });
+        out[field].push(doc);
+      }
+    }
+  }
+  return { data: out, failures };
 }
 
 /**
