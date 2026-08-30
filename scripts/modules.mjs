@@ -65,29 +65,21 @@ export async function readGrafts(moduleId) {
  * entries.
  */
 export async function unbuilt(moduleId) {
-  const missing = [];
-  const deferred = [];
-
+  const byPack = new Map();
   for (const entry of await readGrafts(moduleId)) {
-    if (!entry?.id) { deferred.push(entry); continue; }
-    const pack = game.packs.get(`${moduleId}.${entry.pack}`);
+    if (!entry?.id) continue;                  // planOrder reports these
+    if (!byPack.has(entry.pack)) byPack.set(entry.pack, []);
+    byPack.get(entry.pack).push(entry);
+  }
+
+  const missing = [];
+  for (const [name, entries] of byPack) {
+    const pack = game.packs.get(`${moduleId}.${name}`);
     if (!pack) continue;                       // a pack Foundry has not read yet
     const index = await pack.getIndex();
-    if (!index.get(entry.id)) missing.push(entry);
-  }
-
-  if (missing.length === 0 && deferred.length > 0 && await packsAreEmpty(moduleId)) {
-    return deferred;
+    missing.push(...entries.filter((e) => !index.get(e.id)));
   }
   return missing;
-}
-
-async function packsAreEmpty(moduleId) {
-  for (const pack of game.packs) {
-    if (pack.metadata.packageName !== moduleId) continue;
-    if ((await pack.getIndex()).size > 0) return false;
-  }
-  return true;
 }
 
 /**

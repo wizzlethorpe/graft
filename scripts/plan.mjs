@@ -84,10 +84,8 @@ export function planOrder(entries, moduleId) {
       if (parent) visit(parent, chain);
     }
     chain.delete(uuid);
-    if (!done.has(uuid)) {
-      done.add(uuid);
-      order.push(entry);
-    }
+    done.add(uuid);
+    order.push(entry);
   };
 
   for (const entry of usable) visit(entry, new Set());

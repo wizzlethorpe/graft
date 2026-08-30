@@ -271,8 +271,7 @@ export function folderPath(document) {
  * about this copy of it.
  */
 export function authoredGeneration(data) {
-  const major = Number(String(data?._stats?.coreVersion ?? "").split(".")[0]);
-  return Number.isInteger(major) && major > 0 ? major : null;
+  return major(data?._stats?.coreVersion);
 }
 
 /**

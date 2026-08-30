@@ -117,16 +117,19 @@ async function loadIndex() {
 }
 
 /** `pack_ref` plus filepath names exactly one asset, so an exact match is right. */
+/** The index row for a reference, or throws with a reason. */
 function findAsset(ref, index) {
-  return index.assets.find((a) => String(a?.pack_id) === ref.pack && a?.url === ref.file) ?? null;
+  const asset = index.assets.find((a) => String(a?.pack_id) === ref.pack && a?.url === ref.file);
+  if (!asset) {
+    throw new Error(`no ${ref.file} in Moulinette pack ${ref.pack}: your account may not include it, or it moved`);
+  }
+  return asset;
 }
 
 /** Where a media asset landed locally, or throws with a reason. */
 async function downloadMedia(ref, index) {
+  progress.note(ref.file.split("/").pop());
   const asset = findAsset(ref, index);
-  if (!asset) {
-    throw new Error(`no ${ref.file} in Moulinette pack ${ref.pack}: your account may not include it, or it moved`);
-  }
   const path = await index.collection.selectAsset(asset);
   if (!path) throw new Error(`${ref.pack}/${ref.file} is a document, not a file, so it cannot be a path`);
   return path;
@@ -141,10 +144,8 @@ async function downloadMedia(ref, index) {
  * pulls its map, tiles and ambience with it.
  */
 async function downloadDocument(ref, index) {
+  progress.note(ref.file.split("/").pop());
   const asset = findAsset(ref, index);
-  if (!asset) {
-    throw new Error(`no ${ref.file} in Moulinette pack ${ref.pack}: your account may not include it, or it moved`);
-  }
   const descriptor = await index.mod.cloudclient.apiGET(`/asset/${asset.id}`, {
     session: index.mod.getSessionId(),
   });
@@ -190,7 +191,6 @@ async function hydrateEntries(entries) {
         let outcome = { path: null, problem: `malformed reference ${ref}` };
         if (parsed) {
           try {
-            progress.note(parsed.file.split("/").pop());
             outcome = { path: await downloadMedia(parsed, index), problem: null };
           } catch (err) {
             outcome = { path: null, problem: err.message };
@@ -217,7 +217,6 @@ async function hydrateEntries(entries) {
       let document;
       try {
         // Slow: a scene pulls its map, tiles and ambience with it.
-        progress.note(parsed.file.split("/").pop());
         document = await downloadDocument(parsed, index);
       } catch (err) {
         skipped.push({ id: entry.id, reason: err.message });

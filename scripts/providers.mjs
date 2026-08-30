@@ -66,8 +66,6 @@ export async function runProviders(entries, providers = registeredProviders(), {
     const id = queue.shift();
     pending.delete(id);
     const provider = byId.get(id);
-    if (!provider) continue;
-
     const count = (runs.get(id) ?? 0) + 1;
     runs.set(id, count);
     if (count > maxRuns) {

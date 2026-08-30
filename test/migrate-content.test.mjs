@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 
 import { migrateContent } from "../scripts/hydrate.mjs";
 
-const FIELDS = { scenes: "Scene", actors: "Actor" };
+const FIELDS = { scenes: { documentName: "Scene" }, actors: { documentName: "Actor" } };
 
 describe("migrateContent", () => {
   test("migrates each document through its own class, keeping ids", async () => {
@@ -21,8 +21,8 @@ describe("migrateContent", () => {
       actors: [{ _id: "a1", name: "Marlo" }],
     };
     const seen = [];
-    const { data: out, failures } = await migrateContent(data, FIELDS, async (name, doc) => {
-      seen.push([name, doc._id]);
+    const { data: out, failures } = await migrateContent(data, FIELDS, async (cls, doc) => {
+      seen.push([cls.documentName, doc._id]);
       return { ...doc, migrated: true };
     });
     assert.deepEqual(seen, [["Scene", "s1"], ["Actor", "a1"]]);
@@ -34,7 +34,7 @@ describe("migrateContent", () => {
 
   test("keeps a document that cannot migrate as authored, and names it", async () => {
     const data = { scenes: [{ _id: "s1" }, { _id: "s2" }] };
-    const { data: out, failures } = await migrateContent(data, FIELDS, async (_n, doc) => {
+    const { data: out, failures } = await migrateContent(data, FIELDS, async (_c, doc) => {
       if (doc._id === "s1") throw new Error("no database");
       return { ...doc, migrated: true };
     });

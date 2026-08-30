@@ -113,12 +113,13 @@ async function pruneStale(moduleId, entries, touched) {
  * `.toObject()` is not optional; see `isPlainObject` in patch.mjs.
  */
 async function resolveData(uuid) {
-  if (parseAdventureSource(uuid)) return resolveAdventureSource(uuid);
+  const fromAdventure = await resolveAdventureSource(uuid);
+  if (fromAdventure !== null) return fromAdventure;
   const doc = await fromUuid(uuid);
   return doc ? doc.toObject() : null;
 }
 
-async function hydrateOne(entry, moduleId, touched, warnings = []) {
+async function hydrateOne(entry, moduleId, touched, warnings) {
   // No source means the entry carries its own content: the patch is the document.
   let base = {};
   let source = null;
@@ -188,10 +189,8 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
   let prepared;
   try {
     if (entry.type === "Adventure") {
-      const fields = Object.fromEntries(
-        Object.entries(cls.contentFields).map(([f, c]) => [f, c.documentName]));
-      const { data: migrated, failures } = await migrateContent(data, fields, async (name, doc) => {
-        const inner = (await getDocumentClass(name).fromImport(doc)).toObject();
+      const { data: migrated, failures } = await migrateContent(data, cls.contentFields, async (c, doc) => {
+        const inner = (await getDocumentClass(c.documentName).fromImport(doc)).toObject();
         inner._id = doc._id;   // `fromImport` is free to assign its own
         return inner;
       });
@@ -233,16 +232,16 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
  * document that cannot migrate stays as authored and is named in `failures`,
  * so one bad scene costs a warning rather than the whole Adventure.
  */
-export async function migrateContent(data, fields, importOne) {
+export async function migrateContent(data, contentFields, importOne) {
   const out = { ...data };
   const failures = [];
-  for (const [field, documentName] of Object.entries(fields)) {
+  for (const [field, cls] of Object.entries(contentFields)) {
     const docs = data[field];
     if (!Array.isArray(docs) || docs.length === 0) continue;
     out[field] = [];
     for (const doc of docs) {
       try {
-        out[field].push(await importOne(documentName, doc));
+        out[field].push(await importOne(cls, doc));
       } catch (err) {
         failures.push({ field, _id: doc?._id, message: err.message });
         out[field].push(doc);
