@@ -108,7 +108,8 @@ Every operation is available from the UI.
 Whether an entry is built is read from the pack index, not from a stored flag, so both a hand-deleted document and a newly shipped entry are detected as unbuilt. Packs are unlocked for the write and restored exactly as found, including their folder assignment.
 
 ```js
-game.modules.get("graft").api    // buildPacks, unbuilt, exportDiff, registerProvider
+game.modules.get("graft").api    // buildPacks, hydrate, readGrafts, unbuilt,
+                                 // exportDiff, registerProvider, registeredProviders, progress
 ```
 
 Tests: `node --test 'test/*.test.mjs'`
@@ -250,7 +251,7 @@ Everything is created through `Document.fromImport`, Foundry's own migration pat
 
 A source older than the running generation is still reported, since migration handles fields that moved but not fields that were removed.
 
-`fromImport` throws on an unmodified `Adventure` taken straight from a pack, so Adventures are constructed directly and skip import-time migration. Losing the entry over a Foundry bug would be worse.
+An Adventure cannot take that path whole: the server migrates with `db.Adventure`, and Adventures have no world collection, so any version difference at all crashes it. The documents *inside* an Adventure all have one, so they migrate one at a time through their own classes and the Adventure is constructed around the results; a document that cannot migrate is kept as authored and named individually.
 
 Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. A Foundry 13 tile's `occlusion.mode` is dropped rather than converted to the `occlusion.modes` that replaced it, by `fromImport` and `importFromJSON` alike, so a roof set to fade stops fading. Graft does not migrate fields by hand; the set of moved fields is open-ended.
 
@@ -273,7 +274,7 @@ An unresolvable source is handled in one of two ways. If the source module is **
 - **Removing an entry from a keyed array** is not expressible: an omitted entry means "leave it alone". Expressing removal would need RFC 6902 `remove`, which addresses by position.
 - **`null` resets, it does not remove.** The key does leave the patched data, but Foundry then loads it against a schema, and an absent field takes its declared initial value. True deletion only works where the schema does not describe the key, in practice `flags`.
 - **Sets serialise as ordered arrays.** `SetField` has no meaningful order but compares as a list, so a reordering reads as a change. Not handled, because guessing which arrays are Sets could silently drop a genuine reorder of a list that is ordered.
-- **Stale entries are not removed.** Deleting an entry from `grafts.json` leaves what it built behind.
+- **Pruning removes only what graft built.** Deleting an entry from `grafts.json` removes the flagged document it built on the next build; documents an author placed in the pack by hand are never touched. An entry a provider skipped this run — a lapsed subscription, say — still counts as declared and is left alone.
 
 ## Layout
 

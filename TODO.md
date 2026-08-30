@@ -24,8 +24,9 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 - Drift is reported, never refused, and a source with no recorded `sourceHash`
   is silent. Both deliberate: refusing would strand a reader over an upstream
   typo, and every `grafts.json` written before hashes existed has none.
-- `Document.fromImport` throws on an unmodified Adventure taken straight from a
-  pack, so adventures build unmigrated via the fallback.
+- An Adventure migrates per content document (its class has no world
+  collection, so `fromImport` on the whole crashes server-side); only a
+  document whose own migration fails builds as authored.
 - Import-time migration is less complete than a world upgrade. A Foundry 13
   tile's `occlusion.mode` is dropped rather than converted to `occlusion.modes`,
   by `fromImport` and `importFromJSON` alike, so a roof set to fade stops
