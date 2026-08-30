@@ -6,6 +6,7 @@ import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { readGrafts, unbuilt } from "./modules.mjs";
 import { registerProvider, registeredProviders } from "./providers.mjs";
+import * as progress from "./progress.mjs";
 import { moulinetteProvider } from "./moulinette.mjs";
 import {
   registerSettings, promptForUnbuilt, addPackControl, copyOne,
@@ -19,6 +20,7 @@ Hooks.once("init", () => {
   game.modules.get(MODULE_ID).api = {
     hydrate, exportDiff, readGrafts, unbuilt, buildPacks: buildAndReport,
     registerProvider, registeredProviders,
+    progress: { phase: progress.phase, step: progress.step, note: progress.note },
   };
 });
 

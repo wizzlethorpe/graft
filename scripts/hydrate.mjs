@@ -189,6 +189,7 @@ async function hydrateOne(entry, moduleId, touched, warnings = []) {
   } catch (err) {
     try {
       prepared = new cls(data, { pack: collection }).toObject();
+      warnings.push({ id: entry.id, reason: `Foundry could not import this (${err.message}); built without migrating, so parts of it may be missing` });
     } catch (invalid) {
       throw new Error(summarizeValidation(invalid));
     }

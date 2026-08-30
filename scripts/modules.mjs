@@ -66,13 +66,28 @@ export async function readGrafts(moduleId) {
  */
 export async function unbuilt(moduleId) {
   const missing = [];
+  const deferred = [];
+
   for (const entry of await readGrafts(moduleId)) {
+    if (!entry?.id) { deferred.push(entry); continue; }
     const pack = game.packs.get(`${moduleId}.${entry.pack}`);
     if (!pack) continue;                       // a pack Foundry has not read yet
     const index = await pack.getIndex();
     if (!index.get(entry.id)) missing.push(entry);
   }
+
+  if (missing.length === 0 && deferred.length > 0 && await packsAreEmpty(moduleId)) {
+    return deferred;
+  }
   return missing;
+}
+
+async function packsAreEmpty(moduleId) {
+  for (const pack of game.packs) {
+    if (pack.metadata.packageName !== moduleId) continue;
+    if ((await pack.getIndex()).size > 0) return false;
+  }
+  return true;
 }
 
 /**
