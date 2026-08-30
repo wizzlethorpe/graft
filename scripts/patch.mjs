@@ -207,8 +207,7 @@ export async function expandSources(patch, resolve) {
       const base = await resolve(entry.source);
       if (!base) throw new Error(`embedded source ${entry.source} did not resolve`);
       const inner = await expandSources(entry.patch ?? {}, resolve);
-      // The id is ours: this is our copy of their thing.
-      return { ...applyPatch(base, inner), _id: entry._id };
+          return { ...applyPatch(base, inner), _id: entry._id };
     }));
   }
   if (!isPlainObject(patch)) return patch;

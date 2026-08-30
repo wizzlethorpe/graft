@@ -1,6 +1,4 @@
-// Where Foundry calls in, and nothing else. What each hook does lives in
-// patch.mjs (the format), plan.mjs (ordering), hydrate.mjs (building),
-// modules.mjs (what a module declares) and ui.mjs (everything on screen).
+// Where Foundry calls in, and nothing else.
 
 import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff } from "./hydrate.mjs";

@@ -1,16 +1,7 @@
-// One progress notification for the length of a build.
-//
-// A build used to show "Building grafts for X…" and then nothing until it
-// finished. With providers that fetch from a network, that is a minute or more
-// of a UI that looks frozen, with no way to tell a slow build from a stuck one.
-//
-// State is module-level rather than threaded through signatures. The code that
-// knows *what* is happening (an asset download inside a provider) sits several
-// frames below the loop that knows *how far along* it is, and passing a
-// reporter through everything in between would cost more than it explains. One
-// build runs at a time, which is what makes a singleton honest.
-//
-// Everything degrades to a no-op: this must not be why a build fails.
+// One progress notification for the length of a build. Module-level state:
+// one build runs at a time, and the code that knows what is happening sits
+// frames below the loop that knows how far along it is. Everything degrades
+// to a no-op — this must not be why a build fails.
 
 let bar = null;
 let title = "";
@@ -22,9 +13,8 @@ function paint(message) {
   if (!bar) return;
   const counter = total > 0 ? ` ${Math.min(done, total)}/${total}` : "";
   const head = phaseLabel ? `${title}: ${phaseLabel}${counter}` : title;
-  // Item `done` is in progress, so it counts as half: a bar that reads 100%
-  // while the last item still runs looks finished and stuck, and the last
-  // item is often the big one.
+  // The item in progress counts as half, so the bar never reads 100% while
+  // work continues.
   const finished = Math.max(done - 0.5, 0);
   try {
     bar.update({

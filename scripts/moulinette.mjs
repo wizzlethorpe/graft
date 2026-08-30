@@ -1,20 +1,8 @@
-// Resolving `@moulinette/...` against the reader's own Moulinette library.
-//
-// Composition without redistribution, which is graft's whole argument extended
-// to a cloud: an entry points at somebody's map or somebody else's ambience,
-// ships neither, and each reader's own subscriptions decide what they get.
-//
-//   @moulinette/<pack_ref>/<filepath>
-//   @moulinette/10698/scenes/abandoned-mine-entrance.webp
-//
-// `pack_ref` is the number in a marketplace URL. The two slugs beside it there
-// are display names run through `.slugify()`, so they change when a creator
-// renames a pack; the number does not.
-//
-// Two shapes. As an entry's `source` it names a *document*, which is fetched,
-// patched, and returned as a sourceless entry carrying the result: no pack of
-// graft's own, no ids to collide. Anywhere inside a patch it names a *file*,
-// which is downloaded and rewritten to a local path.
+// Resolving `@moulinette/<pack_ref>/<filepath>` against the reader's own
+// Moulinette library. `pack_ref` is the number in a marketplace URL; the
+// slugs beside it change when a creator renames a pack, the number does not.
+// As an entry's `source` it names a document (fetched, patched, returned
+// sourceless); inside a patch it names a file (downloaded, path rewritten).
 
 import { applyPatch, currentWorld, driftWarnings, stripVolatile } from "./patch.mjs";
 import * as progress from "./progress.mjs";

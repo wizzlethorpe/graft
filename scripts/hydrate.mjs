@@ -173,19 +173,9 @@ async function hydrateOne(entry, moduleId, touched, warnings) {
   foundry.utils.setProperty(data, "flags.graft.built", true);
 
   const cls = getDocumentClass(entry.type);
-  // Foundry's own migration for data authored on an older generation, and what
-  // Moulinette uses for every document type it imports. Skipping it lands a v13
-  // scene with v13 tile coordinates read under v14 anchor semantics, shifting
-  // every tile by half its own size, and with no `levels` for its background.
-  //
-  // An Adventure cannot take this path whole: the server migrates with
-  // `db.Adventure`, and Adventures have no world collection, so that class has
-  // no database under it and any version difference at all crashes it. The
-  // documents *inside* an Adventure all have one, so they migrate one at a
-  // time through their own classes instead.
-  //
-  // Construction validates and throws, where `create` reports a validation
-  // failure to the GM and carries on, so the reason reaches the build report.
+  // fromImport is Foundry's own migration path; skipping it lands v13 data
+  // under v14 semantics. An Adventure cannot take it whole (no world
+  // collection server-side), so its content migrates per document.
   let prepared;
   try {
     if (entry.type === "Adventure") {

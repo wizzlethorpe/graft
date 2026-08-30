@@ -1,17 +1,8 @@
-// External providers: a stage between reading a module's entries and building
-// them, where something else gets to rewrite them first.
-//
-// A provider is one function. It receives every entry the module declares, from
-// every file it declares them in, and returns whatever it wants built instead.
-// Moulinette is the motivating case: fetch the document it names, apply the
-// patch to that JSON, and hand back a sourceless entry carrying the result. No
-// pack of its own, no ids to collide, and the shape it produces is one graft
-// already understands.
-//
-// Providers run from a queue rather than to a fixed point. "Is there work left"
-// is answerable; "has anything changed" is not. A provider that emits syntax
-// another provider handles enqueues that provider, because the one producing
-// the syntax is the only one that knows it did.
+// External providers: a stage between reading a module's entries and
+// building them, where something else rewrites them first. They run from a
+// queue, not to a fixed point — "is there work left" is answerable, "has
+// anything changed" is not — and a provider that emits syntax another one
+// handles enqueues it, being the only party that knows it did.
 
 const DEFAULT_MAX_RUNS = 25;
 
@@ -97,8 +88,6 @@ export async function runProviders(entries, providers = registeredProviders(), {
 
     for (const wanted of enqueue) {
       if (wanted === id) {
-        // The honest version of this is "I have not finished", which is
-        // something to do before returning, not after.
         skipped.push({ provider: id, id: "(provider)",
           reason: "tried to enqueue itself, which is ignored" });
         continue;

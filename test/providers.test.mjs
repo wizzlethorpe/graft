@@ -65,13 +65,17 @@ test("a provider cannot enqueue itself", async () => {
 test("mutual recursion is stopped, and the culprit is named", async () => {
   // The set stops accidental duplicates; only the cap stops two providers
   // legally taking turns forever.
+  const runs = { ping: 0, pong: 0 };
   const { skipped } = await runProviders([], [
-    { id: "ping", hydrate: () => ({ enqueue: ["pong"] }) },
-    { id: "pong", hydrate: () => ({ enqueue: ["ping"] }) },
+    { id: "ping", hydrate: () => { runs.ping++; return { enqueue: ["pong"] }; } },
+    { id: "pong", hydrate: () => { runs.pong++; return { enqueue: ["ping"] }; } },
   ], { maxRuns: 5 });
   const halted = skipped.filter((s) => /without settling/.test(s.reason));
   assert.ok(halted.length > 0);
   assert.ok(["ping", "pong"].includes(halted[0].provider), "says which one, not just that one looped");
+  // The cap is the cap: each ran at most maxRuns times, and both stopped.
+  assert.ok(runs.ping <= 5 && runs.pong <= 5, JSON.stringify(runs));
+  assert.ok(runs.ping + runs.pong >= 9, "ran up to the cap, not past a smaller one");
 });
 
 test("one provider throwing does not lose the others or the entries", async () => {

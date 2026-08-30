@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { applyPatch, diff, isKeyedArray } from "../scripts/patch.mjs";
+import { applyPatch, authoredGeneration, diff, driftFromSource, driftWarnings, expandSources, folderPath, folderSegments, isKeyedArray, project, referenceSources, sourceHash, stripVolatile } from "../scripts/patch.mjs";
 
 const BANDIT = {
   _id: "mmBandit00000000",
@@ -134,7 +134,6 @@ test("timestamps on embedded items do not count as changes", async () => {
   // The first real export produced this: two items whose only delta was their
   // own `_stats`, reported as edits. Stripping only the top level is not
   // enough, because every embedded document carries one.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
   const stats = (t) => ({ coreVersion: "14.367", createdTime: t, modifiedTime: t,
                           lastModifiedBy: "K5n12UWOfcmnnwjH" });
   const source = { name: "Animated Armor", _stats: stats(1), items: [
@@ -152,7 +151,6 @@ test("a user id never reaches the patch, but the default does", async () => {
   // Half of `ownership` is world-local and half is not. The per-user entries
   // are ids from one world; `default` is the only way to say "players can see
   // this", which is an authorial decision worth carrying.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
   const mine = stripVolatile({
     name: "Player Handout",
     ownership: { default: 2, K5n12UWOfcmnnwjH: 3 },
@@ -166,7 +164,6 @@ test("a user id never reaches the patch, but the default does", async () => {
 test("making something player-visible is a change the diff reports", async () => {
   // The point of keeping `default`: a GM-only source and a player-visible copy
   // differ in a way the reader should receive.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
   const before = stripVolatile({ name: "Handout", ownership: { default: 0 } });
   const mine = stripVolatile({ name: "Handout", ownership: { default: 2, abc: 3 } });
   assert.deepEqual(diff(before, mine), { ownership: { default: 2 } });
@@ -174,7 +171,6 @@ test("making something player-visible is a change the diff reports", async () =>
 
 test("a real edit still survives the stripping", async () => {
   // The stripping must not be so keen that it eats the change itself.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
   const source = { name: "Animated Armor", _stats: { createdTime: 1 }, folder: "abc", items: [] };
   const mine = { name: "Rusted Armor", _stats: { createdTime: 2 }, folder: "xyz", items: [] };
   assert.deepEqual(diff(stripVolatile(source), stripVolatile(mine)), { name: "Rusted Armor" });
@@ -201,7 +197,6 @@ const resolve = async (uuid) =>
   uuid === "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt" ? structuredClone(AMULET) : null;
 
 test("an added item becomes a pointer, not a copy of its text", async () => {
-  const { referenceSources } = await import("../scripts/patch.mjs");
   const mine = { _id: "IP7kWWdq5km8SZad", ...structuredClone(AMULET) };
   mine._id = "IP7kWWdq5km8SZad";
   mine.system.equipped = true;
@@ -222,14 +217,12 @@ test("an added item becomes a pointer, not a copy of its text", async () => {
 test("an item the author wrote themselves is shipped whole", async () => {
   // Content with no recorded source is theirs, and referencing it would point
   // at nothing.
-  const { referenceSources } = await import("../scripts/patch.mjs");
   const mine = { _id: "myOwnItem000001", name: "Signet Ring", type: "equipment", system: {} };
   const out = await referenceSources({ items: [mine] }, { sourceOf: () => null, resolve, isWhole: () => true });
   assert.deepEqual(out.items[0], mine);
 });
 
 test("expanding a pointer rebuilds the item on the reader's machine", async () => {
-  const { expandSources, applyPatch } = await import("../scripts/patch.mjs");
   const expanded = await expandSources({
     items: [{
       _id: "IP7kWWdq5km8SZad",
@@ -251,7 +244,6 @@ test("expanding a pointer rebuilds the item on the reader's machine", async () =
 test("a nested source that does not resolve refuses loudly", async () => {
   // A statblock quietly missing the magic item it was built around is worse
   // than one that will not build and names the dependency.
-  const { expandSources } = await import("../scripts/patch.mjs");
   await assert.rejects(
     () => expandSources({ items: [{ _id: "x", source: "Compendium.gone.pack.Item.nope" }] }, resolve),
     /Compendium\.gone\.pack\.Item\.nope did not resolve/,
@@ -259,7 +251,6 @@ test("a nested source that does not resolve refuses loudly", async () => {
 });
 
 test("round trip through a reference reproduces the item", async () => {
-  const { referenceSources, expandSources } = await import("../scripts/patch.mjs");
   const mine = structuredClone(AMULET);
   mine._id = "IP7kWWdq5km8SZad";
   mine.system.equipped = true;
@@ -277,7 +268,6 @@ test("a class instance is opaque, not something to walk into", async () => {
   // walkable meant recursing that forever. Callers must pass toObject() output,
   // and a caller who forgets now gets a wrong answer at once rather than a
   // stack overflow seconds later.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
 
   class FakeCollection { constructor(model) { this.model = model; } }
   const doc = { name: "Animated Armor", _stats: { createdTime: 1 } };
@@ -290,7 +280,6 @@ test("a class instance is opaque, not something to walk into", async () => {
 });
 
 test("plain data is still walked as before", async () => {
-  const { stripVolatile } = await import("../scripts/patch.mjs");
   const out = stripVolatile({ a: { b: { _stats: {}, c: 1 } }, d: [{ _stats: {}, e: 2 }] });
   assert.deepEqual(out, { a: { b: { c: 1 } }, d: [{ e: 2 }] });
 });
@@ -302,7 +291,6 @@ test("a folder travels as a path of names, not an id", async () => {
   // elsewhere, which is why `folder` is stripped from a patch. The shape an
   // author organised their work into is still worth keeping, and a path can be
   // rebuilt on the other side.
-  const { folderPath } = await import("../scripts/patch.mjs");
   const bags = { name: "Bags", folder: { name: "Magic Items", folder: null } };
   assert.equal(folderPath({ folder: bags }), "Magic Items/Bags");
   assert.equal(folderPath({ folder: { name: "Tables", folder: null } }), "Tables");
@@ -311,7 +299,6 @@ test("a folder travels as a path of names, not an id", async () => {
 });
 
 test("a folder path tolerates what people type", async () => {
-  const { folderSegments } = await import("../scripts/patch.mjs");
   assert.deepEqual(folderSegments("/Magic Items//Bags/ "), ["Magic Items", "Bags"]);
   assert.deepEqual(folderSegments(""), []);
   assert.deepEqual(folderSegments(undefined), []);
@@ -320,7 +307,6 @@ test("a folder path tolerates what people type", async () => {
 test("the id form is still stripped from a patch", async () => {
   // Both things are true at once: the path is carried on the entry, and the
   // raw id never reaches the patch.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
   const out = stripVolatile({ name: "Random Magic Items", folder: "U4xmShLy19Ry54zl" });
   assert.ok(!("folder" in out));
 });
@@ -332,7 +318,6 @@ test("an adventure's internal folder pointers survive stripping", async () => {
   // `folders` array and its embedded documents point into it, and that array
   // travels with the document, so those ids stay meaningful on the other side.
   // Stripping at depth would ship the folders empty and every document loose.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
   const adventure = {
     _id: "adventure00000001", name: "An Adventure",
     folder: "packFolderId001",                       // world-local, goes
@@ -359,7 +344,6 @@ test("a document with no `type` field is still referenced", async () => {
   // Journals, scenes and roll tables have no `type`, so the old shape-based
   // guess never referenced them and shipped their text as a copy instead. An
   // adventure's payload is mostly exactly those.
-  const { diff, referenceSources } = await import("../scripts/patch.mjs");
   const theirs = { _id: "jrnlShopIntro01", name: "Welcome", pages: [{ _id: "pg1", text: "licensed prose" }] };
   const before = { name: "Adventure", journal: [] };
   const mine = { name: "Adventure", journal: [{ ...theirs, name: "Welcome, traveller" }] };
@@ -382,7 +366,6 @@ test("renaming and retyping an existing item does not gut it", async () => {
   // The false positive. `{_id, name, type}` looked like a whole document, so it
   // was diffed against the full source, which nulled out every field it did not
   // mention. An ordinary edit, not a contrived one.
-  const { diff, referenceSources, applyPatch } = await import("../scripts/patch.mjs");
   const theirs = { _id: "itemScimitar0001", name: "Scimitar", type: "weapon",
                    system: { damage: "1d6", description: "licensed" } };
   const before = { items: [theirs] };
@@ -408,7 +391,6 @@ test("the first entry added to an empty collection is whole", async () => {
   // `isKeyedArray` needs a member to recognise a keyed array, so an empty or
   // absent one is replaced wholesale rather than merged and never reaches
   // `diffById`. Everything inside a wholesale replacement is new by definition.
-  const { diff } = await import("../scripts/patch.mjs");
 
   const fromEmpty = new Set();
   diff({ items: [] }, { items: [{ _id: "itemFirstOne0001", name: "A" }] }, fromEmpty);
@@ -427,7 +409,6 @@ test("our own flags do not travel, and other modules' still do", async () => {
   // `flags.graft.origin` records where this copy came from, which is exactly as
   // volatile as `_stats` and would be a lie on the other end. Somebody else's
   // flags are not ours to curate.
-  const { stripVolatile } = await import("../scripts/patch.mjs");
   const out = stripVolatile({
     name: "The Adventure",
     flags: {
@@ -486,7 +467,6 @@ test("the generation a document was authored for is read from _stats", async () 
   // The one part of `_stats` that describes the document rather than this copy
   // of it, and the cheapest possible drift check: a scene authored before 14
   // keeps a `background` nothing reads, and builds looking fine.
-  const { authoredGeneration } = await import("../scripts/patch.mjs");
   assert.equal(authoredGeneration({ _stats: { coreVersion: "13.344" } }), 13);
   assert.equal(authoredGeneration({ _stats: { coreVersion: "14.364" } }), 14);
   assert.equal(authoredGeneration({ _stats: { coreVersion: "9" } }), 9);
@@ -497,7 +477,6 @@ test("the generation a document was authored for is read from _stats", async () 
 });
 
 test("a source older than this Foundry is reported, a current one is not", async () => {
-  const { driftWarnings } = await import("../scripts/patch.mjs");
   const world = { generation: 14, systemId: "dnd5e", systemVersion: "5.3.3" };
   const at = (v) => driftWarnings("x", { _stats: { coreVersion: v, systemId: "dnd5e", systemVersion: "5.3.3" } }, world);
 
@@ -511,7 +490,6 @@ test("a source older than this Foundry is reported, a current one is not", async
 // ── drift ───────────────────────────────────────────────────────────────────
 
 test("a different system is reported, and a newer minor is not", async () => {
-  const { driftWarnings } = await import("../scripts/patch.mjs");
   const world = { generation: 14, systemId: "dnd5e", systemVersion: "5.3.3" };
 
   const wrongSystem = driftWarnings("x", { _stats: { systemId: "pf2e", systemVersion: "6.0" } }, world);
@@ -527,7 +505,6 @@ test("a different system is reported, and a newer minor is not", async () => {
 });
 
 test("a projection covers what the patch touches and nothing else", async () => {
-  const { project } = await import("../scripts/patch.mjs");
   const source = {
     name: "Bandit", system: { hp: { value: 11 }, ac: 12 },
     items: [{ _id: "itemBow00000000a", name: "Bow", quantity: 1 },
@@ -544,7 +521,6 @@ test("a projection covers what the patch touches and nothing else", async () => 
 test("only a change to what the patch touches trips the hash", async () => {
   // The whole point of projecting. An upstream typo fix in a description you
   // never touched must not warn, or the warning gets skipped.
-  const { sourceHash, driftFromSource } = await import("../scripts/patch.mjs");
   const source = { name: "Bandit", system: { hp: { value: 11 }, ac: 12 } };
   const patch = { system: { hp: { value: 45 } } };
   const recorded = sourceHash(source, patch);
@@ -557,7 +533,6 @@ test("only a change to what the patch touches trips the hash", async () => {
 });
 
 test("reordering a keyed array is not drift", async () => {
-  const { sourceHash } = await import("../scripts/patch.mjs");
   const a = { items: [{ _id: "itemBow00000000a", q: 1 }, { _id: "itemAxe00000000b", q: 2 }] };
   const b = { items: [{ _id: "itemAxe00000000b", q: 2 }, { _id: "itemBow00000000a", q: 1 }] };
   const patch = { items: [{ _id: "itemBow00000000a", q: 3 }] };
@@ -567,7 +542,6 @@ test("reordering a keyed array is not drift", async () => {
 test("key order in the source is not drift either", async () => {
   // `JSON.stringify` preserves insertion order, so hashing it directly would
   // report drift between two sources carrying identical content.
-  const { sourceHash } = await import("../scripts/patch.mjs");
   const patch = { system: { hp: 1, ac: 2 } };
   assert.equal(sourceHash({ system: { hp: 9, ac: 8 } }, patch),
                sourceHash({ system: { ac: 8, hp: 9 } }, patch));
@@ -576,7 +550,6 @@ test("key order in the source is not drift either", async () => {
 test("an entry with no recorded hash is silent", async () => {
   // Absent means "not recorded", not "verified clean": every grafts.json
   // written before this existed has none.
-  const { driftFromSource } = await import("../scripts/patch.mjs");
   assert.equal(driftFromSource("x", undefined, { a: 1 }, { a: 2 }), null);
   assert.equal(driftFromSource("x", "", { a: 1 }, { a: 2 }), null);
 });
@@ -584,7 +557,6 @@ test("an entry with no recorded hash is silent", async () => {
 test("an embedded graft answers for itself", async () => {
   // A sourced entry has its own source and its own hash; projecting it here
   // would hash somebody else's document into ours.
-  const { project } = await import("../scripts/patch.mjs");
   const source = { items: [{ _id: "itemBow00000000a", name: "Bow" }] };
   const patch = { items: [{ _id: "itemAmulet00000c", source: "Compendium.a.b.Item.c", patch: {} }] };
   assert.deepEqual(project(source, patch), {});
