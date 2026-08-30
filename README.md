@@ -107,8 +107,10 @@ Every operation is available from the UI.
 
 Whether an entry is built is read from the pack index, not from a stored flag, so both a hand-deleted document and a newly shipped entry are detected as unbuilt. Packs are unlocked for the write and restored exactly as found, including their folder assignment.
 
+`unbuilt` looks entries up by the ids the module declares, so it says nothing about a module whose entries come from a provider: that `grafts.json` names a source to fetch, and there are no ids until a build has run. `anyBuilt` is the question such a module can ask instead, answered from the pack index alone. It counts only what graft made, so a document a reader added by hand is not mistaken for a build.
+
 ```js
-game.modules.get("graft").api    // buildPacks, hydrate, readGrafts, unbuilt,
+game.modules.get("graft").api    // buildPacks, hydrate, readGrafts, unbuilt, anyBuilt,
                                  // exportDiff, registerProvider, registeredProviders, progress
 ```
 

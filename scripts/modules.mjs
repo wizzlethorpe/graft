@@ -83,6 +83,27 @@ export async function unbuilt(moduleId) {
 }
 
 /**
+ * Whether anything graft built for this module is still in its packs.
+ *
+ * `unbuilt` cannot answer this for a module whose entries arrive from a
+ * provider: its `grafts.json` names a source to fetch rather than the entries
+ * themselves, so there are no ids to look up until a build has already run.
+ * Pack contents are what is knowable without fetching anything.
+ *
+ * Graft's own documents only. `flags.graft.built` is on everything it creates,
+ * so one a reader added to the pack by hand never reads as a build.
+ */
+export async function anyBuilt(moduleId) {
+  for (const declared of game.modules.get(moduleId)?.packs ?? []) {
+    const pack = game.packs.get(`${moduleId}.${declared.name}`);
+    if (!pack) continue;                       // a pack Foundry has not read yet
+    const index = await pack.getIndex({ fields: ["flags.graft.built"] });
+    if (index.some((e) => e?.flags?.graft?.built)) return true;
+  }
+  return false;
+}
+
+/**
  * Fill in the pack an entry belongs in, when there is only one it could be.
  *
  * `exportDiff` cannot know which module is being authored, but the answer is
