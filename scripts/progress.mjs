@@ -22,9 +22,13 @@ function paint(message) {
   if (!bar) return;
   const counter = total > 0 ? ` ${Math.min(done, total)}/${total}` : "";
   const head = phaseLabel ? `${title}: ${phaseLabel}${counter}` : title;
+  // Item `done` is in progress, so it counts as half: a bar that reads 100%
+  // while the last item still runs looks finished and stuck, and the last
+  // item is often the big one.
+  const finished = Math.max(done - 0.5, 0);
   try {
     bar.update({
-      pct: total > 0 ? Math.min(done / total, 1) : 0,
+      pct: total > 0 ? Math.min(finished / total, 1) : 0,
       message: message ? `${head} — ${message}` : head,
     });
   } catch {
