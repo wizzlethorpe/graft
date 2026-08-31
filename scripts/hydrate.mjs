@@ -205,7 +205,14 @@ async function hydrateOne(entry, moduleId, touched, warnings) {
 
   const existing = await pack.getDocument(entry.id);
   if (existing) {
-    await existing.update(prepared, { diff: false, recursive: false });
+    // A write Foundry would turn into the document already there costs a
+    // quarter-second of pack index and disk for no change, and most entries
+    // are unchanged on most rebuilds. Compared rather than remembered: a
+    // stored digest would go stale against a Foundry upgrade migrating the
+    // same input differently, or against an edit made in the pack by hand.
+    if (!identical(prepared, existing.toObject())) {
+      await existing.update(prepared, { diff: false, recursive: false });
+    }
   } else {
     await cls.create(prepared, { pack: collection, keepId: true, keepEmbeddedIds: true });
     if (!await pack.getDocument(entry.id)) {
@@ -213,6 +220,26 @@ async function hydrateOne(entry, moduleId, touched, warnings) {
     }
   }
   return entryUuid(entry, moduleId);
+}
+
+/** Written afresh by Foundry on every save, so never a real difference. */
+const RESAVED = new Set(["modifiedTime", "lastModifiedBy"]);
+
+/** Key order is not a difference; two schemas can emit the same data either way. */
+function ordered(value) {
+  if (Array.isArray(value)) return value.map(ordered);
+  if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) return value;
+  const out = {};
+  for (const k of Object.keys(value).sort()) out[k] = ordered(value[k]);
+  return out;
+}
+
+/** Whether writing `prepared` over `existing` would leave anything different. */
+export function identical(prepared, existing) {
+  const settled = ({ _stats, ...rest }) => ordered(_stats && typeof _stats === "object"
+    ? { ...rest, _stats: Object.fromEntries(Object.entries(_stats).filter(([k]) => !RESAVED.has(k))) }
+    : rest);
+  return JSON.stringify(settled(prepared)) === JSON.stringify(settled(existing));
 }
 
 /**
