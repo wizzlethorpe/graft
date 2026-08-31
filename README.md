@@ -182,6 +182,16 @@ Hooks.on("graftRegisterProviders", ({ registerProvider }) => {
 
 `hydrate` should be idempotent, and may not enqueue itself.
 
+## Hooks
+
+`graftBuilt` fires after every build, whether it came from the world-load prompt, a compendium header, or the pack control. A module that tracks what it last built cannot see those controls itself, so this is how it finds out.
+
+```js
+Hooks.on("graftBuilt", (moduleId, { built, skipped, warnings, removed }) => {
+  // built, skipped and warnings are what the report showed
+});
+```
+
 **The recommended shape:** fetch what an entry names, apply its patch to that JSON, and return a sourceless entry carrying the result. This needs no pack of your own and no ids that could collide. Record provenance in `flags.graft`. It also keeps the provider a plain array-to-array transform, testable without Foundry. Since a provider is often the only component that sees the original document, most warnings have to come from it.
 
 ## Moulinette

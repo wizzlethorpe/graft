@@ -110,6 +110,10 @@ export async function buildAndReport(moduleId) {
     await game.settings.set(MODULE_ID, SUPPRESSED, [...suppressed]);
   }
 
+  // Every build reports, whoever started it. A module tracking what it last
+  // built cannot see the pack control or the compendium header from here.
+  Hooks.callAll("graftBuilt", moduleId, { built, skipped: allSkipped, warnings: allWarnings, removed });
+
   // Logged as well as shown, because a console line can go into a bug report.
   if (removed.length > 0) {
     console.group(`Graft | ${removed.length} removed`);
