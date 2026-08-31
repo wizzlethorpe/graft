@@ -81,15 +81,17 @@ async function makePacks(label, types) {
   const made = new Map();
   for (const type of types) {
     const name = `${packStem(label)}-${type.toLowerCase()}`;
-    const existing = game.packs.get(`${WORLD}.${name}`);
-    if (existing) { made.set(type, name); continue; }
-    await compendiumClass().createCompendium({
-      label: `${label} ${type}`,
-      name,
-      type,
-      package: WORLD,
-      ...(folder ? { folder: folder.id } : {}),
-    });
+    const collection = `${WORLD}.${name}`;
+    if (!game.packs.get(collection)) {
+      await compendiumClass().createCompendium({ label: `${label} ${type}`, name, type, package: WORLD });
+    }
+    // Not part of the metadata a compendium is created with: Foundry keeps
+    // where a pack sits in a world setting, written after the pack exists.
+    const pack = game.packs.get(collection);
+    if (folder && pack) {
+      try { await pack.setFolder(folder.id); }
+      catch (err) { console.warn(`Graft | could not file ${collection} under ${folder.name}:`, err); }
+    }
     made.set(type, name);
   }
   return made;
