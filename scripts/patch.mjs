@@ -150,8 +150,11 @@ function equal(a, b) {
 //                  array, which travels with it
 //   ownership      thinned rather than dropped. Per-user entries are ids from
 //                  one world; `default` is how you say "players can see this"
+//   active         which scene the world it was copied from is looking at
+//   navOrder       where it sits in that world's scene navigation
+//   thumb          a path into that world's own generated thumbnails
 const VOLATILE = new Set(["_stats"]);
-const ROOT_ONLY = new Set(["folder"]);
+const ROOT_ONLY = new Set(["folder", "active", "navOrder", "thumb"]);
 const OWNERSHIP_KEEP = new Set(["default"]);
 
 /** A copy with the volatile fields removed, at every depth. */

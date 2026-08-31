@@ -311,6 +311,20 @@ test("the id form is still stripped from a patch", async () => {
   assert.ok(!("folder" in out));
 });
 
+test("a scene's world-local state is stripped, but its ordering is not", async () => {
+  // `active` is the one that does damage: it would make a reader's copy the
+  // scene they are looking at.
+  const out = stripVolatile({
+    name: "Ancient Pyramid Temple [30x30]",
+    active: true,
+    navOrder: 3,
+    thumb: "worlds/southaven/assets/scenes/thumb-JY63ZB_Xxbtc1j2NggbgIg.webp",
+    sort: 100000,
+    walls: [{ _id: "wall000000000001", c: [0, 0, 10, 0] }],
+  });
+  assert.deepEqual(Object.keys(out), ["name", "sort", "walls"]);
+});
+
 // ── adventures ──────────────────────────────────────────────────────────────
 
 test("an adventure's internal folder pointers survive stripping", async () => {

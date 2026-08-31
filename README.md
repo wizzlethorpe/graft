@@ -219,6 +219,8 @@ As an entry's `source` it names a **document**, which is fetched and patched. In
 
 Nothing is redistributed. The reader's own subscriptions decide what they get.
 
+**Copying does not run backwards.** Moulinette fires no hooks and stamps no flags of its own, so a document it imported carries only the publisher's provenance, and `_stats.compendiumSource` names the publisher's private work module rather than anything a reader can install. **Copy graft** on one therefore takes the no-recorded-source path and carries the whole document, walls and lights included, with its asset paths left as the local `moulinette-v2/...` ones that resolve on your machine only. Check what it produced before shipping it.
+
 ## Format details
 
 Patches use [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) (JSON Merge Patch), because a patch that mirrors the shape of the document is readable, and `null` already means "delete this key". [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902) is more expressive, and its `test` op would give drift detection for free, but it addresses array members by position.
@@ -246,6 +248,7 @@ An embedded source naming a sibling is an ordering edge like a top-level one, so
 
 - **`_stats`**, whose timestamps differ between identical documents and would report every embedded item as changed.
 - **`folder`**, at the root only. It is kept at depth, which matters for Adventures: they carry their own `folders` array and their documents point into it.
+- **`active`, `navOrder` and `thumb`**, at the root, which say where a Scene sat in the world it was copied from rather than what the scene is: which scene that world is looking at, where it sits in the navigation bar, and a path into that world's own generated thumbnails. `sort` is kept, since a graft may reasonably want to say where its output sits in a pack.
 - **`ownership`** is thinned rather than dropped. Per-user entries are world-local and are removed; `default` stays, since it is how you say "players can see this".
 
 Nothing else is stripped, and in particular **no other module's flags**. Those are that module's data, and graft leaves them alone.
