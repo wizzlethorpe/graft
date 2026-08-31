@@ -118,8 +118,7 @@
   "flags": {
     "graft": {
       "entries": [
-        "grafts.json",
-        "grafts-moulinette.json"
+        "grafts.json"
       ]
     }
   }

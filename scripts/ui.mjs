@@ -6,7 +6,7 @@
 
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
-import { registeredProviders, runProviders } from "./providers.mjs";
+import { collectTransforms, runTransforms } from "./prebuild.mjs";
 import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
 import { importGrafts } from "./import.mjs";
@@ -55,7 +55,7 @@ export async function promptForUnbuilt() {
 
     const build = await foundry.applications.api.DialogV2.confirm({
       window: { title: t("GRAFT.PromptTitle", { module: module.title }) },
-      content: t("GRAFT.PromptBody", { module: module.title, count: missing.length }) + providerNotice(),
+      content: t("GRAFT.PromptBody", { module: module.title, count: missing.length }) + transformNotice(module.id),
       yes: { label: t("GRAFT.PromptBuild") },
       no: { label: t("GRAFT.PromptLater") },
       modal: false,
@@ -81,13 +81,13 @@ export async function buildAndReport(moduleId) {
   progress.begin(`Graft: ${title}`);
   let prepared, built, skipped, warnings, removed;
   try {
-    // Providers rewrite entries before anything is built. Their failures use
-    // the same shape as build failures, so the reader sees one report.
-    prepared = await runProviders(entries, undefined, {
-      onProvider: (p) => progress.phase(p.label),
+    // Other modules rewrite entries before anything is built. Their failures
+    // use the same shape as build failures, so the reader sees one report.
+    prepared = await runTransforms(collectTransforms(moduleId), entries, {
+      onTransform: (tr) => progress.phase(tr.label),
     });
     ({ built, skipped, warnings, removed } = await hydrate(moduleId, prepared.entries, {
-      // A provider that skipped an entry drops it from its output; the entry
+      // A transform that skipped an entry drops it from its output; the entry
       // still exists, and what was built for it last time is not stale.
       declared: entries,
       // The total is only known once planning has dropped what it cannot
@@ -123,15 +123,15 @@ export async function buildAndReport(moduleId) {
   }
   if (allWarnings.length > 0) {
     console.group(`Graft | ${allWarnings.length} built with warnings`);
-    for (const { provider, id, reason } of allWarnings) {
-      console.warn(`${provider ? `[${provider}] ` : ""}${id}: ${reason}`);
+    for (const { by, id, reason } of allWarnings) {
+      console.warn(`${by ? `[${by}] ` : ""}${id}: ${reason}`);
     }
     console.groupEnd();
   }
   if (allSkipped.length > 0) {
     console.group(`Graft | ${allSkipped.length} skipped`);
-    for (const { provider, id, reason } of allSkipped) {
-      console.warn(`${provider ? `[${provider}] ` : ""}${id}: ${reason}`);
+    for (const { by, id, reason } of allSkipped) {
+      console.warn(`${by ? `[${by}] ` : ""}${id}: ${reason}`);
     }
     console.groupEnd();
   }
@@ -139,12 +139,11 @@ export async function buildAndReport(moduleId) {
   return { built, skipped: allSkipped, warnings: allWarnings, removed };
 }
 
-/** Build failures first, then each provider's, each under its own heading. */
-function groupByProvider(skipped) {
-  const labels = new Map(registeredProviders().map((p) => [p.id, p.label]));
+/** Build failures first, then each transform's, each under its own heading. */
+function groupByReporter(skipped) {
   const groups = new Map();
   for (const item of skipped) {
-    const key = item.provider ? labels.get(item.provider) ?? item.provider : null;
+    const key = item.by ?? null;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
   }
@@ -154,10 +153,10 @@ function groupByProvider(skipped) {
 }
 
 /** Said only when there is something to say, so it stays worth reading. */
-function providerNotice() {
-  const names = registeredProviders().map((p) => p.label);
+function transformNotice(moduleId) {
+  const names = collectTransforms(moduleId).map((tr) => tr.label);
   if (names.length === 0) return t("GRAFT.PromptNoDownload");
-  return t("GRAFT.PromptProviders", { providers: names.join(", ") });
+  return t("GRAFT.PromptTransforms", { transforms: names.join(", ") });
 }
 
 /**
@@ -183,15 +182,15 @@ async function reportBuild(moduleId, built, skipped, warnings = [], removed = []
     parts.push(`<p><strong>${t("GRAFT.SectionRemoved")}</strong></p><ul>${rows}</ul>`);
   }
 
-  // Sectioned by whoever reported it. A provider failing to reach a service and
-  // an entry that was never valid want different responses from the reader, and
-  // one undifferentiated list hides which is which.
-  for (const [provider, items] of groupByProvider(skipped)) {
+  // Sectioned by whoever reported it. A transform failing to reach a service
+  // and an entry that was never valid want different responses from the reader,
+  // and one undifferentiated list hides which is which.
+  for (const [by, items] of groupByReporter(skipped)) {
     const rows = items.map(({ id, reason }) =>
       `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
       + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
-    const heading = provider
-      ? t("GRAFT.SectionNotBuiltBy", { provider: foundry.utils.escapeHTML(provider) })
+    const heading = by
+      ? t("GRAFT.SectionNotBuiltBy", { transform: foundry.utils.escapeHTML(by) })
       : t("GRAFT.SectionNotBuilt");
     parts.push(`<p><strong>${heading}</strong></p><ul>${rows}</ul>`);
   }

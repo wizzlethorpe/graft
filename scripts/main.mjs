@@ -3,9 +3,7 @@
 import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { readGrafts, unbuilt, anyBuilt } from "./modules.mjs";
-import { registerProvider, registeredProviders } from "./providers.mjs";
 import * as progress from "./progress.mjs";
-import { moulinetteProvider } from "./moulinette.mjs";
 import {
   registerSettings, promptForUnbuilt, addPackControl, copyOne,
   buildAndReport, addCopyGraftContext, addCopyFolderGrafts, addImportControl, CONTEXT_TYPES,
@@ -17,23 +15,11 @@ Hooks.once("init", () => {
   registerSettings();
   game.modules.get(MODULE_ID).api = {
     hydrate, exportDiff, readGrafts, unbuilt, anyBuilt, buildPacks: buildAndReport,
-    registerProvider, registeredProviders,
     progress: { phase: progress.phase, step: progress.step, note: progress.note },
   };
 });
 
-// Offers to build anything an enabled graft module has not built yet. Once per
-// module, remembered, because a prompt on every world load is one people learn
-// to dismiss without reading.
-// Providers register here rather than at init, so they never have to care
-// whether their own module loaded before this one.
-Hooks.once("ready", async () => {
-  // Shipped with graft but inert without Moulinette, so a reader who does not
-  // use it never sees it named in a build prompt.
-  if (game.modules.get("moulinette")?.active) registerProvider(moulinetteProvider());
-  Hooks.callAll("graftRegisterProviders", { registerProvider });
-  await promptForUnbuilt();
-});
+Hooks.once("ready", promptForUnbuilt);
 
 // A Build control in the header of a graft module's own compendium windows,
 // which is where somebody looks when they wonder why a pack is empty.

@@ -7,7 +7,7 @@
 
 import { hydrate } from "./hydrate.mjs";
 import { rewriteSources } from "./patch.mjs";
-import { runProviders } from "./providers.mjs";
+import { collectTransforms, runTransforms } from "./prebuild.mjs";
 import * as progress from "./progress.mjs";
 
 const WORLD = "world";
@@ -100,8 +100,8 @@ async function makePacks(label, types) {
 /**
  * Build a file's entries into world compendiums.
  *
- * Providers run first, exactly as they do for a module: a file naming a vault
- * or a Moulinette asset builds when the reader has that module, and reports a
+ * Pre-build transforms run first, under `"world"` rather than a module id: a
+ * file naming a vault builds when the reader has that module, and reports a
  * missing one rather than being refused up front.
  *
  * @returns `{ built, skipped, warnings, removed }`, or null if there was nothing to build.
@@ -113,8 +113,8 @@ export async function importGrafts(parsed, label) {
 
   progress.begin(`Graft: ${label}`);
   try {
-    const prepared = await runProviders(localiseSources(declared), undefined, {
-      onProvider: (p) => progress.phase(p.label),
+    const prepared = await runTransforms(collectTransforms(WORLD), localiseSources(declared), {
+      onTransform: (tr) => progress.phase(tr.label),
     });
     const types = typesIn(prepared.entries);
     if (types.length === 0) {

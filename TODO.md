@@ -36,15 +36,17 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
   `flags.graft.built` are eligible, and that flag did not exist before 0.2.0, so
   anything an earlier graft built is left alone. Correct and conservative: it
   refuses to delete what it cannot prove it made.
-- Moulinette content cannot be copied back. Moulinette fires no hooks and stamps
-  no flags, so a document it imported records only the publisher's private
-  module as its source and **Copy graft** carries it whole. Reversing the local
-  `moulinette-v2/...` paths would make such an entry portable but would not stop
-  it carrying the map; only a document-level source would, and recovering one is
-  inference. The provider does stamp `flags.graft.moulinette` on what graft
-  itself builds, but `exportDiff` never reads it, so even that round trip
-  re-expands. A `flags.moulinette = { pack_id, url }` stamp on import would close
-  both, and has been asked for upstream.
+- fa-battlemaps assets cannot be fetched for a reader. Its compendium ships
+  every scene document, so `Compendium.fa-battlemaps.maps.Scene.<id>` works as an
+  ordinary source and the scene builds; what a reader lacks is the image and
+  audio files, which FA gates behind Patreon and fetches on demand. There is no
+  entry point to ask it for them: `scripts/fa-battlemaps.js` is an ES module with
+  no exports and no global, so `FABattlemaps` and `FADownloader` are unreachable,
+  and `game.faBattlemaps` is data with no methods. FA only intercepts Import from
+  its own compendium, so a scene built into a graft module's pack gets none of
+  that. Driving FA's HTTP API directly would mean reimplementing an undocumented
+  third-party client, including its Patreon check, so the reader downloads the
+  map in FA's own window instead.
 - No gesture updates an existing entry's patch. Build an entry, import it into
   the world, edit it, and **Copy graft** names your own built document, which
   `planOrder` refuses as a self-cycle if pasted over the original. Rewinding one
@@ -56,42 +58,37 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 
 ## Wanted
 
-- An `fa-battlemaps` provider. Its compendium ships every scene document, free
-  and premium alike, so `Compendium.fa-battlemaps.maps.Scene.<id>` already works
-  as an ordinary source; what a reader lacks is the map's image and audio files,
-  which FA fetches on demand and gates behind Patreon. So the provider rewrites
-  nothing and hands its entries back untouched: it downloads the assets for
-  entries sourced from that pack and reports the auth wall once rather than once
-  per entry. FA exposes no `.api`, so it means reaching `FABattlemaps` and
-  `FADownloader` as internals, and skipping FA's own `onComplete`, which imports
-  the scene into the world that graft is about to build. The one thing that
-  would force a rewrite is a reader who changed FA's `download-path`.
-- An `fa-nexus` provider. Unlike fa-battlemaps this one does rewrite, but only a
-  prefix: below the root a Nexus path is FA's own catalog tree, and the root
-  itself is the world settings `cloudDownloadDirAssets` and
-  `cloudDownloadDirTokens`, so `@fa-nexus/assets/...` and `@fa-nexus/tokens/...`
-  invert by stripping a prefix both machines can read, with nothing recorded.
-  Three subtrees are not downloadable content and must never become references:
-  `__generated/flattened`, `exports` and `masks/`. The first is the trap, since
-  flattening a scene is how a Nexus map becomes portable at all, and the file it
-  produces exists only on the machine that made it. Forge readers are a second
-  case, since Nexus can store on `forgevtt` rather than `data` and their paths do
-  not start with the root.
-- Provenance for Moulinette content, without waiting on the developer. Every
-  cloud download funnels through one method on the `mou-cloud-cached` collection,
-  the object `loadIndex` already reaches: `downloadAsset(asset)`, which returns
-  the document with each `#DEP#` already rewritten to the local pack folder. So
-  `localPath.replace(folder + "/", "")` plus `asset.pack_id` reconstructs
-  `@moulinette/<pack_id>/<file>` with no index lookup, at the one moment both
-  halves are in the same place. Wrap it, keep the map in memory, and stamp
-  `flags.graft.moulinette` in `preCreateScene`, the way `stampOrigin` already
-  stamps adventure content. Three limits: it is forward-only, though a one-shot
-  pass over the library could rebuild the map for what is already downloaded;
-  ScenePacker packs fetch per pack rather than per document, so naming one scene
-  needs a second ref shape built on the publisher id in `_stats.compendiumSource`;
-  and `downloadAsset` is an internal, so it wants the same "not where graft
-  expects it" check `loadIndex` makes rather than failing quietly.
-- `exportDiff` reads no provenance out of `flags.graft`. Whatever writes it, the
-  export side has to look before `stripVolatile` removes it, the way it already
-  reads `_stats` for embedded sources. This is the piece that belongs in graft
-  proper rather than in any one provider.
+- `graft-moulinette`, a companion module. Graft went offline in 0.7.0 and knows
+  nothing about Moulinette; this is where that knowledge lands. The design:
+  - One declared compendium pack per document type. A source reads
+    `Compendium.graft-moulinette.scenes.Scene.<id>` where the id is a hash of
+    the Moulinette pack number plus in-pack filepath, so the UUID is the
+    marketplace address in Foundry's alphabet. Hashes do not reverse, but the
+    reader's own index enumerates every candidate to hash against.
+  - Author side, no interaction: every Moulinette import funnels through
+    `downloadAsset` on the `mou-cloud-cached` collection, and the world document
+    lands through ordinary `createScene`. Wrap the former, and when the scene
+    arrives, write the document into the pack under its deterministic id and
+    stamp `_stats.compendiumSource` on the world copy. Copy graft then works
+    with no Moulinette code in graft. `api.import(...)` as the fallback for
+    content imported before the module existed, since the wrapper is
+    forward-only.
+  - Reader side: a `graftPreBuild` transform materialises any of its sources not
+    yet in its packs, via the index and `downloadAsset`, which also pulls the
+    document's files. A `graftBuilt` listener then scans the built documents for
+    `moulinette-v2/cloud/<creator>/<pack>/<filepath>` paths and downloads what
+    is missing to the exact path named. The folder-to-pack map comes off the
+    index: a row's `previewUrl` ends in a name built from its own `url`, and
+    cutting that name off leaves the two folder segments beside its `pack_id`.
+  - Known holes to carry over: a creator renaming a pack changes the slug
+    embedded in paths; ScenePacker packs and `cloud-private/` content are not
+    in the asset index; an S3 reader's paths sit behind a base URL the shipped
+    document lacks; scanning only reverses a path that is the whole string,
+    since one inside a journal page's markup would resolve nowhere.
+- An `fa-nexus` companion module, same shape: paths under the world-configured
+  `cloudDownloadDirAssets`/`cloudDownloadDirTokens` roots are FA's own catalog
+  tree, resolvable through the exported `NexusContentService` and
+  `NexusDownloadManager`. Deferred: Nexus users typically may redistribute the
+  art anyway. Never treat `__generated/`, `exports/` or `masks/` as catalog
+  content; the flattened map a scene actually uses exists only on the machine
+  that made it.

@@ -85,8 +85,8 @@ export async function unbuilt(moduleId) {
 /**
  * Whether anything graft built for this module is still in its packs.
  *
- * `unbuilt` cannot answer this for a module whose entries arrive from a
- * provider: its `grafts.json` names a source to fetch rather than the entries
+ * `unbuilt` cannot answer this for a module whose entries a transform
+ * expands: its `grafts.json` names a source to fetch rather than the entries
  * themselves, so there are no ids to look up until a build has already run.
  * Pack contents are what is knowable without fetching anything.
  *

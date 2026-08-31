@@ -1,6 +1,6 @@
 // Answering "has this module built anything?" from the pack index alone.
 //
-// The question `unbuilt` cannot answer for a provider-backed module: its
+// The question `unbuilt` cannot answer for a transform-backed module: its
 // grafts.json names a source to fetch rather than the entries themselves, so
 // there are no ids to look up until a build has already happened.
 

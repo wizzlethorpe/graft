@@ -111,17 +111,17 @@ Every operation is available from the UI.
 - **Rebuilding.** **Build grafts** sits in the header of that module's compendium windows.
 - **The report** lists what was not built and why, then anything built with warnings, then a collapsed list of successes as clickable links. Results land in the **Compendium** tab.
 - **Exporting.** Beside **Copy graft** on a document or folder, **Export graft** writes the same entries to a file. Always a list, even for one document, because that is the shape a `grafts.json` takes.
-- **Building a file.** **Build from file** on the Compendium tab takes a `grafts.json` somebody sent you and builds it into world compendiums, one per document type, filed together under a name you give. Providers run as they would for a module, so a file naming content from one builds when you have it installed. Nothing is tracked afterwards: there is no manifest to compare against, so this is an import rather than a subscription.
+- **Building a file.** **Build from file** on the Compendium tab takes a `grafts.json` somebody sent you and builds it into world compendiums, one per document type, filed together under a name you give. Pre-build transforms run first with `"world"` as the module id, so a file naming content another module fetches builds when you have that module installed. Nothing is tracked afterwards: there is no manifest to compare against, so this is an import rather than a subscription.
 
 Whether an entry is built is read from the pack index, not from a stored flag, so both a hand-deleted document and a newly shipped entry are detected as unbuilt. Packs are unlocked for the write and restored exactly as found, including their folder assignment.
 
 An entry whose document would come out exactly as it already is skips its write. Compared against what is in the pack rather than against a remembered digest, so a Foundry upgrade that migrates the same input differently, and an edit made in the pack by hand, both still rebuild. Only the timestamps Foundry rewrites on every save are ignored.
 
-`unbuilt` looks entries up by the ids the module declares, so it says nothing about a module whose entries come from a provider: that `grafts.json` names a source to fetch, and there are no ids until a build has run. `anyBuilt` is the question such a module can ask instead, answered from the pack index alone. It counts only what graft made, so a document a reader added by hand is not mistaken for a build.
+`unbuilt` looks entries up by the ids the module declares, so it says nothing about a module whose entries a transform expands: that `grafts.json` names a source to fetch, and there are no ids until a build has run. `anyBuilt` is the question such a module can ask instead, answered from the pack index alone. It counts only what graft made, so a document a reader added by hand is not mistaken for a build.
 
 ```js
 game.modules.get("graft").api    // buildPacks, hydrate, readGrafts, unbuilt, anyBuilt,
-                                 // exportDiff, registerProvider, registeredProviders, progress
+                                 // exportDiff, progress
 ```
 
 Tests: `node --test 'test/*.test.mjs'`
@@ -170,56 +170,33 @@ A grafts file may be a bare array, or an object declaring the format it was writ
 
 Absent means 1. A file declaring a newer format is refused rather than partially read, since fields the newer format relies on would otherwise be ignored silently. `packs` only affects **Copy graft**, which otherwise picks the pack when your module has exactly one of that type and gives up when it has two.
 
-## Providers
+## Hooks
 
-A provider rewrites entries before anything is built. Moulinette is the first.
+Graft is offline: a source is a compendium document, and building touches nothing outside the world. Content that has to be fetched, whether from a deployed vault or a subscription service, belongs in a module of its own, and graft gives it two moments to act.
+
+**`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once, in registration order. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into world compendiums.
 
 ```js
-Hooks.on("graftRegisterProviders", ({ registerProvider }) => {
-  registerProvider({
-    id: "my-provider",
-    label: "My Provider",
-    async hydrate(entries) {
-      return { entries, skipped: [], warnings: [], enqueue: [] };
+Hooks.on("graftPreBuild", (moduleId, register) => {
+  register({
+    id: "my-module",
+    label: "My Module",
+    async transform(entries) {
+      return { entries, skipped: [], warnings: [] };
     },
   });
 });
 ```
 
-`hydrate` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings, enqueue }`, or nothing. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned by provider. Build as much as possible and report the rest.
+`transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. Build as much as possible and report the rest: one transform failing is reported and the build goes on without it. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
 
-**Providers run from a queue, not to a fixed point.** "Is there work left" can be answered; "has anything changed" cannot. A provider that emits syntax another provider handles lists that provider in `enqueue`, since only the emitting provider knows which one that is. The queue deduplicates against pending work, not completed work, so a provider re-runs for input that did not exist when it first ran. Mutual recursion is capped, and the report names whichever provider would not settle.
-
-`hydrate` should be idempotent, and may not enqueue itself.
-
-## Hooks
-
-`graftBuilt` fires after every build, whether it came from the world-load prompt, a compendium header, or the pack control. A module that tracks what it last built cannot see those controls itself, so this is how it finds out.
+**`graftBuilt`** fires after every build, whether it came from the world-load prompt, a compendium header, or the pack control. It carries the built UUIDs, so a module that wants to act on what a build produced (record it, inspect it, download the files its documents name) starts from here.
 
 ```js
 Hooks.on("graftBuilt", (moduleId, { built, skipped, warnings, removed }) => {
   // built, skipped and warnings are what the report showed
 });
 ```
-
-**The recommended shape:** fetch what an entry names, apply its patch to that JSON, and return a sourceless entry carrying the result. This needs no pack of your own and no ids that could collide. Record provenance in `flags.graft`. It also keeps the provider a plain array-to-array transform, testable without Foundry. Since a provider is often the only component that sees the original document, most warnings have to come from it.
-
-## Moulinette
-
-Ships with graft, registered only when the Moulinette module is enabled.
-
-```
-@moulinette/<pack_ref>/<filepath>
-@moulinette/10698/scenes/abandoned-mine-entrance.webp
-```
-
-`pack_ref` is the number in a marketplace URL. The slugs beside it are display names and change when a pack is renamed; the number does not.
-
-As an entry's `source` it names a **document**, which is fetched and patched. Inside a patch it names a **file**, which is downloaded and rewritten to a local path. A reference that will not resolve drops its immediate container and nothing more: a `background` with no `src` is dropped entirely, but one missing sound does not discard the scene. Everything dropped is listed in the report.
-
-Nothing is redistributed. The reader's own subscriptions decide what they get.
-
-**Copying does not run backwards.** Moulinette fires no hooks and stamps no flags of its own, so a document it imported carries only the publisher's provenance, and `_stats.compendiumSource` names the publisher's private work module rather than anything a reader can install. **Copy graft** on one therefore takes the no-recorded-source path and carries the whole document, walls and lights included, with its asset paths left as the local `moulinette-v2/...` ones that resolve on your machine only. Check what it produced before shipping it.
 
 ## Format details
 
@@ -301,18 +278,17 @@ An unresolvable source is handled in one of two ways. If the source module is **
 - **Removing an entry from a keyed array** is not expressible: an omitted entry means "leave it alone". Expressing removal would need RFC 6902 `remove`, which addresses by position.
 - **`null` resets, it does not remove.** The key does leave the patched data, but Foundry then loads it against a schema, and an absent field takes its declared initial value. True deletion only works where the schema does not describe the key, in practice `flags`.
 - **Sets serialise as ordered arrays.** `SetField` has no meaningful order but compares as a list, so a reordering reads as a change. Not handled, because guessing which arrays are Sets could silently drop a genuine reorder of a list that is ordered.
-- **Pruning removes only what graft built.** Deleting an entry from `grafts.json` removes the flagged document it built on the next build; documents an author placed in the pack by hand are never touched. An entry a provider skipped this run — a lapsed subscription, say — still counts as declared and is left alone.
+- **Pruning removes only what graft built.** Deleting an entry from `grafts.json` removes the flagged document it built on the next build; documents an author placed in the pack by hand are never touched. An entry a transform skipped this run, a lapsed subscription say, still counts as declared and is left alone.
 
 ## Layout
 
 ```
 scripts/patch.mjs      the format: applyPatch, diff, stripVolatile. Pure.
 scripts/plan.mjs       ids, UUIDs, and build order for chains.
-scripts/providers.mjs  the provider queue. Pure.
+scripts/prebuild.mjs   collects and runs pre-build transforms.
 scripts/yaml.mjs       clipboard output. Pure.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
 scripts/modules.mjs    reads what a module declares.
-scripts/moulinette.mjs the Moulinette provider.
 scripts/origin.mjs     recovers a document's true source.
 scripts/progress.mjs   the build's progress bar.
 scripts/ui.mjs         controls, menus, dialogs.
