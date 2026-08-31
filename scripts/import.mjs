@@ -36,20 +36,25 @@ export function localiseSources(entries) {
   for (const entry of entries) {
     if (typeof entry?.id === "string" && typeof entry?.pack === "string") homePack.set(entry.id, entry.pack);
   }
-  const map = (source) => {
+  const map = (source, own) => {
     if (typeof source !== "string" || !source.startsWith("Compendium.")) return source;
     const parts = source.split(".");
     if (parts.length < 5) return source;
     const id = parts[parts.length - 1];
     const pack = parts[parts.length - 3];
+    // Never its own id. A document imported out of a pack keeping its id
+    // records that pack as where it came from, which reads exactly like a
+    // reference to itself and would graft the entry onto its own output.
+    if (id === own) return source;
     return homePack.get(id) === pack ? id : source;
   };
   return entries.map((entry) => {
+    const mine = (source) => map(source, entry.id);
     const next = { ...entry };
     if (entry.source !== undefined) {
-      next.source = Array.isArray(entry.source) ? entry.source.map(map) : map(entry.source);
+      next.source = Array.isArray(entry.source) ? entry.source.map(mine) : mine(entry.source);
     }
-    if (entry.patch !== undefined) next.patch = rewriteSources(entry.patch, map);
+    if (entry.patch !== undefined) next.patch = rewriteSources(entry.patch, mine);
     return next;
   });
 }

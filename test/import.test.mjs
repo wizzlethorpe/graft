@@ -54,6 +54,17 @@ describe("localiseSources", () => {
     assert.equal(entries[1].source, "Compendium.kerra.other-items.Item.aaaaaaaaaaaaaaaa");
   });
 
+  test("never folds an entry's source into its own id", () => {
+    // A document imported out of a pack keeping its id records that pack as
+    // where it came from. Folding that reads as "graft this onto itself", and
+    // the build reported a cycle through zero other entries.
+    const entries = localiseSources([{
+      id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "southaven-actors",
+      source: "Compendium.southaven.southaven-actors.Actor.aaaaaaaaaaaaaaaa",
+    }]);
+    assert.equal(entries[0].source, "Compendium.southaven.southaven-actors.Actor.aaaaaaaaaaaaaaaa");
+  });
+
   test("reaches an item the patch inserts", () => {
     const entries = localiseSources([
       { id: "aaaaaaaaaaaaaaaa", type: "Item", pack: "kit-items" },

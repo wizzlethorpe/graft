@@ -386,10 +386,17 @@ export function addImportControl(app, html) {
   if (!root?.querySelector || root.querySelector("[data-graft-import]")) return;
   const button = document.createElement("button");
   button.type = "button";
+  button.classList.add("graft-import");
   button.dataset.graftImport = "";
-  button.innerHTML = `<i class="fa-solid fa-code-branch"></i> ${t("GRAFT.ImportControl")}`;
+  button.innerHTML = `<i class="fa-solid fa-code-branch" inert></i><span>${t("GRAFT.ImportControl")}</span>`;
   button.addEventListener("click", (event) => { event.preventDefault(); promptForImport(); });
-  (root.querySelector(".directory-header") ?? root.querySelector("header") ?? root).append(button);
+  // With the buttons that make compendiums rather than under the filter: this
+  // makes some, and the filter has nothing to do with it.
+  const browser = root.querySelector("button.open-compendium-browser");
+  const actions = root.querySelector(".header-actions");
+  if (browser) browser.insertAdjacentElement("afterend", button);
+  else if (actions) actions.append(button);
+  else (root.querySelector(".directory-header") ?? root.querySelector("header") ?? root).prepend(button);
 }
 
 // ── compendium controls ─────────────────────────────────────────────────────
