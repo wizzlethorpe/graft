@@ -8,7 +8,7 @@ import * as progress from "./progress.mjs";
 import { moulinetteProvider } from "./moulinette.mjs";
 import {
   registerSettings, promptForUnbuilt, addPackControl, copyOne,
-  buildAndReport, addCopyGraftContext, addCopyFolderGrafts, CONTEXT_TYPES,
+  buildAndReport, addCopyGraftContext, addCopyFolderGrafts, addImportControl, CONTEXT_TYPES,
 } from "./ui.mjs";
 
 const MODULE_ID = "graft";
@@ -38,6 +38,7 @@ Hooks.once("ready", async () => {
 // A Build control in the header of a graft module's own compendium windows,
 // which is where somebody looks when they wonder why a pack is empty.
 Hooks.on("getHeaderControlsCompendium", addPackControl);
+Hooks.on("renderCompendiumDirectory", addImportControl);
 
 /**
  * Copy graft on every document sheet: the convenience path for something

@@ -54,6 +54,12 @@ Folder ids do not survive to another machine, but the folder structure does. Fol
 
 **`source`** is optional. Without one, the patch is the whole document, so a graft module can also ship original content. A `source` that is present but empty is an error.
 
+A `source` that is a bare document id names another entry in the same module. Nothing else a source may hold looks like one, since no document type name is sixteen characters and a bare id is not a UUID, so the short form is unambiguous. It is also portable: it survives the module being renamed, and an import into somebody else's world can resolve it against whatever packs it creates. What it cannot say is which pack it meant, so an id two entries share is reported rather than guessed at.
+
+```yaml
+source: banditCaptain001            # the entry with this id, wherever it lands
+```
+
 `source` may also be a list of fallbacks, tried in order:
 
 ```yaml
@@ -104,6 +110,8 @@ Every operation is available from the UI.
 - **Installing.** When a graft module has unbuilt entries, graft offers to build on the next world load. It asks once per module and remembers the answer; declining can be reversed.
 - **Rebuilding.** **Build grafts** sits in the header of that module's compendium windows.
 - **The report** lists what was not built and why, then anything built with warnings, then a collapsed list of successes as clickable links. Results land in the **Compendium** tab.
+- **Exporting.** Beside **Copy graft** on a document or folder, **Export graft** writes the same entries to a file. Always a list, even for one document, because that is the shape a `grafts.json` takes.
+- **Building a file.** **Build from file** on the Compendium tab takes a `grafts.json` somebody sent you and builds it into world compendiums, one per document type, filed together under a name you give. Providers run as they would for a module, so a file naming content from one builds when you have it installed. Nothing is tracked afterwards: there is no manifest to compare against, so this is an import rather than a subscription.
 
 Whether an entry is built is read from the pack index, not from a stored flag, so both a hand-deleted document and a newly shipped entry are detected as unbuilt. Packs are unlocked for the write and restored exactly as found, including their folder assignment.
 
@@ -231,6 +239,8 @@ items:
 ```
 
 The second shape is produced automatically: Foundry records where the item came from, so **Copy graft** references it rather than copying it. An embedded source that will not resolve fails the whole entry, because a stat block silently missing the item it was built around is worse than a skipped entry that names the dependency.
+
+An embedded source naming a sibling is an ordering edge like a top-level one, so an item can be declared as its own entry and put on an actor in the same file whichever order the two appear in. A loop through an inserted item is reported the same way as any other.
 
 ### What is stripped
 

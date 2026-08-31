@@ -9,6 +9,7 @@ import { graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
 import { registeredProviders, runProviders } from "./providers.mjs";
 import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
+import { importGrafts } from "./import.mjs";
 
 const MODULE_ID = "graft";
 
@@ -257,19 +258,47 @@ export async function copyOne(doc) {
  * One failure does not lose the rest; the names of what was skipped go to the
  * console.
  */
-export async function copyMany(docs, label) {
-  if (docs.length === 0) {
-    ui.notifications.warn(t("GRAFT.NothingToExport", { label }));
-    return null;
-  }
+/** Grafts for a set of documents, and the names of any that would not build. */
+async function graftsFor(docs) {
   const entries = [];
   const failed = [];
   for (const doc of docs) {
     try { entries.push(withPack(await exportDiff(doc))); }
     catch (err) { failed.push(`${doc.name}: ${err.message}`); }
   }
+  return { entries, failed };
+}
 
-  await game.clipboard.copyPlainText(JSON.stringify(entries, null, 2));
+/** Foundry moved this under `foundry.utils`; older worlds still have the global. */
+const saveJson = (text, filename) =>
+  (foundry.utils?.saveDataToFile ?? globalThis.saveDataToFile)(text, "application/json", filename);
+
+/** A filename from whatever the thing was called, safe on every filesystem. */
+function fileName(label) {
+  const stem = String(label ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${stem || "grafts"}.grafts.json`;
+}
+
+/**
+ * Download the same entries Copy would have put on the clipboard.
+ *
+ * Always an array, even for one document: a file is a thing on its own, and
+ * the only shape that is a `grafts.json` a module can ship or an import can
+ * read is the list.
+ */
+export async function downloadGrafts(docs, label) {
+  if (docs.length === 0) {
+    ui.notifications.warn(t("GRAFT.NothingToExport", { label }));
+    return null;
+  }
+  const { entries, failed } = await graftsFor(docs);
+  saveJson(JSON.stringify(entries, null, 2), fileName(label));
+  reportExport(entries, failed, label, "GRAFT.Downloaded", "GRAFT.DownloadedSkipped");
+  return entries;
+}
+
+/** What was written, and what would not build, on screen and in the console. */
+function reportExport(entries, failed, label, okKey, skippedKey) {
   console.log(`Graft | ${entries.length} entr(ies) from ${label}`, JSON.stringify(entries, null, 2));
   if (failed.length > 0) {
     console.group(`Graft | ${failed.length} could not be exported`);
@@ -277,8 +306,19 @@ export async function copyMany(docs, label) {
     console.groupEnd();
   }
   ui.notifications.info(failed.length
-    ? t("GRAFT.CopiedManySkipped", { count: entries.length, label, failed: failed.length })
-    : t("GRAFT.CopiedMany", { count: entries.length, label }));
+    ? t(skippedKey, { count: entries.length, label, failed: failed.length })
+    : t(okKey, { count: entries.length, label }));
+}
+
+export async function copyMany(docs, label) {
+  if (docs.length === 0) {
+    ui.notifications.warn(t("GRAFT.NothingToExport", { label }));
+    return null;
+  }
+  const { entries, failed } = await graftsFor(docs);
+
+  await game.clipboard.copyPlainText(JSON.stringify(entries, null, 2));
+  reportExport(entries, failed, label, "GRAFT.CopiedMany", "GRAFT.CopiedManySkipped");
   return entries;
 }
 
@@ -289,6 +329,67 @@ async function confirmBulk(count, label) {
     window: { title: "Graft" },
     content: t("GRAFT.ConfirmBulk", { label, count }),
   }).catch(() => false);
+}
+
+// ── importing a file ────────────────────────────────────────────────────────
+
+/**
+ * Ask for a file and a name, then build it into world compendiums.
+ *
+ * A file rather than a module, for content somebody sent you. What it builds
+ * is not tracked: there is no manifest to compare against later, so this is an
+ * import, not a subscription.
+ */
+export async function promptForImport() {
+  if (!game.user.isGM) return null;
+  const picked = await foundry.applications.api.DialogV2.prompt({
+    window: { title: t("GRAFT.ImportTitle") },
+    content: `<p>${t("GRAFT.ImportIntro")}</p>
+      <div class="form-group"><label>${t("GRAFT.ImportName")}</label>
+        <input name="label" type="text" placeholder="${t("GRAFT.ImportNamePlaceholder")}"></div>
+      <div class="form-group"><label>${t("GRAFT.ImportFile")}</label>
+        <input name="file" type="file" accept="application/json,.json"></div>`,
+    ok: {
+      label: t("GRAFT.ImportBuild"),
+      callback: (_event, button) => ({
+        label: button.form.elements.label.value.trim(),
+        file: button.form.elements.file.files?.[0] ?? null,
+      }),
+    },
+    rejectClose: false,
+  });
+  if (!picked?.file) return null;
+
+  let parsed;
+  try { parsed = JSON.parse(await picked.file.text()); }
+  catch (err) {
+    ui.notifications.error(t("GRAFT.ImportUnreadable", { reason: err.message }));
+    return null;
+  }
+
+  const label = picked.label || picked.file.name.replace(/\.(grafts\.)?json$/i, "");
+  try {
+    const result = await importGrafts(parsed, label);
+    // No module to name, so the report is titled with what the reader called it.
+    await reportBuild(label, result.built, result.skipped, result.warnings, result.removed);
+    return result;
+  } catch (err) {
+    ui.notifications.error(t("GRAFT.ImportFailed", { reason: err.message }));
+    return null;
+  }
+}
+
+/** A Build from file control on the Compendium tab, where imports would be looked for. */
+export function addImportControl(app, html) {
+  if (!game.user.isGM) return;
+  const root = html?.[0] ?? html ?? app?.element;
+  if (!root?.querySelector || root.querySelector("[data-graft-import]")) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.graftImport = "";
+  button.innerHTML = `<i class="fa-solid fa-code-branch"></i> ${t("GRAFT.ImportControl")}`;
+  button.addEventListener("click", (event) => { event.preventDefault(); promptForImport(); });
+  (root.querySelector(".directory-header") ?? root.querySelector("header") ?? root).append(button);
 }
 
 // ── compendium controls ─────────────────────────────────────────────────────
@@ -346,6 +447,17 @@ export function addCopyGraftContext(documentName, menuItems) {
       else ui.notifications.warn(t("GRAFT.NoDocument"));
     },
   });
+  menuItems.push({
+    name: t("GRAFT.ExportOne"),
+    icon: '<i class="fa-solid fa-file-arrow-down"></i>',
+    callback: async (target) => {
+      const el = elementOf(target);
+      const id = el?.dataset?.documentId ?? el?.dataset?.entryId;
+      const doc = id ? game.collections.get(documentName)?.get(id) : null;
+      if (doc) await downloadGrafts([doc], doc.name);
+      else ui.notifications.warn(t("GRAFT.NoDocument"));
+    },
+  });
 }
 
 /** And Copy grafts on a folder, which is how people group work. */
@@ -373,6 +485,19 @@ export function addCopyFolderGrafts(html, menuItems) {
       }
       const docs = folderContents(folder);
       if (await confirmBulk(docs.length, folder.name)) await copyMany(docs, folder.name);
+    },
+  });
+  menuItems.push({
+    name: t("GRAFT.ExportMany"),
+    icon: '<i class="fa-solid fa-file-arrow-down"></i>',
+    callback: async (target) => {
+      const folder = folderFrom(elementOf(target));
+      if (folder && (folder.pack || folder.type === "Compendium")) {
+        return ui.notifications.warn(t("GRAFT.WorldOnly"));
+      }
+      if (!folder) return ui.notifications.warn(t("GRAFT.NoFolder"));
+      const docs = folderContents(folder);
+      if (await confirmBulk(docs.length, folder.name)) await downloadGrafts(docs, folder.name);
     },
   });
 }
