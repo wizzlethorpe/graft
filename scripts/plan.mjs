@@ -10,6 +10,8 @@
 // dependency. Only the order is new: A must exist before B is applied, and
 // within one module that is ours to work out.
 
+import { embeddedSources, rewriteSources } from "./patch.mjs";
+
 const DOCUMENT_ID = /^[a-zA-Z0-9]{16}$/;
 
 /**
@@ -37,6 +39,53 @@ export function entryUuid(entry, moduleId) {
 }
 
 /**
+ * Resolve `source` values that name a sibling by bare id.
+ *
+ * Unambiguous by construction: no document type name is sixteen characters,
+ * and a bare id is not a UUID, so nothing else a source may hold looks like
+ * one. What a bare id cannot express is which pack it meant, so an id two
+ * entries share names neither and is reported rather than guessed at.
+ */
+export function resolveSiblingIds(entries, moduleId) {
+  const byId = new Map();
+  const ambiguous = new Set();
+  for (const entry of entries) {
+    if (!isDocumentId(entry?.id)) continue;
+    if (byId.has(entry.id)) ambiguous.add(entry.id);
+    else byId.set(entry.id, entry);
+  }
+
+  const resolved = [];
+  const invalid = [];
+  for (const entry of entries) {
+    const problems = [];
+    const map = (source) => {
+      if (typeof source !== "string" || !DOCUMENT_ID.test(source)) return source;
+      if (ambiguous.has(source)) {
+        problems.push(`source "${source}" names more than one entry; say which pack with a full UUID`);
+        return source;
+      }
+      const target = byId.get(source);
+      if (!target) {
+        problems.push(`source "${source}" names no entry in this module`);
+        return source;
+      }
+      return entryUuid(target, moduleId);
+    };
+
+    const next = { ...entry };
+    if (entry.source !== undefined) {
+      next.source = Array.isArray(entry.source) ? entry.source.map(map) : map(entry.source);
+    }
+    if (entry.patch !== undefined) next.patch = rewriteSources(entry.patch, map);
+
+    if (problems.length > 0) invalid.push({ entry, reason: problems.join("; ") });
+    else resolved.push(next);
+  }
+  return { entries: resolved, invalid };
+}
+
+/**
  * Order entries so anything grafted onto a sibling comes after it.
  *
  * Only edges *within* the module need sequencing. A source pointing outside it
@@ -48,12 +97,17 @@ export function entryUuid(entry, moduleId) {
  */
 export function planOrder(entries, moduleId) {
   const invalid = [];
-  const usable = [];
+  const named = [];
   for (const entry of entries) {
     const why = describeInvalid(entry);
     if (why) invalid.push({ entry, reason: why });
-    else usable.push(entry);
+    else named.push(entry);
   }
+  // Before the uuid map, so a source naming a sibling by id is an edge like
+  // any other from here on and nothing downstream knows the short form.
+  const sibling = resolveSiblingIds(named, moduleId);
+  invalid.push(...sibling.invalid);
+  const usable = sibling.entries;
 
   // uuid -> entry, so a source naming a sibling is recognisable as an edge.
   // Two entries with one uuid would silently collapse to whichever came last.
@@ -78,8 +132,10 @@ export function planOrder(entries, moduleId) {
     }
     chain.add(uuid);
     // Any candidate naming a sibling is an edge: the parent has to be built
-    // before this entry, whichever of them ends up resolving.
-    for (const candidate of sourcesOf(entry)) {
+    // before this entry, whichever of them ends up resolving. An item a patch
+    // inserts counts too — it is resolved out of the pack at build time, so it
+    // has to be in there already.
+    for (const candidate of [...sourcesOf(entry), ...embeddedSources(entry.patch ?? {})]) {
       const parent = byUuid.get(candidate);
       if (parent) visit(parent, chain);
     }

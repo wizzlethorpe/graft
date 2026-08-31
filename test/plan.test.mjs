@@ -5,7 +5,7 @@
 // nothing new. What does need working out is order, because a patch applied
 // before its parent exists is a patch applied to nothing.
 
-import test from "node:test";
+import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { planOrder, entryUuid, isDocumentId } from "../scripts/plan.mjs";
@@ -164,4 +164,80 @@ test("a cycle is reported as the loop, not the path that led into it", () => {
   const { order, cycles } = planOrder([a, b, c], MOD);
   assert.deepEqual(cycles, [[uuid("bbbbbbbbbbbbbbbb"), uuid("cccccccccccccccc"), uuid("bbbbbbbbbbbbbbbb")]]);
   assert.deepEqual(order.map((e) => e.id), ["aaaaaaaaaaaaaaaa"]);
+});
+
+describe("a source naming a sibling by bare id", () => {
+  const entry = (id, over = {}) => ({ id, type: "Actor", pack: "actors", patch: {}, ...over });
+
+  test("resolves to that sibling's uuid", () => {
+    const { order } = planOrder([
+      entry("bbbbbbbbbbbbbbbb", { source: "aaaaaaaaaaaaaaaa" }),
+      entry("aaaaaaaaaaaaaaaa", { source: "Compendium.bestiary.actors.Actor.mmWight000000000" }),
+    ], "mine");
+    const child = order.find((e) => e.id === "bbbbbbbbbbbbbbbb");
+    assert.equal(child.source, "Compendium.mine.actors.Actor.aaaaaaaaaaaaaaaa");
+  });
+
+  test("orders the sibling first, as a full uuid would", () => {
+    const { order } = planOrder([
+      entry("bbbbbbbbbbbbbbbb", { source: "aaaaaaaaaaaaaaaa" }),
+      entry("aaaaaaaaaaaaaaaa"),
+    ], "mine");
+    assert.deepEqual(order.map((e) => e.id), ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]);
+  });
+
+  test("is not confused with a bare type name", () => {
+    // No type name is sixteen characters, which is what makes the form safe.
+    const { order } = planOrder([entry("aaaaaaaaaaaaaaaa", { source: "Actor:npc" })], "mine");
+    assert.equal(order[0].source, "Actor:npc");
+  });
+
+  test("names an id two entries share rather than guessing", () => {
+    const { invalid } = planOrder([
+      entry("aaaaaaaaaaaaaaaa", { pack: "actors" }),
+      entry("aaaaaaaaaaaaaaaa", { pack: "npcs" }),
+      entry("bbbbbbbbbbbbbbbb", { source: "aaaaaaaaaaaaaaaa" }),
+    ], "mine");
+    assert.match(invalid.map((i) => i.reason).join("\n"), /names more than one entry/);
+  });
+
+  test("names an id that matches nothing", () => {
+    const { invalid } = planOrder([entry("bbbbbbbbbbbbbbbb", { source: "cccccccccccccccc" })], "mine");
+    assert.match(invalid[0].reason, /names no entry in this module/);
+  });
+});
+
+describe("an item a patch inserts", () => {
+  const actor = (id, itemSource) => ({
+    id, type: "Actor", pack: "actors",
+    patch: { items: [{ _id: "itemAAAAAAAAAAAA", source: itemSource, patch: {} }] },
+  });
+
+  test("orders the entry it names first, wherever it sits in the file", () => {
+    // Before this the edge was never recorded, so the order was whatever the
+    // file happened to be and the actor failed when it came first.
+    const { order } = planOrder([
+      actor("bbbbbbbbbbbbbbbb", "Compendium.mine.items.Item.aaaaaaaaaaaaaaaa"),
+      { id: "aaaaaaaaaaaaaaaa", type: "Item", pack: "items", patch: {} },
+    ], "mine");
+    assert.deepEqual(order.map((e) => e.id), ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]);
+  });
+
+  test("takes a bare id too, and rewrites it", () => {
+    const { order } = planOrder([
+      actor("bbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaa"),
+      { id: "aaaaaaaaaaaaaaaa", type: "Item", pack: "items", patch: {} },
+    ], "mine");
+    assert.deepEqual(order.map((e) => e.id), ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]);
+    const built = order.find((e) => e.id === "bbbbbbbbbbbbbbbb");
+    assert.equal(built.patch.items[0].source, "Compendium.mine.items.Item.aaaaaaaaaaaaaaaa");
+  });
+
+  test("reports a loop through an inserted item", () => {
+    const { cycles } = planOrder([
+      actor("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"),
+      actor("bbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaa"),
+    ], "mine");
+    assert.equal(cycles.length > 0, true);
+  });
 });

@@ -216,6 +216,39 @@ export async function expandSources(patch, resolve) {
   return out;
 }
 
+/** Every `source` a sourced entry names inside a patch, at any depth. */
+export function embeddedSources(patch, out = []) {
+  if (Array.isArray(patch)) {
+    for (const entry of patch) {
+      if (isSourcedEntry(entry)) {
+        out.push(entry.source);
+        embeddedSources(entry.patch ?? {}, out);
+      } else embeddedSources(entry, out);
+    }
+    return out;
+  }
+  if (!isPlainObject(patch)) return out;
+  for (const v of Object.values(patch)) embeddedSources(v, out);
+  return out;
+}
+
+/** A copy of the patch with every sourced entry's `source` passed through `map`. */
+export function rewriteSources(patch, map) {
+  if (Array.isArray(patch)) {
+    return patch.map((entry) => (isSourcedEntry(entry)
+      ? {
+        ...entry,
+        source: map(entry.source),
+        ...(entry.patch === undefined ? {} : { patch: rewriteSources(entry.patch, map) }),
+      }
+      : rewriteSources(entry, map)));
+  }
+  if (!isPlainObject(patch)) return patch;
+  const out = {};
+  for (const [k, v] of Object.entries(patch)) out[k] = rewriteSources(v, map);
+  return out;
+}
+
 /**
  * The reverse, for authoring: turn a whole embedded document back into a
  * reference plus what differs from it.
