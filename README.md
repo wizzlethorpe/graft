@@ -172,7 +172,7 @@ Absent means 1. A file declaring a newer format is refused rather than partially
 
 ## Hooks
 
-Graft is offline: a source is a compendium document, and building touches nothing outside the world. Content that has to be fetched, whether from a deployed vault or a subscription service, belongs in a module of its own, and graft gives it two moments to act.
+Graft itself fetches nothing: a source is a compendium document the reader already has, and building touches nothing outside the world. Content that has to come from elsewhere, a deployed vault or a subscription service, belongs in a module of its own, and graft gives it two moments to act.
 
 **`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once, in registration order. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into world compendiums.
 
