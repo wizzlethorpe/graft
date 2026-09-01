@@ -49,8 +49,8 @@ Hooks.on("getHeaderControlsDocumentSheetV2", (app, controls) => {
 
 // Adventure import is the one path that carries a publisher's own provenance
 // into your world verbatim, so this is the moment to record something true.
-Hooks.on("preImportAdventure", (adventure, formData, toCreate) => {
-  stampOrigin(adventure, toCreate);
+Hooks.on("preImportAdventure", (adventure, formData, toCreate, toUpdate) => {
+  stampOrigin(adventure, toCreate, toUpdate);
 });
 
 

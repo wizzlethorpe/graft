@@ -41,3 +41,12 @@ test("a type an adventure cannot hold is refused", () => {
   assert.equal(adventureSourceUuid(ORIGIN, "Wall"), null);
   assert.equal(adventureSourceUuid(null, "Actor"), null);
 });
+
+test("a document the import updates rather than creates is stamped too", () => {
+  // Deterministic ids mean a repeated import, or one made before graft was
+  // watching, arrives as an update; unstamped, Copy graft carries it whole.
+  const toUpdate = { Actor: [{ _id: "npcBixby00000000", name: "Bixby" }] };
+  stampOrigin({ uuid: "Compendium.marlo.adventure.Adventure.advMarlo00000000" }, {}, toUpdate);
+  assert.deepEqual(toUpdate.Actor[0].flags.graft.origin,
+    { adventure: "Compendium.marlo.adventure.Adventure.advMarlo00000000", id: "npcBixby00000000" });
+});
