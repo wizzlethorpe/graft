@@ -1,9 +1,9 @@
-// The one moment another module can rewrite entries before a build: expanding
-// a marker its grafts.json ships, fetching what only it knows how to fetch.
+// Where another module joins in: rewriting entries before a build, and naming
+// a source its own way on the way back out.
 //
-// Foundry hooks are synchronous, so `graftPreBuild` only collects: a handler
-// registers `{ id, label, transform, phase }` and the build awaits each
-// transform once, entries before sources.
+// Foundry hooks are synchronous, so both hooks only collect. `graftPreBuild`
+// takes `{ id, label, transform, phase }` and the build awaits each transform
+// once, entries before sources. `graftExport` takes `{ id, rewrite }`.
 
 const PHASES = ["entries", "sources"];
 
@@ -64,4 +64,33 @@ function normalize(result) {
     skipped: list(result.skipped),
     warnings: list(result.warnings),
   };
+}
+
+/** The export rewriters, collected the same way and running nothing. */
+export function collectRewriters() {
+  const rewriters = [];
+  Hooks.callAll("graftExport", (r) => {
+    if (typeof r?.id !== "string" || !r.id) throw new Error("a graft export rewriter needs an id");
+    if (typeof r.rewrite !== "function") throw new Error(`graft export rewriter "${r.id}" needs a rewrite function`);
+    rewriters.push(r);
+  });
+  return rewriters;
+}
+
+/**
+ * Let each rewriter name the entry's source its own way.
+ *
+ * One failing costs the nicer spelling, not the copy: what `exportDiff` already
+ * produced is a working entry, so the reason is logged and it travels as it is.
+ */
+export async function rewriteEntry(entry, document, rewriters = collectRewriters()) {
+  let current = entry;
+  for (const r of rewriters) {
+    try {
+      current = (await r.rewrite(current, { document })) ?? current;
+    } catch (err) {
+      console.warn(`Graft | ${r.id} could not name the source of ${document.name}:`, err);
+    }
+  }
+  return current;
 }

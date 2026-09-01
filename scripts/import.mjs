@@ -7,7 +7,7 @@
 
 import { hydrate } from "./hydrate.mjs";
 import { rewriteSources } from "./patch.mjs";
-import { collectTransforms, runTransforms } from "./prebuild.mjs";
+import { collectTransforms, runTransforms } from "./extend.mjs";
 import * as progress from "./progress.mjs";
 
 const WORLD = "world";

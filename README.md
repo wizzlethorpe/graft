@@ -190,6 +190,21 @@ Hooks.on("graftPreBuild", (moduleId, register) => {
 
 `transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `phase` is `"entries"` (the default) for a transform that produces or rewrites entries, or `"sources"` for one that makes the documents their sources name resolvable. Every entries transform runs before any sources one, registration order deciding within a phase, so a materialiser sees the entries after every marker has been expanded. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. Build as much as possible and report the rest: one transform failing is reported and the build goes on without it. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
 
+**`graftExport`** fires when **Copy graft** has an entry ready, so a module that fetched the source can name it the way its own users would. Collected the same way, and the document is the one being copied.
+
+```js
+Hooks.on("graftExport", (register) => {
+  register({
+    id: "my-module",
+    async rewrite(entry, { document }) {
+      return entry;
+    },
+  });
+});
+```
+
+Return the entry untouched when it is not yours. A rewriter that throws costs the nicer spelling and nothing else: what graft produced is already a working entry, so the reason is logged and it travels as it is.
+
 **`graftBuilt`** fires after every build, whether it came from the world-load prompt, a compendium header, or the pack control. It carries the built UUIDs, so a module that wants to act on what a build produced (record it, inspect it, download the files its documents name) starts from here.
 
 ```js
@@ -285,7 +300,7 @@ An unresolvable source is handled in one of two ways. If the source module is **
 ```
 scripts/patch.mjs      the format: applyPatch, diff, stripVolatile. Pure.
 scripts/plan.mjs       ids, UUIDs, and build order for chains.
-scripts/prebuild.mjs   collects and runs pre-build transforms.
+scripts/extend.mjs     collects and runs pre-build transforms and export rewriters.
 scripts/yaml.mjs       clipboard output. Pure.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
 scripts/modules.mjs    reads what a module declares.

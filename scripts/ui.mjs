@@ -6,7 +6,7 @@
 
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
-import { collectTransforms, runTransforms } from "./prebuild.mjs";
+import { collectTransforms, runTransforms } from "./extend.mjs";
 import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
 import { importGrafts } from "./import.mjs";

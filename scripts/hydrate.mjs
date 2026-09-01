@@ -13,6 +13,7 @@ import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
 } from "./origin.mjs";
 import { planOrder, entryUuid, sourcesOf } from "./plan.mjs";
+import { rewriteEntry } from "./extend.mjs";
 
 /**
  * Hydrate a module's entries into its own compendium packs.
@@ -383,8 +384,14 @@ function refreshSidebar(touched) {
  * The authoring half, and the reason nobody types a UUID: Foundry records where
  * a document was imported from, so importing a monster, editing it in the
  * ordinary sheet, and pressing Copy graft recovers what changed.
+ *
+ * A module that fetched the source gets the last word on how it is named.
  */
 export async function exportDiff(document) {
+  return rewriteEntry(await diffEntry(document), document);
+}
+
+async function diffEntry(document) {
   const raw = document.toObject();
   // Read before stripping: `compendiumSource` lives in the `_stats` it removes.
   const sources = embeddedSources(raw);

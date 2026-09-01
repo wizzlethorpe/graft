@@ -24,6 +24,9 @@ export function installFoundry({ uuids = {}, packs = {}, modules = {}, world = {
     modules: { get: (id) => modules[id] ?? null },
     packs: { get: (c) => (packs[c] ? { metadata: { packageType: packs[c].packageType } } : null) },
   };
+  // No listeners: a test that wants one installs it, and the export path has
+  // to run when nothing is registered.
+  globalThis.Hooks = { callAll: () => {} };
   globalThis.fromUuid = async (uuid) => {
     const data = uuids[uuid];
     return data ? asDocument(data) : null;
@@ -42,6 +45,7 @@ export function installFoundry({ uuids = {}, packs = {}, modules = {}, world = {
 
 export function uninstallFoundry() {
   delete globalThis.game;
+  delete globalThis.Hooks;
   delete globalThis.fromUuid;
   delete globalThis.foundry;
 }

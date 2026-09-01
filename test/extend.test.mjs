@@ -1,11 +1,11 @@
-// The pre-build transforms: collected through a hook, run once each, entries
-// before sources. A transform gets no second pass, so anything its output
-// still needs happens in `graftBuilt` instead.
+// The two extension points: pre-build transforms, collected through a hook and
+// run once each, entries before sources; and export rewriters, which name a
+// source the way the module that fetched it would.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { collectTransforms, runTransforms } from "../scripts/prebuild.mjs";
+import { collectTransforms, runTransforms, collectRewriters, rewriteEntry } from "../scripts/extend.mjs";
 
 const spy = (id, log, transform = (e) => e) =>
   ({ id, label: id, transform: (entries) => { log.push(id); return transform(entries); } });
@@ -105,6 +105,46 @@ test("a phase that is not one of graft's is refused, and an absent one is entrie
       register({ id: "y", phase: undefined, transform: () => {} });
     });
     assert.equal(collectTransforms("m")[0].phase, "entries");
+  } finally {
+    delete globalThis.Hooks;
+  }
+});
+
+// ── the export side ─────────────────────────────────────────────────────────
+
+test("a rewriter names the source its own way, and one that is not theirs passes through", async () => {
+  const document = { name: "Mad Lair", flags: { "graft-moulinette": { pack: "10698", file: "json/scene/mad-lair.json" } } };
+  const out = await rewriteEntry({ id: "a", source: "Compendium.graft-moulinette.scenes.Scene.CwVVyANWmNpt3Hfg", patch: {} }, document, [
+    { id: "quiet", rewrite: (entry) => entry },
+    { id: "mine", rewrite: (entry, ctx) => ({ ...entry, source: `@moulinette/Scene/${ctx.document.flags["graft-moulinette"].pack}` }) },
+  ]);
+  assert.equal(out.source, "@moulinette/Scene/10698");
+});
+
+test("a rewriter that fails costs the spelling, not the copy", async () => {
+  // What exportDiff produced already works; a UUID nobody prettied is fine.
+  const entry = { id: "a", source: "Compendium.x.y.Actor.zzzzzzzzzzzzzzzz", patch: {} };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const out = await rewriteEntry(entry, { name: "Bandit" }, [
+      { id: "broken", rewrite: () => { throw new Error("no index"); } },
+    ]);
+    assert.deepEqual(out, entry);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test("a rewriter without an id or a rewrite is refused", () => {
+  const handlers = [];
+  globalThis.Hooks = { callAll: (_name, ...args) => handlers.forEach((h) => h(...args)) };
+  try {
+    handlers.push((register) => {
+      assert.throws(() => register({ rewrite: () => {} }), /needs an id/);
+      assert.throws(() => register({ id: "x" }), /needs a rewrite/);
+    });
+    assert.deepEqual(collectRewriters(), []);
   } finally {
     delete globalThis.Hooks;
   }
