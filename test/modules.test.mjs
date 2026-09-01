@@ -7,7 +7,7 @@
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { anyBuilt } from "../scripts/modules.mjs";
+import { anyBuilt, withPack } from "../scripts/modules.mjs";
 
 const saved = globalThis.game;
 afterEach(() => { globalThis.game = saved; });
@@ -59,5 +59,32 @@ describe("anyBuilt", () => {
   test("a module that is not installed has built nothing", async () => {
     installWorld({ "southaven.southaven-actors": [built("a")] });
     assert.equal(await anyBuilt("not-here"), false);
+  });
+});
+
+describe("withPack", () => {
+  afterEach(() => { globalThis.game = saved; });
+
+  const mod = (id, packs, flags = {}) => ({
+    id, active: true, packs, flags, relationships: { requires: [{ id: "graft" }] },
+  });
+  const install = (...modules) => { globalThis.game = { modules: modules }; };
+
+  test("the one pack of the entry's type is filled in", () => {
+    install(mod("my-mod", [{ name: "my-scenes", type: "Scene" }]));
+    assert.equal(withPack({ type: "Scene" }).pack, "my-scenes");
+  });
+
+  test("a module that declares no entries lends no pack to the guess", () => {
+    // A companion module keeps packs of its own; with them counted, every Scene
+    // in the author's module would have two candidates and get none.
+    install(mod("my-mod", [{ name: "my-scenes", type: "Scene" }]),
+      mod("graft-moulinette", [{ name: "scenes", type: "Scene" }], { graft: { entries: [] } }));
+    assert.equal(withPack({ type: "Scene" }).pack, "my-scenes");
+  });
+
+  test("two candidates and no declaration is left blank", () => {
+    install(mod("a", [{ name: "a-scenes", type: "Scene" }]), mod("b", [{ name: "b-scenes", type: "Scene" }]));
+    assert.equal("pack" in withPack({ type: "Scene" }), false);
   });
 });

@@ -21,6 +21,12 @@ export function graftModules() {
     && [...(m.relationships?.requires ?? [])].some((r) => r.id === MODULE_ID));
 }
 
+/** Whether a module ships grafts, as opposed to code that helps build them. */
+export function shipsEntries(module) {
+  const declared = module.flags?.graft?.entries;
+  return !(Array.isArray(declared) && declared.length === 0);
+}
+
 /**
  * A module's entries, or [] when it ships none.
  *
@@ -114,7 +120,7 @@ export function withPack(entry) {
   if (entry.pack) return entry;
   const declared = [];
   const candidates = [];
-  for (const module of graftModules()) {
+  for (const module of graftModules().filter(shipsEntries)) {
     const named = module.flags?.graft?.packs?.[entry.type];
     if (named) declared.push(named);
     for (const pack of module.packs ?? []) {
