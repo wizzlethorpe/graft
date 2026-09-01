@@ -7,7 +7,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { adventureSourceUuid, parseAdventureSource } from "../scripts/origin.mjs";
+import { installFoundry, uninstallFoundry } from "./foundry-stub.mjs";
+
+import { adventureSourceUuid, parseAdventureSource, stampOrigin } from "../scripts/origin.mjs";
 
 const ORIGIN = {
   adventure: "Compendium.their-module.their-adventures.Adventure.CeteW6YgiNUi0Ykn",
@@ -45,8 +47,13 @@ test("a type an adventure cannot hold is refused", () => {
 test("a document the import updates rather than creates is stamped too", () => {
   // Deterministic ids mean a repeated import, or one made before graft was
   // watching, arrives as an update; unstamped, Copy graft carries it whole.
-  const toUpdate = { Actor: [{ _id: "npcBixby00000000", name: "Bixby" }] };
-  stampOrigin({ uuid: "Compendium.marlo.adventure.Adventure.advMarlo00000000" }, {}, toUpdate);
-  assert.deepEqual(toUpdate.Actor[0].flags.graft.origin,
-    { adventure: "Compendium.marlo.adventure.Adventure.advMarlo00000000", id: "npcBixby00000000" });
+  installFoundry();
+  try {
+    const toUpdate = { Actor: [{ _id: "npcBixby00000000", name: "Bixby" }] };
+    stampOrigin({ uuid: "Compendium.marlo.adventure.Adventure.advMarlo00000000" }, {}, toUpdate);
+    assert.deepEqual(toUpdate.Actor[0].flags.graft.origin,
+      { adventure: "Compendium.marlo.adventure.Adventure.advMarlo00000000", id: "npcBixby00000000" });
+  } finally {
+    uninstallFoundry();
+  }
 });
