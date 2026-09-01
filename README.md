@@ -160,7 +160,7 @@ Optional, in your `module.json`:
 }
 ```
 
-`entries` defaults to `grafts.json`. A declared file that cannot be read is a warning; a missing default file is not.
+`entries` defaults to `grafts.json`. A declared file that cannot be read is a warning; a missing default file is not. **A module that only helps build, shipping no grafts of its own, declares `"entries": []`**, so graft neither looks for a file it will not find nor counts its packs when guessing which pack a **Copy graft** entry belongs in.
 
 A grafts file may be a bare array, or an object declaring the format it was written for:
 
@@ -172,7 +172,7 @@ Absent means 1. A file declaring a newer format is refused rather than partially
 
 ## Hooks
 
-Graft itself fetches nothing: a source is a compendium document the reader already has, and building touches nothing outside the world. Content that has to come from elsewhere, a deployed vault or a subscription service, belongs in a module of its own, and graft gives it two moments to act.
+Graft itself fetches nothing: a source is a compendium document the reader already has, and building touches nothing outside the world. Content that has to come from elsewhere, a deployed vault or a subscription service, belongs in a module of its own, and graft gives it three moments to act.
 
 **`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into world compendiums.
 
@@ -304,6 +304,7 @@ scripts/extend.mjs     collects and runs pre-build transforms and export rewrite
 scripts/yaml.mjs       clipboard output. Pure.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
 scripts/modules.mjs    reads what a module declares.
+scripts/import.mjs     building a grafts.json somebody sent you.
 scripts/origin.mjs     recovers a document's true source.
 scripts/progress.mjs   the build's progress bar.
 scripts/ui.mjs         controls, menus, dialogs.
