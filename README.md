@@ -174,7 +174,7 @@ Absent means 1. A file declaring a newer format is refused rather than partially
 
 Graft itself fetches nothing: a source is a compendium document the reader already has, and building touches nothing outside the world. Content that has to come from elsewhere, a deployed vault or a subscription service, belongs in a module of its own, and graft gives it two moments to act.
 
-**`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once, in registration order. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into world compendiums.
+**`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into world compendiums.
 
 ```js
 Hooks.on("graftPreBuild", (moduleId, register) => {
@@ -188,7 +188,7 @@ Hooks.on("graftPreBuild", (moduleId, register) => {
 });
 ```
 
-`transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `phase` is `"entries"` (the default) for a transform that produces or rewrites entries, or `"sources"` for one that makes the documents their sources name resolvable; every entries transform runs before any sources one, in registration order within a phase, so a materialiser sees the entries after every marker has been expanded. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. Build as much as possible and report the rest: one transform failing is reported and the build goes on without it. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
+`transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `phase` is `"entries"` (the default) for a transform that produces or rewrites entries, or `"sources"` for one that makes the documents their sources name resolvable. Every entries transform runs before any sources one, registration order deciding within a phase, so a materialiser sees the entries after every marker has been expanded. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. Build as much as possible and report the rest: one transform failing is reported and the build goes on without it. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
 
 **`graftBuilt`** fires after every build, whether it came from the world-load prompt, a compendium header, or the pack control. It carries the built UUIDs, so a module that wants to act on what a build produced (record it, inspect it, download the files its documents name) starts from here.
 

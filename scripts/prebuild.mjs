@@ -3,10 +3,7 @@
 //
 // Foundry hooks are synchronous, so `graftPreBuild` only collects: a handler
 // registers `{ id, label, transform, phase }` and the build awaits each
-// transform once. Every `entries` transform runs before any `sources` one, in
-// registration order within a phase: a module that materialises what sources
-// name has to see the entries after every marker has been expanded. A module
-// whose output needs further work does that work itself, in `graftBuilt`.
+// transform once, entries before sources.
 
 const PHASES = ["entries", "sources"];
 
@@ -16,15 +13,16 @@ export function collectTransforms(moduleId) {
   const register = (t) => {
     if (typeof t?.id !== "string" || !t.id) throw new Error("a graft transform needs an id");
     if (typeof t.transform !== "function") throw new Error(`graft transform "${t.id}" needs a transform function`);
-    if (t.phase !== undefined && !PHASES.includes(t.phase)) throw new Error(`graft transform "${t.id}" has no phase "${t.phase}"`);
-    transforms.push({ label: t.id, phase: PHASES[0], ...t });
+    const phase = t.phase ?? PHASES[0];
+    if (!PHASES.includes(phase)) throw new Error(`graft transform "${t.id}" has no phase "${t.phase}"`);
+    transforms.push({ label: t.id, ...t, phase });
   };
   Hooks.callAll("graftPreBuild", moduleId, register);
   return transforms.sort((a, b) => PHASES.indexOf(a.phase) - PHASES.indexOf(b.phase));
 }
 
 /**
- * Run each transform over the entries, once, in registration order.
+ * Run each transform over the entries, once, in the order they were collected.
  *
  * One failing is not a reason to abandon the rest, or the entries that need no
  * transform at all. `skipped` and `warnings` use the builder's `{ id, reason }`

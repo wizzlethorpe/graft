@@ -13,15 +13,12 @@ const MODULE_ID = "graft";
 /**
  * Stamp each document an adventure import is about to create or update.
  *
- * `preImportAdventure` hands both lists over as plain data, by reference. A
- * document whose id is already in the world is updated rather than created,
- * so an import repeated, or one made before graft was watching, arrives
- * through `toUpdate`. The adventure's UUID resolves for anybody who owns the
- * module, which is the difference from the stamp it would otherwise carry.
+ * Both lists are plain data, by reference, before anything exists.
+ * Deterministic ids mean a repeat import arrives in `toUpdate`.
  */
-export function stampOrigin(adventure, ...batches) {
+export function stampOrigin(adventure, toCreate, toUpdate) {
   const origin = { adventure: adventure.uuid, id: null };
-  for (const batch of batches) {
+  for (const batch of [toCreate, toUpdate]) {
     for (const documents of Object.values(batch ?? {})) {
       for (const data of documents ?? []) {
         // The id is recorded rather than inferred from `keepId` staying true.

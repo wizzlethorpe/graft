@@ -1,5 +1,5 @@
-// The pre-build transforms: collected through a hook, run once each, in
-// registration order. A transform gets no second pass, so anything its output
+// The pre-build transforms: collected through a hook, run once each, entries
+// before sources. A transform gets no second pass, so anything its output
 // still needs happens in `graftBuilt` instead.
 
 import test from "node:test";
@@ -85,11 +85,26 @@ test("a sources transform runs after every entries transform, whoever registered
   const handlers = [];
   globalThis.Hooks = { callAll: (_name, ...args) => handlers.forEach((h) => h(...args)) };
   try {
+    handlers.push((_id, register) => register({ id: "first", transform: () => {} }));
     handlers.push((_id, register) => register({ id: "graft-moulinette", phase: "sources", transform: () => {} }));
-    handlers.push((_id, register) => register({ id: "vaults", transform: () => {} }));
-    assert.deepEqual(collectTransforms("m").map((t) => t.id), ["vaults", "graft-moulinette"]);
-    handlers.push((_id, register) => assert.throws(() => register({ id: "x", phase: "later", transform: () => {} }), /no phase/));
-    collectTransforms("m");
+    handlers.push((_id, register) => register({ id: "second", transform: () => {} }));
+    assert.deepEqual(collectTransforms("m").map((t) => t.id), ["first", "second", "graft-moulinette"],
+      "the phase decides, and registration order survives inside one");
+  } finally {
+    delete globalThis.Hooks;
+  }
+});
+
+test("a phase that is not one of graft's is refused, and an absent one is entries", () => {
+  const handlers = [];
+  globalThis.Hooks = { callAll: (_name, ...args) => handlers.forEach((h) => h(...args)) };
+  try {
+    handlers.push((_id, register) => {
+      assert.throws(() => register({ id: "x", phase: "later", transform: () => {} }), /no phase/);
+      // An explicit undefined is a caller spreading options, not a new phase.
+      register({ id: "y", phase: undefined, transform: () => {} });
+    });
+    assert.equal(collectTransforms("m")[0].phase, "entries");
   } finally {
     delete globalThis.Hooks;
   }
