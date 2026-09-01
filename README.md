@@ -18,6 +18,8 @@ https://github.com/wizzlethorpe/graft/releases/latest/download/module.json
 > **Your content is your responsibility.** A patch can still reproduce protected material: a description rewritten in full, a stat block restated, a map's whole wall layout. Graft cannot tell the difference and does not check entitlement; it resolves whatever UUIDs an entry names against whatever the reader has installed.
 >
 > Check what your grafts contain before publishing, and honour the licences of what you build on.
+>
+> A patch is a diff against a live document, so it also carries whatever other modules have written on it. A flag one of them stamps in your world is a fact about your world, and it travels unless you take it out.
 
 The name comes from horticulture: a graft joins a shoot (the scion) to another plant's roots (the rootstock).
 
