@@ -58,33 +58,9 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 
 ## Wanted
 
-- `graft-moulinette`, a companion module. Graft went offline in 0.7.0 and knows
-  nothing about Moulinette; this is where that knowledge lands. The design:
-  - One declared compendium pack per document type. A source reads
-    `Compendium.graft-moulinette.scenes.Scene.<id>` where the id is a hash of
-    the Moulinette pack number plus in-pack filepath, so the UUID is the
-    marketplace address in Foundry's alphabet. Hashes do not reverse, but the
-    reader's own index enumerates every candidate to hash against.
-  - Author side, no interaction: every Moulinette import funnels through
-    `downloadAsset` on the `mou-cloud-cached` collection, and the world document
-    lands through ordinary `createScene`. Wrap the former, and when the scene
-    arrives, write the document into the pack under its deterministic id and
-    stamp `_stats.compendiumSource` on the world copy. Copy graft then works
-    with no Moulinette code in graft. `api.import(...)` as the fallback for
-    content imported before the module existed, since the wrapper is
-    forward-only.
-  - Reader side: a `graftPreBuild` transform materialises any of its sources not
-    yet in its packs, via the index and `downloadAsset`, which also pulls the
-    document's files. A `graftBuilt` listener then scans the built documents for
-    `moulinette-v2/cloud/<creator>/<pack>/<filepath>` paths and downloads what
-    is missing to the exact path named. The folder-to-pack map comes off the
-    index: a row's `previewUrl` ends in a name built from its own `url`, and
-    cutting that name off leaves the two folder segments beside its `pack_id`.
-  - Known holes to carry over: a creator renaming a pack changes the slug
-    embedded in paths; ScenePacker packs and `cloud-private/` content are not
-    in the asset index; an S3 reader's paths sit behind a base URL the shipped
-    document lacks; scanning only reverses a path that is the whole string,
-    since one inside a journal page's markup would resolve nowhere.
+- Companion modules for fetched content live in their own repos:
+  [graft-moulinette](https://github.com/wizzlethorpe/graft-moulinette) exists,
+  its design and limits in its own README and TODO.
 - An `fa-nexus` companion module, same shape: paths under the world-configured
   `cloudDownloadDirAssets`/`cloudDownloadDirTokens` roots are FA's own catalog
   tree, resolvable through the exported `NexusContentService` and
