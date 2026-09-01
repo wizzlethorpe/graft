@@ -78,3 +78,19 @@ test("a registration without an id or a transform is refused", () => {
     delete globalThis.Hooks;
   }
 });
+
+test("a sources transform runs after every entries transform, whoever registered first", () => {
+  // Load order is alphabetical, so the module that materialises sources tends
+  // to register before the one that expands markers into entries naming them.
+  const handlers = [];
+  globalThis.Hooks = { callAll: (_name, ...args) => handlers.forEach((h) => h(...args)) };
+  try {
+    handlers.push((_id, register) => register({ id: "graft-moulinette", phase: "sources", transform: () => {} }));
+    handlers.push((_id, register) => register({ id: "vaults", transform: () => {} }));
+    assert.deepEqual(collectTransforms("m").map((t) => t.id), ["vaults", "graft-moulinette"]);
+    handlers.push((_id, register) => assert.throws(() => register({ id: "x", phase: "later", transform: () => {} }), /no phase/));
+    collectTransforms("m");
+  } finally {
+    delete globalThis.Hooks;
+  }
+});

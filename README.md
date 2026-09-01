@@ -188,7 +188,7 @@ Hooks.on("graftPreBuild", (moduleId, register) => {
 });
 ```
 
-`transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. Build as much as possible and report the rest: one transform failing is reported and the build goes on without it. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
+`transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `phase` is `"entries"` (the default) for a transform that produces or rewrites entries, or `"sources"` for one that makes the documents their sources name resolvable; every entries transform runs before any sources one, in registration order within a phase, so a materialiser sees the entries after every marker has been expanded. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. Build as much as possible and report the rest: one transform failing is reported and the build goes on without it. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
 
 **`graftBuilt`** fires after every build, whether it came from the world-load prompt, a compendium header, or the pack control. It carries the built UUIDs, so a module that wants to act on what a build produced (record it, inspect it, download the files its documents name) starts from here.
 

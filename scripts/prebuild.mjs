@@ -2,20 +2,25 @@
 // a marker its grafts.json ships, fetching what only it knows how to fetch.
 //
 // Foundry hooks are synchronous, so `graftPreBuild` only collects: a handler
-// registers `{ id, label, transform }` and the build awaits each transform
-// once, in registration order. A module whose output needs further work does
-// that work itself, in `graftBuilt`.
+// registers `{ id, label, transform, phase }` and the build awaits each
+// transform once. Every `entries` transform runs before any `sources` one, in
+// registration order within a phase: a module that materialises what sources
+// name has to see the entries after every marker has been expanded. A module
+// whose output needs further work does that work itself, in `graftBuilt`.
 
-/** The transforms registered for one module's build. Collecting runs nothing. */
+const PHASES = ["entries", "sources"];
+
+/** The transforms registered for one module's build, in the order they run. Collecting runs nothing. */
 export function collectTransforms(moduleId) {
   const transforms = [];
   const register = (t) => {
     if (typeof t?.id !== "string" || !t.id) throw new Error("a graft transform needs an id");
     if (typeof t.transform !== "function") throw new Error(`graft transform "${t.id}" needs a transform function`);
-    transforms.push({ label: t.id, ...t });
+    if (t.phase !== undefined && !PHASES.includes(t.phase)) throw new Error(`graft transform "${t.id}" has no phase "${t.phase}"`);
+    transforms.push({ label: t.id, phase: PHASES[0], ...t });
   };
   Hooks.callAll("graftPreBuild", moduleId, register);
-  return transforms;
+  return transforms.sort((a, b) => PHASES.indexOf(a.phase) - PHASES.indexOf(b.phase));
 }
 
 /**
