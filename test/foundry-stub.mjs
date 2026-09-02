@@ -24,8 +24,8 @@ export function installFoundry({ uuids = {}, packs = {}, modules = {}, world = {
     modules: { get: (id) => modules[id] ?? null },
     packs: { get: (c) => (packs[c] ? { metadata: { packageType: packs[c].packageType } } : null) },
   };
-  // No listeners: a test that wants one installs it, and the export path has
-  // to run when nothing is registered.
+  // The export path collects rewriters on every call. A test wanting one
+  // replaces this after installing.
   globalThis.Hooks = { callAll: () => {} };
   globalThis.fromUuid = async (uuid) => {
     const data = uuids[uuid];

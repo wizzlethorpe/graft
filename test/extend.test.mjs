@@ -121,19 +121,15 @@ test("a rewriter names the source its own way, and one that is not theirs passes
   assert.equal(out.source, "@moulinette/Scene/10698");
 });
 
-test("a rewriter that fails costs the spelling, not the copy", async () => {
-  // What exportDiff produced already works; a UUID nobody prettied is fine.
-  const entry = { id: "a", source: "Compendium.x.y.Actor.zzzzzzzzzzzzzzzz", patch: {} };
-  const warn = console.warn;
-  console.warn = () => {};
-  try {
-    const out = await rewriteEntry(entry, { name: "Bandit" }, [
+test("a rewriter that fails is not swallowed", async () => {
+  // copyOne reports it and the author presses the button again; a silent
+  // console line would ship the plainer name and say nothing.
+  await assert.rejects(
+    () => rewriteEntry({ id: "a", patch: {} }, { name: "Bandit" }, [
       { id: "broken", rewrite: () => { throw new Error("no index"); } },
-    ]);
-    assert.deepEqual(out, entry);
-  } finally {
-    console.warn = warn;
-  }
+    ]),
+    /no index/,
+  );
 });
 
 test("a rewriter without an id or a rewrite is refused", () => {

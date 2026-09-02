@@ -101,3 +101,26 @@ test("_stats and per-user ownership never reach a patch", async () => {
   assert.equal(text.includes("K5n12UWOfcmnnwjH"), false);
   assert.equal(text.includes("lastModifiedBy"), false);
 });
+
+test("a module that fetched the source gets the last word on naming it", async () => {
+  // The hook's only production call site; without it Copy graft emits the
+  // compendium UUID a companion module happens to file its content under.
+  const { exportDiff } = await setup();
+  globalThis.Hooks = { callAll: (_name, register) => register({
+    id: "graft-moulinette",
+    rewrite: (entry) => ({ ...entry, source: "@moulinette/Actor/10698/json/actor/bandit.json" }),
+  }) };
+  const mine = { ...bandit, _stats: { ...bandit._stats, compendiumSource: SOURCE } };
+
+  const entry = await exportDiff(asDocument(mine));
+  assert.equal(entry.source, "@moulinette/Actor/10698/json/actor/bandit.json");
+});
+
+test("a rewriter that returns nothing leaves the entry alone", async () => {
+  const { exportDiff } = await setup();
+  globalThis.Hooks = { callAll: (_name, register) => register({ id: "quiet", rewrite: () => undefined }) };
+  const mine = { ...bandit, _stats: { ...bandit._stats, compendiumSource: SOURCE } };
+
+  const entry = await exportDiff(asDocument(mine));
+  assert.equal(entry.source, SOURCE);
+});

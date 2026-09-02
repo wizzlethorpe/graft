@@ -205,7 +205,7 @@ Hooks.on("graftExport", (register) => {
 });
 ```
 
-Return the entry untouched when it is not yours. A rewriter that throws costs the nicer spelling and nothing else: what graft produced is already a working entry, so the reason is logged and it travels as it is.
+Return the entry untouched when it is not yours. A rewriter that throws fails the copy, which **Copy graft** reports: the gesture is interactive and pressing it again is free, so a quietly plainer name is the worse outcome.
 
 **`graftBuilt`** fires after every build, whether it came from the world-load prompt, a compendium header, or the pack control. It carries the built UUIDs, so a module that wants to act on what a build produced (record it, inspect it, download the files its documents name) starts from here.
 
