@@ -5,7 +5,7 @@
 // only builds from a control nobody has found never gets built at all.
 
 import { hydrate, exportDiff } from "./hydrate.mjs";
-import { graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
+import { FORMAT, graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
 import { collectTransforms, runTransforms } from "./extend.mjs";
 import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
@@ -44,13 +44,17 @@ export function registerSettings() {
  * load is one people learn to dismiss without reading. Declining is not
  * permanent, since the pack control is always there.
  */
+/** A refused grafts file builds nothing, so say it where a reader is looking. */
+const sayRefused = ({ moduleId }) =>
+  ui.notifications.warn(t("GRAFT.FileRefused", { module: game.modules.get(moduleId)?.title ?? moduleId }));
+
 export async function promptForUnbuilt() {
   if (!game.user.isGM) return;
   const suppressed = new Set(game.settings.get(MODULE_ID, SUPPRESSED));
 
   for (const module of graftModules()) {
     if (suppressed.has(module.id)) continue;
-    const missing = await unbuilt(module.id);
+    const missing = await unbuilt(module.id, { onRefused: sayRefused });
     if (missing.length === 0) continue;
 
     const build = await foundry.applications.api.DialogV2.confirm({
@@ -71,7 +75,7 @@ export async function promptForUnbuilt() {
 
 /** Build one module and say what happened, on screen and in the console. */
 export async function buildAndReport(moduleId) {
-  const entries = await readGrafts(moduleId);
+  const entries = await readGrafts(moduleId, { onRefused: sayRefused });
   if (entries.length === 0) {
     ui.notifications.warn(t("GRAFT.NoEntries", { module: moduleId }));
     return null;
@@ -251,12 +255,6 @@ export async function copyOne(doc) {
   }
 }
 
-/**
- * Several documents as one grafts array.
- *
- * One failure does not lose the rest; the names of what was skipped go to the
- * console.
- */
 /** Grafts for a set of documents, and the names of any that would not build. */
 async function graftsFor(docs) {
   const entries = [];
@@ -281,9 +279,8 @@ function fileName(label) {
 /**
  * Download the same entries Copy would have put on the clipboard.
  *
- * Always an array, even for one document: a file is a thing on its own, and
- * the only shape that is a `grafts.json` a module can ship or an import can
- * read is the list.
+ * Wrapped in the file object, even for one document: this writes a whole
+ * `grafts.json`, where Copy writes entries to paste into one.
  */
 export async function downloadGrafts(docs, label) {
   if (docs.length === 0) {
@@ -291,7 +288,7 @@ export async function downloadGrafts(docs, label) {
     return null;
   }
   const { entries, failed } = await graftsFor(docs);
-  saveJson(JSON.stringify(entries, null, 2), fileName(label));
+  saveJson(JSON.stringify({ format: FORMAT, entries }, null, 2), fileName(label));
   reportExport(entries, failed, label, "GRAFT.Downloaded", "GRAFT.DownloadedSkipped");
   return entries;
 }

@@ -4,21 +4,28 @@
 // nothing about where an import puts them. Everything here is that translation;
 // creating the packs and building needs Foundry and is not covered.
 
-import { describe, test } from "node:test";
+import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { entriesIn, localiseSources, typesIn, packStem } from "../scripts/import.mjs";
+import { importGrafts, localiseSources, typesIn, packStem } from "../scripts/import.mjs";
 
-describe("entriesIn", () => {
-  test("takes either shape a grafts.json comes in", () => {
-    assert.deepEqual(entriesIn([{ id: "a" }]), [{ id: "a" }]);
-    assert.deepEqual(entriesIn({ format: 1, entries: [{ id: "a" }] }), [{ id: "a" }]);
+describe("building a file somebody sent you", () => {
+  const saved = globalThis.game;
+  afterEach(() => { globalThis.game = saved; });
+
+  /** Enough Foundry to raise an error message. */
+  const installI18n = () => {
+    globalThis.game = { i18n: { localize: (key) => key, format: (key) => key } };
+  };
+
+  test("refuses a bare list, which is the old format", async () => {
+    installI18n();
+    await assert.rejects(() => importGrafts([{ id: "a" }], "x"), /ImportNotEntries/);
   });
 
-  test("refuses anything else rather than importing nothing quietly", () => {
-    assert.equal(entriesIn({ format: 1 }), null);
-    assert.equal(entriesIn("[]"), null);
-    assert.equal(entriesIn(null), null);
+  test("refuses a format written for a newer graft", async () => {
+    installI18n();
+    await assert.rejects(() => importGrafts({ format: 99, entries: [{ id: "a" }] }, "x"), /ImportFormat/);
   });
 });
 

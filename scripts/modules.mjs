@@ -8,12 +8,49 @@ const MODULE_ID = "graft";
 /**
  * The entry format this version understands.
  *
- * A file may declare `"format": <n>`. Every change so far has been additive, so
- * an older file reads fine and an absent version means 1. A file declaring a
- * newer one is refused rather than half-read: the fields it relies on would be
- * silently ignored, which is worse than saying the module needs a newer graft.
+ * A newer file is refused rather than half-read: the fields it relies on would
+ * be ignored silently, which is worse than saying the module needs a newer graft.
  */
-const FORMAT = 1;
+export const FORMAT = 1;
+
+/** The format a grafts file declares, or null if what it declares is not one. Absent means the first. */
+export const formatOf = (parsed) => {
+  const declared = parsed?.format ?? FORMAT;
+  return Number.isInteger(declared) && declared > 0 ? declared : null;
+};
+
+/** A grafts file's entries, or null if it is not one. */
+const entriesIn = (parsed) => (Array.isArray(parsed?.entries) ? parsed.entries : null);
+
+/**
+ * A grafts file's entries, or which check refused it.
+ *
+ * Both readers ask this and answer for their own audience: the console for the
+ * author of a module, a dialog for the reader building a file by hand.
+ */
+export function readFile(parsed) {
+  if (Array.isArray(parsed)) return { error: "old-format" };
+  const format = formatOf(parsed);
+  if (format === null) return { error: "bad-format", declared: parsed?.format };
+  if (format > FORMAT) return { error: "new-format", format };
+  const entries = entriesIn(parsed);
+  if (!entries) return { error: "no-entries" };
+  return { entries };
+}
+
+/** What to tell the author of a file graft would not read. */
+function refusal(result, where) {
+  switch (result.error) {
+    case "old-format":
+      return `${where} is a bare list, which graft no longer reads. Wrap it: { "format": ${FORMAT}, "entries": [ … ] }.`;
+    case "bad-format":
+      return `${where} declares ${JSON.stringify(result.declared)} as its format, which is not a format number.`;
+    case "new-format":
+      return `${where} is format ${result.format}; this graft reads ${FORMAT}. Update graft.`;
+    default:
+      return `${where} declares no "entries" list.`;
+  }
+}
 
 /** Enabled modules that require graft, which is the convention for using it. */
 export function graftModules() {
@@ -35,10 +72,10 @@ export function shipsEntries(module) {
  * ceremony, and is why a missing default file is silent where a declared one
  * that cannot be read is a warning.
  */
-export async function readGrafts(moduleId) {
-  const declared = game.modules.get(moduleId)?.flags?.graft?.entries;
-  const files = Array.isArray(declared) ? declared
-    : typeof declared === "string" ? [declared]
+export async function readGrafts(moduleId, { onRefused } = {}) {
+  const named = game.modules.get(moduleId)?.flags?.graft?.entries;
+  const files = Array.isArray(named) ? named
+    : typeof named === "string" ? [named]
     : null;
 
   const entries = [];
@@ -53,12 +90,13 @@ export async function readGrafts(moduleId) {
       if (files) console.warn(`Graft | ${moduleId} declares ${file}, which could not be read.`);
       continue;
     }
-    const format = Array.isArray(parsed) ? FORMAT : Number(parsed.format ?? FORMAT);
-    if (format > FORMAT) {
-      console.warn(`Graft | ${moduleId}/${file} is format ${format}; this graft reads ${FORMAT}. Update graft.`);
+    const result = readFile(parsed);
+    if (result.error) {
+      console.warn(`Graft | ${refusal(result, `${moduleId}/${file}`)}`);
+      onRefused?.({ moduleId, file, error: result.error });
       continue;
     }
-    entries.push(...(Array.isArray(parsed) ? parsed : parsed.entries ?? []));
+    entries.push(...result.entries);
   }
   return entries;
 }
@@ -70,9 +108,9 @@ export async function readGrafts(moduleId) {
  * answer stays true when a document is deleted by hand or an update ships new
  * entries.
  */
-export async function unbuilt(moduleId) {
+export async function unbuilt(moduleId, options) {
   const byPack = new Map();
-  for (const entry of await readGrafts(moduleId)) {
+  for (const entry of await readGrafts(moduleId, options)) {
     if (!entry?.id) continue;                  // planOrder reports these
     if (!byPack.has(entry.pack)) byPack.set(entry.pack, []);
     byPack.get(entry.pack).push(entry);

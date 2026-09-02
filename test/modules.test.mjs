@@ -7,7 +7,66 @@
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { anyBuilt, withPack } from "../scripts/modules.mjs";
+import { FORMAT, anyBuilt, formatOf, readFile, readGrafts, withPack } from "../scripts/modules.mjs";
+
+describe("the grafts file shape", () => {
+  test("takes the object a grafts.json is", () => {
+    assert.deepEqual(readFile({ format: 1, entries: [{ id: "a" }] }).entries, [{ id: "a" }]);
+  });
+
+  test("refuses the old bare list under its own name, so the warning can say so", () => {
+    assert.equal(readFile([{ id: "a" }]).error, "old-format");
+  });
+
+  test("refuses an object with no entries list", () => {
+    assert.equal(readFile({ format: 1 }).error, "no-entries");
+  });
+
+  test("reads a file that declares no format as the first one", () => {
+    assert.equal(formatOf({ entries: [] }), FORMAT);
+  });
+
+  test("refuses a format that is not a whole number, a semver string included", () => {
+    assert.equal(formatOf({ format: "1.0.0" }), null);
+    assert.equal(formatOf({ format: "1" }), null);
+    assert.equal(formatOf({ format: true }), null);
+  });
+
+  test("names the newer format, so the reader can be told which", () => {
+    const result = readFile({ format: FORMAT + 1, entries: [] });
+    assert.equal(result.error, "new-format");
+    assert.equal(result.format, FORMAT + 1);
+  });
+});
+
+describe("readGrafts on a file it will not read", () => {
+  const warn = console.warn;
+  afterEach(() => { console.warn = warn; delete globalThis.fetch; });
+
+  /** A module whose grafts.json holds whatever is passed. */
+  function installModuleFile(body) {
+    console.warn = () => {};
+    globalThis.game = { modules: { get: () => ({ flags: {} }) } };
+    globalThis.fetch = async () => ({ ok: true, json: async () => body });
+  }
+
+  test("builds the entries of a file it can read", async () => {
+    installModuleFile({ format: FORMAT, entries: [{ id: "a" }] });
+    assert.deepEqual(await readGrafts("m"), [{ id: "a" }]);
+  });
+
+  test("builds nothing from a bare list, and reports which refusal it was", async () => {
+    installModuleFile([{ id: "a" }]);
+    const refused = [];
+    assert.deepEqual(await readGrafts("m", { onRefused: (r) => refused.push(r.error) }), []);
+    assert.deepEqual(refused, ["old-format"]);
+  });
+
+  test("builds nothing from a format it does not understand", async () => {
+    installModuleFile({ format: FORMAT + 1, entries: [{ id: "a" }] });
+    assert.deepEqual(await readGrafts("m"), []);
+  });
+});
 
 const saved = globalThis.game;
 afterEach(() => { globalThis.game = saved; });

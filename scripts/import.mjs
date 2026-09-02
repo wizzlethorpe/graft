@@ -6,6 +6,7 @@
 // to bare ids first and resolved against the packs this import creates.
 
 import { hydrate } from "./hydrate.mjs";
+import { FORMAT, readFile } from "./modules.mjs";
 import { rewriteSources } from "./patch.mjs";
 import { collectTransforms, runTransforms } from "./extend.mjs";
 import * as progress from "./progress.mjs";
@@ -16,12 +17,6 @@ const t = (key, data) => (data ? game.i18n.format(key, data) : game.i18n.localiz
 /** Foundry moved these; older worlds still have the globals. */
 const compendiumClass = () =>
   foundry.documents?.collections?.CompendiumCollection ?? globalThis.CompendiumCollection;
-
-/** The entries in a file, whichever of the two shapes it uses. */
-export function entriesIn(parsed) {
-  const entries = Array.isArray(parsed) ? parsed : parsed?.entries;
-  return Array.isArray(entries) ? entries : null;
-}
 
 /**
  * Fold a sibling reference back to the bare id it is really making.
@@ -107,8 +102,12 @@ async function makePacks(label, types) {
  * @returns `{ built, skipped, warnings, removed }`, or null if there was nothing to build.
  */
 export async function importGrafts(parsed, label) {
-  const declared = entriesIn(parsed);
-  if (!declared) throw new Error(t("GRAFT.ImportNotEntries"));
+  const file = readFile(parsed);
+  if (file.error === "new-format") {
+    throw new Error(t("GRAFT.ImportFormat", { format: file.format, reads: FORMAT }));
+  }
+  if (file.error) throw new Error(t("GRAFT.ImportNotEntries"));
+  const declared = file.entries;
   if (declared.length === 0) throw new Error(t("GRAFT.ImportEmpty"));
 
   progress.begin(`Graft: ${label}`);
