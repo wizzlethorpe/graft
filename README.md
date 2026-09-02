@@ -12,8 +12,6 @@ Graft packages your changes to somebody else's compendium content as a **diff** 
 https://github.com/wizzlethorpe/graft/releases/latest/download/module.json
 ```
 
-**Status:** working prototype, exercised in a live world across Actors, Items, Scenes, Journals, Playlists and Adventures. Not on Foundry's package registry; the format may change.
-
 > [!IMPORTANT]
 > **Your content is your responsibility.** A patch can still reproduce protected material: a description rewritten in full, a stat block restated, a map's whole wall layout. Graft cannot tell the difference and does not check entitlement; it resolves whatever UUIDs an entry names against whatever the reader has installed.
 >
@@ -27,29 +25,35 @@ The name comes from horticulture: a graft joins a shoot (the scion) to another p
 
 ## The format
 
-Four fields: an `id` and `type` of your own, a `source` to graft onto, and a `patch`.
+Four fields: an `id` and `type` of your own, a `source` to graft onto, and a `patch`. `id` is a Foundry document id, sixteen characters of `[a-zA-Z0-9]`; `pack` names which of your module's packs the result lands in.
 
-```yaml
-id: banditCaptain001               # a Foundry document id: [a-zA-Z0-9]{16}
-type: Actor
-pack: my-actors                    # which of your module's packs it lands in
-source: Compendium.some-bestiary.actors.Actor.mmBandit000000
-patch:
-  name: The Enforcer
-  system:
-    attributes: { hp: { value: 45 } }
-    details: { cr: null }          # null deletes, per RFC 7386
-  items:
-    - _id: itemCrossbow001         # keyed: patches that item, leaves the rest
-      system: { damage: "2d8" }
+```json
+{
+  "id": "banditCaptain001",
+  "type": "Actor",
+  "pack": "my-actors",
+  "source": "Compendium.dnd-monster-manual.actors.Actor.mmBanditCaptain0",
+  "patch": {
+    "name": "The Enforcer",
+    "system": {
+      "attributes": { "hp": { "value": 65 } },
+      "details": { "cr": null }
+    },
+    "items": [
+      { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } }
+    ]
+  }
+}
 ```
+
+In the patch, `null` deletes a key, per RFC 7386, and an array member carrying an `_id` patches the item it names while leaving the rest alone: here the captain's scimitar goes up a damage die, and the pistol and armor ride along untouched. **Format details** below has the full rules.
 
 Building resolves the source, applies the patch, and creates the result under your id in your pack. If a source cannot be resolved, that entry is skipped and listed in the report; every other entry still builds.
 
 **`folder`** is optional and is a path of names, not an id:
 
-```yaml
-folder: Magic Items/Bags
+```json
+"folder": "Magic Items/Bags"
 ```
 
 Folder ids do not survive to another machine, but the folder structure does. Folders are created during the build and matched by name and parent, so renaming one by hand survives the next build.
@@ -58,16 +62,17 @@ Folder ids do not survive to another machine, but the folder structure does. Fol
 
 A `source` that is a bare document id names another entry in the same module. Nothing else a source may hold looks like one, since no document type name is sixteen characters and a bare id is not a UUID, so the short form is unambiguous. It is also portable: it survives the module being renamed, and an import into somebody else's world can resolve it against whatever packs it creates. What it cannot say is which pack it meant, so an id two entries share is reported rather than guessed at.
 
-```yaml
-source: banditCaptain001            # the entry with this id, wherever it lands
+```json
+"source": "banditCaptain001"
 ```
 
 `source` may also be a list of fallbacks, tried in order:
 
-```yaml
-source:
-  - Compendium.premium-bestiary.actors.Actor.mmBandit000000   # if they own it
-  - Compendium.dnd5e.actors.Actor.srdBandit000000             # otherwise this
+```json
+"source": [
+  "Compendium.dnd-monster-manual.actors.Actor.mmBanditCaptain0",
+  "Compendium.dnd5e.actors24.Actor.mmBanditCaptain0"
+]
 ```
 
 The first source that resolves is used, so an author can prefer better content without requiring it. The entry fails only if none of them resolve. A list source records no `sourceHash`, because a hash is taken against the specific document the author diffed and a list does not say which one that was.
@@ -223,15 +228,17 @@ Patches use [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) (JSON Merge Patch
 
 ### Embedded content is a graft too
 
-An embedded document can be somebody else's content as well, so an entry in a keyed array takes one of two shapes:
+An embedded document can be somebody else's content as well, so an entry in a keyed array takes one of two shapes: a patch on an item already in the source, or a graft inside the graft, with a `source` and `patch` of its own.
 
-```yaml
-items:
-  - _id: itemCrossbow001            # patch an entry already in the source
-    system: { damage: "2d8" }
-  - _id: IP7kWWdq5km8SZad           # a graft inside a graft
-    source: Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt
-    patch: { system: { equipped: true } }
+```json
+"items": [
+  { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } },
+  {
+    "_id": "IP7kWWdq5km8SZad",
+    "source": "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt",
+    "patch": { "system": { "equipped": true } }
+  }
+]
 ```
 
 The second shape is produced automatically: Foundry records where the item came from, so **Copy graft** references it rather than copying it. An embedded source that will not resolve fails the whole entry, because a stat block silently missing the item it was built around is worse than a skipped entry that names the dependency.
@@ -255,11 +262,14 @@ A patch is written against a source at a moment in time. Graft checks for three 
 - **An older generation.** Foundry or system majors only. Systems ship minors constantly and most break nothing, so warning on each would train readers to ignore the section.
 - **The source itself changed.** An entry records `sourceHash`, a digest of the source **projected onto the patch's shape**, so only the fields the patch touches:
 
-```yaml
-source: Compendium.some-bestiary.actors.Actor.mmBandit000000
-sourceHash: 7f3a91c2e40b8d15
-patch:
-  system: { attributes: { hp: { value: 45 } } }
+```json
+{
+  "source": "Compendium.dnd-monster-manual.actors.Actor.mmBanditCaptain0",
+  "sourceHash": "a5bc24cd72abd37f",
+  "patch": {
+    "system": { "attributes": { "hp": { "value": 65 } } }
+  }
+}
 ```
 
 Hashing only the patched fields keeps the warning useful: an upstream fix to a description you never touched does not warn. Reordering a keyed array is not drift, and neither is key order in the source.
