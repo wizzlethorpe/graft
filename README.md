@@ -62,6 +62,10 @@ Building resolves the source, applies the patch, and creates the result under yo
 - [Using it](docs/using.md): building, rebuilding, the report, importing a `grafts.json` somebody sent you
 - [Hooks and API](docs/hooks.md): pre-build transforms, export rewriters, `game.modules.get("graft").api`
 
+## Support
+
+Graft is a free and open-source Wizzlethorpe Labs product. If you find it useful, please consider [supporting us on Patreon](https://www.patreon.com/wizzlethorpe). Check out [wizzlethorpe.com](https://wizzlethorpe.com) for more free tools and content!
+
 ## Development
 
 ```
