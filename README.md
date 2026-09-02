@@ -4,9 +4,7 @@
 [![license](https://img.shields.io/github/license/wizzlethorpe/graft)](LICENSE)
 [![release](https://img.shields.io/github/v/release/wizzlethorpe/graft?display_name=tag&sort=semver)](https://github.com/wizzlethorpe/graft/releases/latest)
 
-Graft packages your changes to somebody else's compendium content as a **diff** and rebuilds the result on the reader's machine. A graft module ships pointers and patches, not the content it builds on.
-
-The name comes from horticulture: a graft joins a shoot (the scion) to another plant's roots (the rootstock).
+Graft packages your changes to somebody else's compendium content as a **diff** and rebuilds the result on the reader's machine. A graft module contains only pointers and patches, never the content it builds on.
 
 **Install:** paste this into Foundry's *Install Module* dialog.
 
@@ -21,7 +19,7 @@ https://github.com/wizzlethorpe/graft/releases/latest/download/module.json
 
 ## An entry
 
-A graft module is a list of entries in `grafts.json`: an `id` and `type` of your own, the `pack` of yours the result lands in, a `source` to graft onto, and a `patch`.
+A graft module declares its entries in `grafts.json`, an object holding the format it was written for and an `entries` list. Each entry is an `id` and `type` of your own, the `pack` of yours the result lands in, a `source` to graft onto, and a `patch`.
 
 ```json
 {
@@ -46,9 +44,9 @@ Building resolves the source, applies the patch, and creates the result under yo
 
 ## The authoring loop
 
-1. Make a module declaring your packs; `examples/graft-example/` is a working one. Restart the Foundry server so the manifest is read.
+1. Make a module declaring your packs; `examples/graft-example/` is a working one. Restart the world so Foundry reads the manifest.
 2. Build your content in the world, the ordinary way: import, edit, drag items on.
-3. Right-click a document or folder for **Copy graft** and paste the result into `grafts.json`.
+3. Right-click a document or folder for **Copy graft** and paste the result into the `entries` list in `grafts.json`.
 4. Build, from the prompt on world load or from **Build grafts** in a pack window's header, and read the report.
 5. Test what a reader without your sources gets: disable a module you graft onto and build again.
 
@@ -64,7 +62,7 @@ Building resolves the source, applies the patch, and creates the result under yo
 
 ## Support
 
-Graft is a free and open-source Wizzlethorpe Labs product. If you find it useful, please consider [supporting us on Patreon](https://www.patreon.com/wizzlethorpe). Check out [wizzlethorpe.com](https://wizzlethorpe.com) for more free tools and content!
+Graft is free and open source, from Wizzlethorpe Labs. If it is useful to you, [support us on Patreon](https://www.patreon.com/wizzlethorpe). More free tools and content at [wizzlethorpe.com](https://wizzlethorpe.com).
 
 ## Development
 
@@ -83,5 +81,3 @@ scripts/main.mjs       hooks only.
 ```
 
 Tests: `node --test 'test/*.test.mjs'`
-
-Graft ships code and no content, and is system-agnostic: the only Foundry fields it knows are `_stats`, `ownership` and `folder`. Foundry requires an Actor or Item pack to declare its system, so a module shipping packs cannot be system-agnostic. Your module declares the packs, the system and the dependencies; graft builds them.

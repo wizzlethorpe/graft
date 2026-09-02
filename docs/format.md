@@ -1,6 +1,12 @@
 # The format
 
-A graft module declares its entries in `grafts.json`: always a list, even for one document. Each entry is an `id` and `type` of your own, a `source` to graft onto, and a `patch`. `id` is a Foundry document id, sixteen characters of `[a-zA-Z0-9]`; `pack` names which of your module's packs the result lands in.
+A graft module declares its entries in `grafts.json`, an object holding the format it was written for and an `entries` list, always a list even for one document:
+
+```json
+{ "format": 1, "entries": [ … ] }
+```
+
+Each entry is an `id` and `type` of your own, a `source` to graft onto, and a `patch`. `id` is a Foundry document id, sixteen characters of `[a-zA-Z0-9]`; `pack` names which of your module's packs the result lands in.
 
 ```json
 {
@@ -23,7 +29,7 @@ A graft module declares its entries in `grafts.json`: always a list, even for on
 
 In the patch, `null` deletes a key, per RFC 7386, and an array member carrying an `_id` patches the item it names while leaving the rest alone: here the captain's scimitar goes up a damage die, and the pistol and armor ride along untouched. [Patches](#patches) below has the full rules.
 
-Building resolves the source, applies the patch, and creates the result under your id in your pack. If a source cannot be resolved, that entry is skipped and listed in the report; every other entry still builds.
+Building resolves the source, applies the patch, and creates the result under your id in your pack. If a source cannot be resolved, graft skips that entry and lists it in the report; every other entry still builds.
 
 **`folder`** is optional and is a path of names, not an id:
 
@@ -31,11 +37,11 @@ Building resolves the source, applies the patch, and creates the result under yo
 "folder": "Magic Items/Bags"
 ```
 
-Folder ids do not survive to another machine, but the folder structure does. Folders are created during the build and matched by name and parent, so renaming one by hand survives the next build.
+Folder ids do not survive to another machine, but the folder structure does. Graft creates folders during the build and matches them by name and parent, so renaming one by hand survives the next build.
 
-**`source`** is optional. Without one, the patch is the whole document, so a graft module can also ship original content. A `source` that is present but empty is an error.
+**`source`** is optional. Without one, the patch is the whole document, so a graft module can also carry original content. A `source` that is present but empty is an error.
 
-A `source` that is a bare document id names another entry in the same module. Nothing else a source may hold looks like one, since no document type name is sixteen characters and a bare id is not a UUID, so the short form is unambiguous. It is also portable: it survives the module being renamed, and an import into somebody else's world can resolve it against whatever packs it creates. What it cannot say is which pack it meant, so an id two entries share is reported rather than guessed at.
+A `source` that is a bare document id names another entry in the same module. Nothing else a source may hold looks like one, since no document type name is sixteen characters and a bare id is not a UUID, so the short form is unambiguous. It is also portable: it survives the module being renamed, and an import into somebody else's world can resolve it against whatever packs it creates. What it cannot say is which pack it meant, so graft reports an id two entries share rather than guessing.
 
 ```json
 "source": "banditCaptain001"
@@ -50,7 +56,7 @@ A `source` that is a bare document id names another entry in the same module. No
 ]
 ```
 
-The first source that resolves is used, so an author can prefer better content without requiring it. The entry fails only if none of them resolve. A list source records no `sourceHash`, because a hash is taken against the specific document the author diffed and a list does not say which one that was.
+Graft uses the first source that resolves, so an author can prefer better content without requiring it. The entry fails only if none of them resolve. A list source records no `sourceHash`, because a hash is taken against the specific document the author diffed and a list does not say which one that was.
 
 ## Patches
 
@@ -73,16 +79,16 @@ An embedded document can be somebody else's content as well, so an entry in a ke
 ]
 ```
 
-The second shape is produced automatically: Foundry records where the item came from, so **Copy graft** references it rather than copying it. An embedded source that will not resolve fails the whole entry, because a stat block silently missing the item it was built around is worse than a skipped entry that names the dependency.
+**Copy graft** produces the second shape for you: Foundry records where the item came from, so the entry references the item rather than copying it. An embedded source that will not resolve fails the whole entry, because a stat block silently missing the item it was built around is worse than a skipped entry that names the dependency.
 
-An embedded source naming a sibling is an ordering edge like a top-level one, so an item can be declared as its own entry and put on an actor in the same file whichever order the two appear in. A loop through an inserted item is reported the same way as any other.
+An embedded source naming a sibling is an ordering edge like a top-level one, so an item can be declared as its own entry and put on an actor in the same file whichever order the two appear in. Graft reports a loop through an inserted item the same way as any other.
 
 ### What is stripped
 
 - **`_stats`**, whose timestamps differ between identical documents and would report every embedded item as changed.
 - **`folder`**, at the root only. It is kept at depth, which matters for Adventures: they carry their own `folders` array and their documents point into it.
 - **`active`, `navOrder` and `thumb`**, at the root, which say where a Scene sat in the world it was copied from rather than what the scene is: which scene that world is looking at, where it sits in the navigation bar, and a path into that world's own generated thumbnails. `sort` is kept, since a graft may reasonably want to say where its output sits in a pack.
-- **`ownership`** is thinned rather than dropped. Per-user entries are world-local and are removed; `default` stays, since it is how you say "players can see this".
+- **`ownership`** is thinned rather than dropped. Per-user entries are world-local, so graft removes them; `default` stays, since it is how you say "players can see this".
 
 Nothing else is stripped, and in particular **no other module's flags**. Those are that module's data, and graft leaves them alone. A patch is a diff against a live document, so it carries whatever other modules have written on it: a flag one of them stamps in your world is a fact about your world, and it travels unless you take it out.
 
@@ -91,7 +97,7 @@ Nothing else is stripped, and in particular **no other module's flags**. Those a
 A patch is written against a source at a moment in time. Graft checks for three kinds of drift. All three **warn** rather than refuse, because a changed source usually still patches correctly, and refusing would strand a reader over an upstream typo fix.
 
 - **A different system.** `_stats.systemId` records which system a document was authored for. A pf2e actor grafted into a dnd5e world is incompatible rather than merely drifted, and without this check it would build without any warning.
-- **An older generation.** Foundry or system majors only. Systems ship minors constantly and most break nothing, so warning on each would train readers to ignore the section.
+- **An older generation.** Foundry or system majors only. Systems release minors constantly and most break nothing, so warning on each would train readers to ignore the section.
 - **The source itself changed.** An entry records `sourceHash`, a digest of the source **projected onto the patch's shape**, so only the fields the patch touches:
 
 ```json
@@ -110,20 +116,20 @@ A missing `sourceHash` means the hash was never recorded, so no drift check runs
 
 ### Old documents are migrated
 
-Everything is created through `Document.fromImport`, Foundry's own migration path. Creating directly would store old data unchanged against the current schema, and the failure is quiet: a Foundry 13 scene arrives with v13 tile coordinates read under v14 anchor semantics, so every tile sits half its own size out of place.
+Graft creates everything through `Document.fromImport`, Foundry's own migration path. Creating directly would store old data unchanged against the current schema, and the failure is quiet: a Foundry 13 scene arrives with v13 tile coordinates read under v14 anchor semantics, so every tile sits half its own size out of place.
 
-A source older than the running generation is still reported, since migration handles fields that moved but not fields that were removed.
+Graft still reports a source older than the running generation, since migration handles fields that moved but not fields that were removed.
 
-An Adventure cannot take that path whole: the server migrates with `db.Adventure`, and Adventures have no world collection, so any version difference at all crashes it. The documents *inside* an Adventure all have one, so they migrate one at a time through their own classes and the Adventure is constructed around the results; a document that cannot migrate is kept as authored and named individually.
+An Adventure cannot take that path whole: the server migrates with `db.Adventure`, and Adventures have no world collection, so any version difference at all crashes it. The documents *inside* an Adventure all have one, so graft migrates them one at a time through their own classes and builds the Adventure around the results; a document that cannot migrate is kept as authored and named individually.
 
-Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. A Foundry 13 tile's `occlusion.mode` is dropped rather than converted to the `occlusion.modes` that replaced it, by `fromImport` and `importFromJSON` alike, so a roof set to fade stops fading. Graft does not migrate fields by hand; the set of moved fields is open-ended.
+Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. `fromImport` and `importFromJSON` alike drop a Foundry 13 tile's `occlusion.mode` rather than converting it to the `occlusion.modes` that replaced it, so a roof set to fade stops fading. Graft does not migrate fields by hand; the set of moved fields is open-ended.
 
 ### Limits
 
 - **Removing an entry from a keyed array** is not expressible: an omitted entry means "leave it alone". Expressing removal would need RFC 6902 `remove`, which addresses by position.
 - **`null` resets, it does not remove.** The key does leave the patched data, but Foundry then loads it against a schema, and an absent field takes its declared initial value. True deletion only works where the schema does not describe the key, in practice `flags`.
 - **Sets serialise as ordered arrays.** `SetField` has no meaningful order but compares as a list, so a reordering reads as a change. Not handled, because guessing which arrays are Sets could silently drop a genuine reorder of a list that is ordered.
-- **Pruning removes only what graft built.** Deleting an entry from `grafts.json` removes the flagged document it built on the next build; documents an author placed in the pack by hand are never touched. An entry a transform skipped this run, a lapsed subscription say, still counts as declared and is left alone.
+- **Pruning removes only what graft built.** Deleting an entry from `grafts.json` removes the flagged document it built on the next build; documents an author placed in the pack by hand are never touched. An entry a transform skipped this run, a lapsed subscription say, still counts as declared, and graft leaves it alone.
 
 ## Chaining
 

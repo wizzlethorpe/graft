@@ -1,25 +1,25 @@
 # Authoring
 
-**1. Make the module.** A directory in `Data/modules/` with a `module.json` declaring your packs, `requires` for graft and your system, and `recommends` for each source you graft onto. `examples/graft-example/` is a working one.
+**1. Make the module.** A directory in `Data/modules/` with a `module.json` declaring your packs, `requires` for graft and your system, and either `requires` or `recommends` for each source you graft onto. `examples/graft-example/` is a working one.
 
-**2. Restart the Foundry server.** Manifests are read at startup. A browser reload is not enough; the symptom is a build error saying your module declares no such pack.
+**2. Restart the world.** Foundry reads manifests when a world launches. A browser reload is not enough; the symptom is a build error saying your module declares no such pack.
 
 **3. Build in your world, the ordinary way.** Import a monster and edit it, drag items onto it, create your own documents. Nothing in this step is graft-specific.
 
-**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Paste the result into `grafts.json` beside your `module.json`.
+**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Paste the result into the `entries` list in `grafts.json`, beside your `module.json`.
 
 **5. Build**, from the prompt on world load or from **Build grafts** in your pack's window header, and read the report.
 
 **6. Test what a reader without your sources gets.** Disable a module you graft onto and build again. The report should list those entries as skipped and everything else should build.
 
 > [!WARNING]
-> **Do not distribute the `packs/` directory.** Building writes the resolved documents into your packs, including descriptions, stat blocks and maps. Publishing the module directory after a test build ships everything this format exists to avoid.
+> **Do not distribute the `packs/` directory.** Building writes the resolved documents into your packs, including descriptions, stat blocks and maps. Publishing the module directory after a test build would distribute everything this format exists to avoid.
 >
 > A graft module is `module.json`, `grafts.json`, and whatever art and code are yours. Add `packs/` to `.gitignore`.
 
 ## Copying runs one way
 
-**Copy graft** works on documents in the world, not in compendiums. You build in the world; graft writes to compendiums.
+**Copy graft** works on documents in the world, not in compendiums. You build in the world and graft writes to compendiums.
 
 What you get depends on where the document is:
 
@@ -43,14 +43,14 @@ That stamp is also what makes adventure content referenceable. An adventure's co
 Compendium.<module>.<pack>.Adventure.<advId>.JournalEntry.<docId>
 ```
 
-An unresolvable source is handled in one of two ways. If the source module is **installed but disabled**, the export refuses until you enable it. If it is **not installed at all**, graft treats the document as having no recorded source and copies it whole. Its full content then sits in your `grafts.json`, where you can see it and decide whether to ship it.
+Graft handles an unresolvable source one of two ways. If the source module is **installed but disabled**, the export refuses until you enable it. If it is **not installed at all**, graft treats the document as having no recorded source and copies it whole. Its full content then sits in your `grafts.json`, where you can see it and decide whether to publish it.
 
 ## Dependencies
 
 Declare them through Foundry's own `relationships`, so Foundry reports a missing one itself.
 
-- **`requires`** for what the module cannot work without: graft, and the system its packs declare. Foundry stops the reader from disabling these.
-- **`recommends`** for content you graft onto. A missing source only skips its own entries, so hard-requiring one turns a skipped entry into a module that will not load, and makes the module impossible to test against a missing dependency.
+- **`requires`** for what the module cannot work without: graft, and the system its packs declare. Foundry stops the reader from disabling these. Require a source you graft onto as well if your module is pointless without it.
+- **`recommends`** for the rest of what you graft onto. A missing source only skips its own entries, so recommending leaves everything else building and lets you test against a missing dependency. Requiring turns a skipped entry into a module that will not load.
 
 ## Manifest options
 
@@ -65,12 +65,14 @@ Optional, in your `module.json`:
 }
 ```
 
-`entries` defaults to `grafts.json`. A declared file that cannot be read is a warning; a missing default file is not. **A module that only helps build, shipping no grafts of its own, declares `"entries": []`**, so graft neither looks for a file it will not find nor counts its packs when guessing which pack a **Copy graft** entry belongs in.
+`entries` defaults to `grafts.json`. `packs` only affects **Copy graft**, which otherwise picks the pack when your module has exactly one of that type and gives up when it has two.
 
-A grafts file may be a bare array, or an object declaring the format it was written for:
+A grafts file is an object, not a bare list:
 
 ```json
 { "format": 1, "entries": [ … ] }
 ```
 
-Absent means 1. A file declaring a newer format is refused rather than partially read, since fields the newer format relies on would otherwise be ignored silently. `packs` only affects **Copy graft**, which otherwise picks the pack when your module has exactly one of that type and gives up when it has two.
+`format` is the version of the entry format the file was written for. There is only one so far, and a file that says nothing is read as version 1. Graft skips a file claiming a version newer than it understands and logs that the reader needs a newer graft, rather than reading it and silently ignoring whatever fields that version added.
+
+Everything else in the object is left alone, so a module or a graft extension can keep its own data beside the entries.
