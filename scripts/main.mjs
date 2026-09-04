@@ -1,7 +1,7 @@
 // Where Foundry calls in, and nothing else.
 
 import { stampOrigin } from "./origin.mjs";
-import { hydrate, exportDiff } from "./hydrate.mjs";
+import { hydrate, exportDiff, resolveData } from "./hydrate.mjs";
 import { readGrafts, unbuilt, anyBuilt } from "./modules.mjs";
 import * as progress from "./progress.mjs";
 import {
@@ -14,7 +14,7 @@ const MODULE_ID = "graft";
 Hooks.once("init", () => {
   registerSettings();
   game.modules.get(MODULE_ID).api = {
-    hydrate, exportDiff, readGrafts, unbuilt, anyBuilt, buildPacks: buildAndReport,
+    hydrate, exportDiff, resolve: resolveData, readGrafts, unbuilt, anyBuilt, buildPacks: buildAndReport,
     progress: { phase: progress.phase, step: progress.step, note: progress.note },
   };
 });

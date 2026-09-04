@@ -249,7 +249,7 @@ function idsByPack(entries) {
  *
  * `.toObject()` is not optional; see `isPlainObject` in patch.mjs.
  */
-async function resolveData(uuid) {
+export async function resolveData(uuid) {
   const fromAdventure = await resolveAdventureSource(uuid);
   if (fromAdventure !== null) return fromAdventure;
   const doc = await fromUuid(uuid);
