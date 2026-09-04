@@ -24,7 +24,8 @@ Hooks.once("ready", promptForUnbuilt);
 // A Build control in the header of a graft module's own compendium windows,
 // which is where somebody looks when they wonder why a pack is empty.
 Hooks.on("getHeaderControlsCompendium", addPackControl);
-Hooks.on("renderCompendiumDirectory", addImportControl);
+// A file import spans document types, so its control is on the Settings tab.
+Hooks.on("renderSettings", addImportControl);
 
 /**
  * Copy graft on every document sheet: the convenience path for something

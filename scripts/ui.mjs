@@ -11,17 +11,9 @@ import { collectTransforms, runTransforms } from "./extend.mjs";
 import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
 import { importGrafts } from "./import.mjs";
+import { t } from "./i18n.mjs";
 
 const MODULE_ID = "graft";
-
-/**
- * Localised text.
- *
- * Only what a reader sees. The reasons attached to skipped and warned entries
- * stay as they are: they name ids, UUIDs and package names, and translating the
- * frame around a UUID helps nobody read it.
- */
-const t = (key, data) => (data ? game.i18n.format(key, data) : game.i18n.localize(key));
 const SUPPRESSED = "suppressedPrompts";
 const BULK_CONFIRM_AT = 100;
 
@@ -232,13 +224,15 @@ async function reportBuild(moduleId, built, skipped, warnings = [], removed = []
 }
 
 /**
- * What a built uuid links to and is called.
- *
- * An entry assembled into an Adventure has no document of its own to open, so
- * it links to the Adventure and is named from the content inside it.
+ * What a built uuid links to and is called: a world document, a pack
+ * document, or, for an entry assembled into an Adventure, the Adventure it is
+ * inside, named from the content there.
  */
 async function builtLink(uuid) {
   const id = uuid.split(".").pop();
+  if (!uuid.startsWith("Compendium.")) {
+    return { link: uuid, name: game.collections.get(uuid.split(".")[0])?.get(id)?.name ?? id };
+  }
   const inside = parseAdventureSource(uuid);
   if (!inside) {
     const pack = game.packs.get(uuid.split(".").slice(1, 3).join("."));
@@ -347,7 +341,7 @@ async function confirmBulk(count, label) {
 // ── importing a file ────────────────────────────────────────────────────────
 
 /**
- * Ask for a file and a name, then build it into world compendiums.
+ * Ask for a file and a name, then build it into the world.
  *
  * A file rather than a module, for content somebody sent you. What it builds
  * is not tracked: there is no manifest to compare against later, so this is an
@@ -384,7 +378,7 @@ export async function promptForImport() {
   try {
     const result = await importGrafts(parsed, label);
     // No module to name, so the report is titled with what the reader called it.
-    await reportBuild(label, result.built, result.skipped, result.warnings, result.removed);
+    await reportBuild(label, result.built, result.skipped, result.warnings);
     return result;
   } catch (err) {
     ui.notifications.error(t("GRAFT.ImportFailed", { reason: err.message }));
@@ -392,24 +386,17 @@ export async function promptForImport() {
   }
 }
 
-/** A Build from file control on the Compendium tab, where imports would be looked for. */
+/** An Import grafts control on the Settings tab. */
 export function addImportControl(app, html) {
   if (!game.user.isGM) return;
   const root = html?.[0] ?? html ?? app?.element;
   if (!root?.querySelector || root.querySelector("[data-graft-import]")) return;
   const button = document.createElement("button");
   button.type = "button";
-  button.classList.add("graft-import");
   button.dataset.graftImport = "";
   button.innerHTML = `<i class="fa-solid fa-code-branch" inert></i><span>${t("GRAFT.ImportControl")}</span>`;
   button.addEventListener("click", (event) => { event.preventDefault(); promptForImport(); });
-  // With the buttons that make compendiums rather than under the filter: this
-  // makes some, and the filter has nothing to do with it.
-  const browser = root.querySelector("button.open-compendium-browser");
-  const actions = root.querySelector(".header-actions");
-  if (browser) browser.insertAdjacentElement("afterend", button);
-  else if (actions) actions.append(button);
-  else (root.querySelector(".directory-header") ?? root.querySelector("header") ?? root).prepend(button);
+  (root.querySelector("section.settings") ?? root).append(button);
 }
 
 // ── compendium controls ─────────────────────────────────────────────────────

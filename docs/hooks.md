@@ -2,7 +2,7 @@
 
 Graft itself fetches nothing: a source is a compendium document the reader already has, and building touches nothing outside the world. Content that has to come from elsewhere, a deployed vault or a subscription service, belongs in a module of its own, and graft gives it three moments to act.
 
-**`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into world compendiums.
+**`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into the world.
 
 ```js
 Hooks.on("graftPreBuild", (moduleId, register) => {
@@ -33,7 +33,7 @@ Hooks.on("graftExport", (register) => {
 
 Return the entry untouched when it is not yours. A rewriter that throws fails the copy, which **Copy graft** reports: the gesture is interactive and pressing it again is free, so failing loudly beats quietly writing a plainer name.
 
-**`graftBuilt`** fires after every build, whether it came from the world-load prompt, a compendium header, or the pack control. It carries the built UUIDs, so a module that wants to act on what a build produced (record it, inspect it, download the files its documents name) starts from here. An entry assembled into an Adventure is named `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`.
+**`graftBuilt`** fires after every module build, whether it came from the world-load prompt, a compendium header, or the pack control. It carries the built UUIDs, so a module that wants to act on what a build produced (record it, inspect it, download the files its documents name) starts from here. An entry assembled into an Adventure is named `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`.
 
 ```js
 Hooks.on("graftBuilt", (moduleId, { built, skipped, warnings, removed }) => {

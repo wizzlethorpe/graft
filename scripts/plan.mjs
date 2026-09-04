@@ -59,7 +59,7 @@ export function entryUuid(entry, moduleId, adventures = NO_ADVENTURES) {
  * one. What a bare id cannot express is which pack it meant, so an id two
  * entries share names neither and is reported rather than guessed at.
  */
-export function resolveSiblingIds(entries, moduleId, adventures = NO_ADVENTURES) {
+function resolveSiblingIds(entries, target) {
   const byId = new Map();
   const ambiguous = new Set();
   for (const entry of entries) {
@@ -78,12 +78,11 @@ export function resolveSiblingIds(entries, moduleId, adventures = NO_ADVENTURES)
         problems.push(`source "${source}" names more than one entry; say which pack with a full UUID`);
         return source;
       }
-      const target = byId.get(source);
-      if (!target) {
-        problems.push(`source "${source}" names no entry in this module`);
+      if (!byId.has(source)) {
+        problems.push(`source "${source}" names no entry in this graft set`);
         return source;
       }
-      return entryUuid(target, moduleId, adventures);
+      return target.uuid(byId.get(source));
     };
 
     const next = { ...entry };
@@ -105,20 +104,23 @@ export function resolveSiblingIds(entries, moduleId, adventures = NO_ADVENTURES)
  * either resolves at hydration or does not, and Foundry reports a missing
  * dependency better than we could.
  *
+ * `target` is where entries land, a module's packs or the world: `uuid(entry)`
+ * addresses the result, and `invalid(entry)`, if given, adds its own rules.
+ *
  * @returns `{ order, invalid, cycles }`. `invalid` cannot be addressed at all;
  *   `cycles` graft onto each other and are not buildable.
  */
-export function planOrder(entries, moduleId, adventures = NO_ADVENTURES) {
+export function planOrder(entries, target) {
   const invalid = [];
   const named = [];
   for (const entry of entries) {
-    const why = describeInvalid(entry);
+    const why = describeInvalid(entry) ?? target.invalid?.(entry);
     if (why) invalid.push({ entry, reason: why });
     else named.push(entry);
   }
   // Before the uuid map, so a source naming a sibling by id is an edge like
   // any other from here on and nothing downstream knows the short form.
-  const sibling = resolveSiblingIds(named, moduleId, adventures);
+  const sibling = resolveSiblingIds(named, target);
   invalid.push(...sibling.invalid);
   const usable = sibling.entries;
 
@@ -126,8 +128,8 @@ export function planOrder(entries, moduleId, adventures = NO_ADVENTURES) {
   // Two entries with one uuid would silently collapse to whichever came last.
   const byUuid = new Map();
   for (const entry of usable) {
-    const uuid = entryUuid(entry, moduleId, adventures);
-    if (byUuid.has(uuid)) invalid.push({ entry, reason: `duplicates another entry's id in pack "${entry.pack}"` });
+    const uuid = target.uuid(entry);
+    if (byUuid.has(uuid)) invalid.push({ entry, reason: `duplicates another entry as ${uuid}` });
     else byUuid.set(uuid, entry);
   }
 
@@ -136,7 +138,7 @@ export function planOrder(entries, moduleId, adventures = NO_ADVENTURES) {
   const cycles = [];
 
   const visit = (entry, chain) => {
-    const uuid = entryUuid(entry, moduleId, adventures);
+    const uuid = target.uuid(entry);
     if (done.has(uuid)) return;
     if (chain.has(uuid)) {
       const seq = [...chain];
@@ -163,7 +165,7 @@ export function planOrder(entries, moduleId, adventures = NO_ADVENTURES) {
   // document nobody can explain.
   const looped = new Set(cycles.flat());
   return {
-    order: order.filter((e) => !looped.has(entryUuid(e, moduleId, adventures))),
+    order: order.filter((e) => !looped.has(target.uuid(e))),
     invalid,
     cycles,
   };
@@ -183,9 +185,6 @@ function describeInvalid(entry) {
   }
   if (typeof entry.type !== "string" || !entry.type) {
     return "type must name a document type, since it decides the UUID and the pack";
-  }
-  if (typeof entry.pack !== "string" || !entry.pack) {
-    return "pack must name the compendium this lands in";
   }
   return null;
 }

@@ -8,7 +8,10 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { planOrder, entryUuid, adventureId, isDocumentId } from "../scripts/plan.mjs";
+import { planOrder as planWith, entryUuid, adventureId, isDocumentId } from "../scripts/plan.mjs";
+
+/** Plan against a module's packs, as hydrate does. */
+const planOrder = (entries, mod, adventures) => planWith(entries, { uuid: (e) => entryUuid(e, mod, adventures) });
 
 const MOD = "my-adventure";
 const entry = (id, source, over = {}) =>
@@ -203,7 +206,7 @@ describe("a source naming a sibling by bare id", () => {
 
   test("names an id that matches nothing", () => {
     const { invalid } = planOrder([entry("bbbbbbbbbbbbbbbb", { source: "cccccccccccccccc" })], "mine");
-    assert.match(invalid[0].reason, /names no entry in this module/);
+    assert.match(invalid[0].reason, /names no entry in this graft set/);
   });
 });
 

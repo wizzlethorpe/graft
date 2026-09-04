@@ -1,13 +1,12 @@
-// Preparing somebody else's grafts.json for packs it was never written for.
+// Preparing somebody else's grafts.json for a world it was never written for.
 //
 // The file names its own entries by the packs its author used, which say
-// nothing about where an import puts them. Everything here is that translation;
-// creating the packs and building needs Foundry and is not covered.
+// nothing about where an import puts them. Everything here is that translation.
 
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { importGrafts, localiseSources, typesIn, packStem } from "../scripts/import.mjs";
+import { importGrafts, localiseSources } from "../scripts/import.mjs";
 
 describe("building a file somebody sent you", () => {
   const saved = globalThis.game;
@@ -40,8 +39,8 @@ describe("localiseSources", () => {
   ]);
 
   test("folds a reference to the file's own entry back to a bare id", () => {
-    // Which is then resolved against the packs the import creates, so the
-    // author's module and pack names never have to be guessed at.
+    // Which is then resolved against what this import builds, so the author's
+    // module and pack names never have to be guessed at.
     const [, actor] = localiseSources(file());
     assert.equal(actor.source, "aaaaaaaaaaaaaaaa");
   });
@@ -98,30 +97,6 @@ describe("localiseSources", () => {
     const original = file();
     localiseSources(original);
     assert.equal(original[1].source, "Compendium.kerra.kit-items.Item.aaaaaaaaaaaaaaaa");
-  });
-});
-
-describe("typesIn", () => {
-  test("one pack per type, in a stable order", () => {
-    assert.deepEqual(typesIn([{ type: "Item" }, { type: "Actor" }, { type: "Item" }]), ["Actor", "Item"]);
-  });
-
-  test("ignores an entry that says nothing", () => {
-    assert.deepEqual(typesIn([{ type: "Actor" }, {}, { type: null }]), ["Actor"]);
-  });
-});
-
-describe("packStem", () => {
-  test("makes a pack name out of whatever it was called", () => {
-    // Punctuation becomes a separator rather than vanishing, which is what the
-    // vaults CLI does deriving a module id, and consistency beats prettiness.
-    assert.equal(packStem("Kerra's Bestiary"), "kerra-s-bestiary");
-    assert.equal(packStem("  --Odd -- Name--  "), "odd-name");
-  });
-
-  test("falls back rather than producing an empty name", () => {
-    assert.equal(packStem("!!!"), "imported-grafts");
-    assert.equal(packStem(""), "imported-grafts");
   });
 });
 

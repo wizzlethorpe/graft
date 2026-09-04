@@ -143,6 +143,11 @@ describe("hydrate into an Adventure pack", () => {
     assert.ok(updates[0].actors.some((a) => a.name === "Commander"));
   });
 
+  test("an entry naming no pack is refused", async () => {
+    const { skipped } = await run([{ id: "nopack0000000001", type: "Actor", patch: {} }]);
+    assert.match(skipped[0].reason, /pack must name/);
+  });
+
   test("a type an Adventure has no field for is refused for that pack", async () => {
     const { skipped } = await run([{ id: "cards00000000001", type: "Fizz", pack: "adv", patch: {} }]);
     assert.match(skipped[0].reason, /nowhere to put a Fizz/);

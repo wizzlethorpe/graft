@@ -1,5 +1,5 @@
-// Building packs on the reader's machine, from documents they already own plus
-// the patches this module ships.
+// Building packs, or the world, on the reader's machine, from documents they
+// already own plus the patches a graft set ships.
 //
 // What happens is decided in patch.mjs and plan.mjs, which are tested without
 // Foundry. This file is the part that cannot be: resolving a UUID, unlocking a
@@ -33,41 +33,20 @@ import { MEMBER_FIELDS, assembleAdventure, adventureFolderOf, membersOf } from "
  */
 export async function hydrate(moduleId, entries, { onProgress, declared = entries } = {}) {
   const adventures = adventurePacks(moduleId, entries);
-  const { order, invalid, cycles } = planOrder(entries, moduleId, adventures);
   const declaredIds = idsByPack([...declared, ...entries]);
-  const built = [];
-  const warnings = [];
-  const skipped = [
-    ...invalid.map(({ entry, reason }) => ({ id: entry?.id ?? "(no id)", reason })),
-    ...cycles.map((loop) => ({ id: loop[0].split(".").pop(), reason: `grafts onto itself through ${loop.length - 2} other entries` })),
-  ];
-
   const touched = new Map();   // collection -> its whole prior config entry
-  // uuid -> data this build produced. A sibling inside an Adventure is never
-  // written on its own, so it can only be resolved from here.
-  const produced = new Map();
-  const resolve = async (uuid) => produced.get(uuid) ?? resolveData(uuid);
   const members = new Map([...adventures].map((pack) => [pack, []]));
-  const ctx = { touched, warnings, resolve, adventures, produced, members };
+  let result;
   let removed = [];
   try {
-    for (const [i, entry] of order.entries()) {
-      onProgress?.(i + 1, order.length, entry);
-      try {
-        const uuid = await hydrateOne(entry, moduleId, ctx);
-        if (uuid) built.push(uuid);
-      } catch (err) {
-        // A reader missing one dependency should still get everything else.
-        skipped.push({ id: entry.id, reason: err.message });
-      }
-    }
+    result = await build(packTarget(moduleId, adventures, touched, members), entries, onProgress);
     for (const [pack, list] of members) {
       if (list.length === 0) continue;
       try {
         await writeAdventure(moduleId, pack, list, declaredIds.get(pack), touched);
-        built.push(...list.map((m) => m.uuid));
+        result.built.push(...list.map((m) => m.uuid));
       } catch (err) {
-        skipped.push(...list.map((m) => ({ id: m.id, reason: `its Adventure could not be written: ${err.message}` })));
+        result.skipped.push(...list.map((m) => ({ id: m.id, reason: `its Adventure could not be written: ${err.message}` })));
       }
     }
     removed = await pruneStale(moduleId, declaredIds, touched);
@@ -75,7 +54,135 @@ export async function hydrate(moduleId, entries, { onProgress, declared = entrie
     await restoreLocks(touched);
     refreshSidebar(touched);
   }
-  return { built, skipped, warnings, removed };
+  return { ...result, removed };
+}
+
+/** Build a file's entries into the world, under a folder named `label`. Unlike `hydrate`, nothing is pruned. */
+export async function hydrateWorld(entries, label, { onProgress } = {}) {
+  return build(worldTarget(label), entries, onProgress);
+}
+
+/**
+ * Plan, then build each entry in order against a target.
+ *
+ * A target says where entries land: `uuid(entry)` addresses the result,
+ * `resolve(uuid)` reads a source, and `place(entry)` returns where it files
+ * and how it is written.
+ */
+async function build(target, entries, onProgress) {
+  const { order, invalid, cycles } = planOrder(entries, target);
+  const built = [];
+  const warnings = [];
+  const skipped = [
+    ...invalid.map(({ entry, reason }) => ({ id: entry?.id ?? "(no id)", reason })),
+    ...cycles.map((loop) => ({ id: loop[0].split(".").pop(), reason: `grafts onto itself through ${loop.length - 2} other entries` })),
+  ];
+  // uuid -> data this build produced. A sibling inside an Adventure is never
+  // written on its own, so it can only be resolved from here.
+  const produced = new Map();
+  const resolve = async (uuid) => produced.get(uuid) ?? target.resolve(uuid);
+  for (const [i, entry] of order.entries()) {
+    onProgress?.(i + 1, order.length, entry);
+    try {
+      const uuid = await hydrateOne(entry, target, { warnings, resolve, produced });
+      if (uuid) built.push(uuid);
+    } catch (err) {
+      // A reader missing one dependency should still get everything else.
+      skipped.push({ id: entry.id, reason: err.message });
+    }
+  }
+  return { built, skipped, warnings };
+}
+
+/** A module's own packs; an Adventure pack collects members for one write. */
+function packTarget(moduleId, adventures, touched, members) {
+  return {
+    uuid: (entry) => entryUuid(entry, moduleId, adventures),
+    invalid: (entry) => (typeof entry.pack === "string" && entry.pack ? null : "pack must name the compendium this lands in"),
+    resolve: resolveData,
+    async place(entry) {
+      const collection = `${moduleId}.${entry.pack}`;
+      const pack = game.packs.get(collection);
+      if (!pack) {
+        // Usually a pack added to module.json since the server last started, since
+        // manifests are read at startup and not on browser reload.
+        const declared = [...game.packs.keys()].filter((c) => c.startsWith(`${moduleId}.`));
+        throw new Error(
+          `this module declares no pack "${entry.pack}". Foundry knows of `
+          + `${declared.length ? declared.join(", ") : "none for this module"}. If you just added it to `
+          + `module.json, restart the Foundry server: a browser reload does not re-read manifests.`,
+        );
+      }
+      if (adventures.has(entry.pack)) {
+        if (!MEMBER_FIELDS[entry.type]) {
+          throw new Error(`pack "${entry.pack}" is an Adventure, which has nowhere to put a ${entry.type}`);
+        }
+        const uuid = entryUuid(entry, moduleId, adventures);
+        return {
+          context: { pack: collection },
+          folder: async () => adventureFolderOf(moduleId, entry.pack, entry),
+          write: async (_cls, prepared) => {
+            members.get(entry.pack).push({ id: entry.id, uuid, type: entry.type, folder: entry.folder, data: prepared });
+            return false;
+          },
+        };
+      }
+      if (pack.documentName !== entry.type) {
+        throw new Error(`pack "${entry.pack}" holds ${pack.documentName}, not ${entry.type}`);
+      }
+      await unlock(pack, touched);
+      return documentPlace({
+        segments: folderSegments(entry.folder), type: pack.documentName, folders: pack.folders,
+        find: (id) => pack.getDocument(id), context: { pack: collection },
+      });
+    },
+  };
+}
+
+/** A place for one document: filed by path, written once prepared. */
+function documentPlace({ segments, type, folders, find, context }) {
+  return {
+    context,
+    folder: () => ensureFolderPath(segments, type, folders, context),
+    write: (cls, prepared) => writeDocument(find, cls, context, prepared),
+  };
+}
+
+/**
+ * The world's own collections, everything filed under `label`.
+ *
+ * A world document an import did not write is never written over and never
+ * built on. `flags.graft.imported` marks the ones an import wrote; a document
+ * dragged out of a graft pack carries `built` but not this.
+ */
+function worldTarget(label) {
+  const foreign = (uuid, data) => !uuid.startsWith("Compendium.") && !data.flags?.graft?.imported;
+  return {
+    uuid: (entry) => `${entry.type}.${entry.id}`,
+    resolve: async (uuid) => {
+      const data = await resolveData(uuid);
+      return data && foreign(uuid, data) ? null : data;
+    },
+    async place(entry) {
+      const collection = game.collections.get(entry.type);
+      if (!collection) throw new Error(`${entry.type} is not a document type a world holds`);
+      const existing = collection.get(entry.id);
+      if (existing && !existing.flags?.graft?.imported) {
+        throw new Error(`${existing.name} already has this id in your world and no import wrote it; not overwritten`);
+      }
+      const at = documentPlace({
+        segments: [label, ...folderSegments(entry.folder)], type: entry.type, folders: game.folders,
+        find: (id) => collection.get(id), context: {},
+      });
+      return {
+        ...at,
+        write: (cls, prepared) => {
+          foundry.utils.setProperty(prepared, "flags.graft.imported", true);
+          return at.write(cls, prepared);
+        },
+      };
+    },
+  };
 }
 
 /**
@@ -149,7 +256,7 @@ async function resolveData(uuid) {
   return doc ? doc.toObject() : null;
 }
 
-async function hydrateOne(entry, moduleId, { touched, warnings, resolve, adventures, produced, members }) {
+async function hydrateOne(entry, target, { warnings, resolve, produced }) {
   // No source means the entry carries its own content: the patch is the document.
   let base = {};
   let source = null;
@@ -176,34 +283,10 @@ async function hydrateOne(entry, moduleId, { touched, warnings, resolve, adventu
     }
   }
 
-  const collection = `${moduleId}.${entry.pack}`;
-  const pack = game.packs.get(collection);
-  if (!pack) {
-    // Usually a pack added to module.json since the server last started, since
-    // manifests are read at startup and not on browser reload.
-    const declared = [...game.packs.keys()].filter((c) => c.startsWith(`${moduleId}.`));
-    throw new Error(
-      `this module declares no pack "${entry.pack}". Foundry knows of `
-      + `${declared.length ? declared.join(", ") : "none for this module"}. If you just added it to `
-      + `module.json, restart the Foundry server: a browser reload does not re-read manifests.`,
-    );
-  }
-  const assembled = adventures.has(entry.pack);
-  if (assembled) {
-    if (!MEMBER_FIELDS[entry.type]) {
-      throw new Error(`pack "${entry.pack}" is an Adventure, which has nowhere to put a ${entry.type}`);
-    }
-  } else if (pack.documentName !== entry.type) {
-    throw new Error(`pack "${entry.pack}" holds ${pack.documentName}, not ${entry.type}`);
-  }
-  if (!assembled) await unlock(pack, touched);
-
+  const at = await target.place(entry);
   const patch = await expandSources(entry.patch ?? {}, resolve);
   const data = applyPatch(base, patch);
   data._id = entry.id;
-  data.folder = assembled
-    ? adventureFolderOf(moduleId, entry.pack, entry)
-    : await ensureFolderPath(pack, entry.folder);
   recordSource(data, source);
 
   const cls = getDocumentClass(entry.type);
@@ -214,46 +297,47 @@ async function hydrateOne(entry, moduleId, { touched, warnings, resolve, adventu
     prepared = (await cls.fromImport(data)).toObject();
   } catch (err) {
     try {
-      prepared = new cls(data, { pack: collection }).toObject();
+      prepared = new cls(data, at.context).toObject();
       warnings.push({ id: entry.id, reason: `Foundry could not import this (${err.message}); built without migrating, so parts of it may be missing` });
     } catch (invalid) {
       throw new Error(summarizeValidation(invalid));
     }
   }
   prepared._id = entry.id;   // `fromImport` is free to assign its own
+  // Last, so an entry that fails to prepare leaves no empty folder behind.
+  prepared.folder = await at.folder();
 
-  const uuid = entryUuid(entry, moduleId, adventures);
-  if (assembled) {
-    members.get(entry.pack).push({ id: entry.id, uuid, type: entry.type, folder: entry.folder, data: prepared });
-  } else {
-    await writeDocument(pack, cls, collection, prepared);
-  }
+  const written = await at.write(cls, prepared);
+  const uuid = target.uuid(entry);
   // After the write, so a sibling never builds on a document Foundry rejected.
   produced.set(uuid, prepared);
-  return assembled ? null : uuid;
+  return written ? uuid : null;
 }
 
-/** Create or update one document in a pack, only if it would change. */
-async function writeDocument(pack, cls, collection, prepared) {
+/**
+ * Create or update one document, only if it would change. Returns true.
+ *
+ * `find(id)` reads it back from wherever it lives; `context` is what `create`
+ * needs to put it there.
+ */
+async function writeDocument(find, cls, context, prepared) {
   // What makes a document reclaimable later. Without it, pruning could not tell
   // graft's output from something an author put in the pack by hand.
   foundry.utils.setProperty(prepared, "flags.graft.built", true);
-  const existing = await pack.getDocument(prepared._id);
+  const existing = await find(prepared._id);
   if (existing) {
-    // A write Foundry would turn into the document already there costs a
-    // quarter-second of pack index and disk for no change, and most entries
-    // are unchanged on most rebuilds. Compared rather than remembered: a
-    // stored digest would go stale against a Foundry upgrade migrating the
-    // same input differently, or against an edit made in the pack by hand.
+    // Compared, not remembered: a stored digest goes stale across a Foundry
+    // upgrade or a hand edit in the pack. A pack write costs ~234ms.
     if (!identical(prepared, existing.toObject())) {
       await existing.update(prepared, { diff: false, recursive: false });
     }
   } else {
-    await cls.create(prepared, { pack: collection, keepId: true, keepEmbeddedIds: true });
-    if (!await pack.getDocument(prepared._id)) {
+    await cls.create(prepared, { ...context, keepId: true, keepEmbeddedIds: true });
+    if (!await find(prepared._id)) {
       throw new Error("Foundry rejected the document; see the console for the reason");
     }
   }
+  return true;
 }
 
 /**
@@ -286,7 +370,7 @@ async function writeAdventure(moduleId, packName, members, declaredIds, touched)
   } catch (invalid) {
     throw new Error(summarizeValidation(invalid));
   }
-  await writeDocument(pack, cls, collection, prepared);
+  await writeDocument((id) => pack.getDocument(id), cls, { pack: collection }, prepared);
 }
 
 /** Written afresh by Foundry on every save, so never a real difference. */
@@ -353,21 +437,21 @@ function recordSource(data, source) {
 }
 
 /**
- * The folder an entry asks for, created in this pack if absent.
+ * The folder a path names among `folders`, created with `context` if absent.
  *
  * Matched by name and parent rather than a derived id, so a folder somebody
  * renamed or recoloured by hand survives the next build.
  */
-async function ensureFolderPath(pack, path) {
+async function ensureFolderPath(segments, type, folders, context) {
   let parent = null;
-  for (const name of folderSegments(path)) {
-    let folder = pack.folders.find((f) => f.name === name && (f.folder?.id ?? null) === parent);
+  for (const name of segments) {
+    let folder = folders.find((f) => f.type === type && f.name === name && (f.folder?.id ?? null) === parent);
     if (!folder) {
       try {
-        folder = await Folder.create({ name, type: pack.documentName, folder: parent }, { pack: pack.collection });
+        folder = await Folder.create({ name, type, folder: parent }, context);
       } catch (err) {
-        // A document at the pack root beats no document.
-        console.warn(`Graft | could not create folder "${name}" in ${pack.collection}:`, err);
+        // A document at the root beats no document.
+        console.warn(`Graft | could not create folder "${name}":`, err);
         return parent;
       }
     }

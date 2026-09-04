@@ -41,7 +41,7 @@ Folder ids do not survive to another machine, but the folder structure does. Gra
 
 **`source`** is optional. Without one, the patch is the whole document, so a graft module can also carry original content. A `source` that is present but empty is an error.
 
-A `source` that is a bare document id names another entry in the same module. Nothing else a source may hold looks like one, since no document type name is sixteen characters and a bare id is not a UUID, so the short form is unambiguous. It is also portable: it survives the module being renamed, and an import into somebody else's world can resolve it against whatever packs it creates. What it cannot say is which pack it meant, so graft reports an id two entries share rather than guessing.
+A `source` that is a bare document id names another entry in the same graft set. The form is unambiguous: no document type name is sixteen characters, and a bare id is not a UUID. It does not encode the module id or the pack, so it survives a module rename and works when the file is imported into another world. Two entries with the same id make a bare id ambiguous, and graft reports that as an error.
 
 ```json
 "source": "banditCaptain001"
@@ -60,7 +60,7 @@ Graft uses the first source that resolves, so an author can prefer better conten
 
 ## Packaging
 
-Where an entry ends up is decided by the pack it names, as declared in `module.json`. A pack declared with the entry's own `type` gets the entry as a document. A pack declared as `Adventure` gets one Adventure holding every entry that names it, whatever their types. The same entries ship as browsable compendiums or as a single import by changing only the manifest.
+The pack an entry names, as declared in `module.json`, decides where it ends up. A pack declared with the entry's own `type` gets the entry as a document. A pack declared as `Adventure` gets one Adventure holding every entry that names it, whatever their types. Changing the manifest alone switches the same entries between browsable compendiums and a single import.
 
 ```json
 "packs": [
@@ -81,11 +81,11 @@ Where an entry ends up is decided by the pack it names, as declared in `module.j
 ]
 ```
 
-The Adventure is named from the pack's `label`; `img`, `caption` and `description` come from `flags.graft` and are optional. Its id is derived from the module and pack names, so a reader re-importing an updated Adventure updates their world in place. Each entry's `folder` path becomes a folder inside the Adventure, one tree per document type, since Foundry folders are typed. A member that does not build this run keeps its place from the previous build, as an unbuilt entry keeps its document in an ordinary pack; only an entry no longer declared is dropped. An Adventure pack needs a `system` as much as an Actor pack does: Foundry empties the actors and items out of any Adventure read from a systemless pack.
+The Adventure's name is the pack's `label`; `img`, `caption` and `description` come from `flags.graft` and are optional. Its id is derived from the module and pack names, so re-importing an updated Adventure updates the world in place. Each entry's `folder` path becomes a folder inside the Adventure, one tree per document type. A member that does not build this run keeps its previous copy, like an unbuilt entry in an ordinary pack. An entry no longer declared is dropped. An Adventure pack needs a `system`: Foundry empties the actors and items out of an Adventure read from a systemless pack.
 
-An entry assembled into an Adventure is addressed as `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`, the form graft resolves for any Adventure's contents, so grafting onto it works the same as onto a pack document, from the same module or another.
+An entry assembled into an Adventure is addressed as `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`. Grafting onto it works the same as onto a pack document.
 
-`Adventure` is not an entry type. An entry declaring one is refused with a reason.
+`Adventure` is not an entry type; graft refuses such an entry.
 
 ## Patches
 
@@ -115,7 +115,7 @@ An embedded source naming a sibling is an ordering edge like a top-level one, so
 ### What is stripped
 
 - **`_stats`**, whose timestamps differ between identical documents and would report every embedded item as changed.
-- **`folder`**, at the root only: a folder id from one world means nothing in another, and the entry's `folder` path carries the organisation instead.
+- **`folder`**, at the root only. A folder id is world-local; the entry's `folder` path carries the structure instead.
 - **`active`, `navOrder` and `thumb`**, at the root, which say where a Scene sat in the world it was copied from rather than what the scene is: which scene that world is looking at, where it sits in the navigation bar, and a path into that world's own generated thumbnails. `sort` is kept, since a graft may reasonably want to say where its output sits in a pack.
 - **`ownership`** is thinned rather than dropped. Per-user entries are world-local, so graft removes them; `default` stays, since it is how you say "players can see this".
 
@@ -149,7 +149,7 @@ Graft creates everything through `Document.fromImport`, Foundry's own migration 
 
 Graft still reports a source older than the running generation, since migration handles fields that moved but not fields that were removed.
 
-An Adventure graft assembles is constructed from members that have already been migrated this way, since `Adventure.fromImport` itself migrates through a world collection Adventures do not have.
+An assembled Adventure is constructed from members already migrated this way. `Adventure.fromImport` cannot be used: it migrates through a world collection, and Adventures have none.
 
 Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. `fromImport` and `importFromJSON` alike drop a Foundry 13 tile's `occlusion.mode` rather than converting it to the `occlusion.modes` that replaced it, so a roof set to fade stops fading. Graft does not migrate fields by hand; the set of moved fields is open-ended.
 

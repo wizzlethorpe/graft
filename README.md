@@ -74,9 +74,10 @@ scripts/plan.mjs       ids, UUIDs, and build order for chains.
 scripts/assemble.mjs   folds entries aimed at an Adventure pack into one Adventure. Pure.
 scripts/extend.mjs     collects and runs pre-build transforms and export rewriters.
 scripts/yaml.mjs       clipboard output. Pure.
+scripts/i18n.mjs       localised text.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
 scripts/modules.mjs    reads what a module declares.
-scripts/import.mjs     building a grafts.json somebody sent you.
+scripts/import.mjs     building a grafts.json somebody sent you, into the world.
 scripts/origin.mjs     recovers a document's true source.
 scripts/progress.mjs   the build's progress bar.
 scripts/ui.mjs         controls, menus, dialogs.
