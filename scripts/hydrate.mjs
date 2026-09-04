@@ -57,9 +57,9 @@ export async function hydrate(moduleId, entries, { onProgress, declared = entrie
   return { ...result, removed };
 }
 
-/** Build a file's entries into the world, under a folder named `label`. Unlike `hydrate`, nothing is pruned. */
-export async function hydrateWorld(entries, label, { onProgress } = {}) {
-  return build(worldTarget(label), entries, onProgress);
+/** Build a set of entries into the world, filed by their `folder` paths. Unlike `hydrate`, nothing is pruned. */
+export async function hydrateWorld(entries, { onProgress } = {}) {
+  return build(worldTarget(), entries, onProgress);
 }
 
 /**
@@ -149,13 +149,13 @@ function documentPlace({ segments, type, folders, find, context }) {
 }
 
 /**
- * The world's own collections, everything filed under `label`.
+ * The world's own collections.
  *
  * A world document an import did not write is never written over and never
  * built on. `flags.graft.imported` marks the ones an import wrote; a document
  * dragged out of a graft pack carries `built` but not this.
  */
-function worldTarget(label) {
+function worldTarget() {
   const foreign = (uuid, data) => !uuid.startsWith("Compendium.") && !data.flags?.graft?.imported;
   return {
     uuid: (entry) => `${entry.type}.${entry.id}`,
@@ -171,7 +171,7 @@ function worldTarget(label) {
         throw new Error(`${existing.name} already has this id in your world and no import wrote it; not overwritten`);
       }
       const at = documentPlace({
-        segments: [label, ...folderSegments(entry.folder)], type: entry.type, folders: game.folders,
+        segments: folderSegments(entry.folder), type: entry.type, folders: game.folders,
         find: (id) => collection.get(id), context: {},
       });
       return {

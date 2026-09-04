@@ -341,44 +341,48 @@ async function confirmBulk(count, label) {
 // ── importing a file ────────────────────────────────────────────────────────
 
 /**
- * Ask for a file and a name, then build it into the world.
+ * Ask for pasted grafts, or a file to fill the box from, then build them into
+ * the world.
  *
- * A file rather than a module, for content somebody sent you. What it builds
- * is not tracked: there is no manifest to compare against later, so this is an
- * import, not a subscription.
+ * For content somebody sent you. What it builds is not tracked: there is no
+ * manifest to compare against later, so this is an import, not a subscription.
  */
 export async function promptForImport() {
   if (!game.user.isGM) return null;
-  const picked = await foundry.applications.api.DialogV2.prompt({
+  const text = await foundry.applications.api.DialogV2.prompt({
     window: { title: t("GRAFT.ImportTitle") },
+    position: { width: 640 },
     content: `<p>${t("GRAFT.ImportIntro")}</p>
-      <div class="form-group"><label>${t("GRAFT.ImportName")}</label>
-        <input name="label" type="text" placeholder="${t("GRAFT.ImportNamePlaceholder")}"></div>
+      <textarea name="text" spellcheck="false" placeholder="${t("GRAFT.ImportPlaceholder")}"
+        style="width:100%;height:24rem;resize:vertical;font-family:monospace;white-space:pre;overflow:auto"></textarea>
       <div class="form-group"><label>${t("GRAFT.ImportFile")}</label>
         <input name="file" type="file" accept="application/json,.json"></div>`,
+    render: (_event, dialog) => {
+      const root = dialog?.element ?? dialog;
+      const file = root.querySelector("input[name=file]");
+      const area = root.querySelector("textarea[name=text]");
+      file.addEventListener("change", async () => {
+        const picked = file.files?.[0];
+        if (picked) area.value = await picked.text();
+      });
+    },
     ok: {
       label: t("GRAFT.ImportBuild"),
-      callback: (_event, button) => ({
-        label: button.form.elements.label.value.trim(),
-        file: button.form.elements.file.files?.[0] ?? null,
-      }),
+      callback: (_event, button) => button.form.elements.text.value.trim(),
     },
     rejectClose: false,
   });
-  if (!picked?.file) return null;
+  if (!text) return null;
 
   let parsed;
-  try { parsed = JSON.parse(await picked.file.text()); }
+  try { parsed = JSON.parse(text); }
   catch (err) {
     ui.notifications.error(t("GRAFT.ImportUnreadable", { reason: err.message }));
     return null;
   }
-
-  const label = picked.label || picked.file.name.replace(/\.(grafts\.)?json$/i, "");
   try {
-    const result = await importGrafts(parsed, label);
-    // No module to name, so the report is titled with what the reader called it.
-    await reportBuild(label, result.built, result.skipped, result.warnings);
+    const result = await importGrafts(parsed);
+    await reportBuild(t("GRAFT.ImportTitle"), result.built, result.skipped, result.warnings);
     return result;
   } catch (err) {
     ui.notifications.error(t("GRAFT.ImportFailed", { reason: err.message }));

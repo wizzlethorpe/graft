@@ -59,7 +59,7 @@ Whether entries become documents in a compendium or one importable Adventure is 
 
 - [The format](docs/format.md): every field, source fallbacks, patch rules, drift detection, chaining, limits
 - [Authoring](docs/authoring.md): module setup, Copy graft, source recovery, dependencies, manifest options
-- [Using it](docs/using.md): building, rebuilding, the report, importing a `grafts.json` somebody sent you
+- [Using it](docs/using.md): building, rebuilding, the report, importing grafts somebody sent you
 - [Hooks and API](docs/hooks.md): pre-build transforms, export rewriters, `game.modules.get("graft").api`
 
 ## Support
@@ -77,7 +77,7 @@ scripts/yaml.mjs       clipboard output. Pure.
 scripts/i18n.mjs       localised text.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
 scripts/modules.mjs    reads what a module declares.
-scripts/import.mjs     building a grafts.json somebody sent you, into the world.
+scripts/import.mjs     building grafts somebody sent you into the world.
 scripts/origin.mjs     recovers a document's true source.
 scripts/progress.mjs   the build's progress bar.
 scripts/ui.mjs         controls, menus, dialogs.

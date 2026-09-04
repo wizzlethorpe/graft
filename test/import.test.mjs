@@ -1,4 +1,4 @@
-// Preparing somebody else's grafts.json for a world it was never written for.
+// Preparing somebody else's grafts for a world they were never written for.
 //
 // The file names its own entries by the packs its author used, which say
 // nothing about where an import puts them. Everything here is that translation.
@@ -6,25 +6,34 @@
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { importGrafts, localiseSources } from "../scripts/import.mjs";
+import { importGrafts, graftsIn, localiseSources } from "../scripts/import.mjs";
 
-describe("building a file somebody sent you", () => {
+describe("graftsIn", () => {
+  const entry = { id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", patch: {} };
+
+  test("takes one entry, a list of entries, or a grafts file", () => {
+    assert.deepEqual(graftsIn(entry).entries, [entry]);
+    assert.deepEqual(graftsIn([entry, entry]).entries, [entry, entry]);
+    assert.deepEqual(graftsIn({ format: 2, entries: [entry] }).entries, [entry]);
+  });
+
+  test("refuses a file written for a newer graft, by name", () => {
+    assert.equal(graftsIn({ format: 99, entries: [entry] }).error, "new-format");
+  });
+
+  test("refuses what is none of those", () => {
+    assert.ok(graftsIn({ name: "not an entry" }).error);
+    assert.ok(graftsIn("text").error);
+  });
+});
+
+describe("importGrafts", () => {
   const saved = globalThis.game;
   afterEach(() => { globalThis.game = saved; });
 
-  /** Enough Foundry to raise an error message. */
-  const installI18n = () => {
+  test("says a newer format needs a newer graft", async () => {
     globalThis.game = { i18n: { localize: (key) => key, format: (key) => key } };
-  };
-
-  test("refuses a bare list, which is the old format", async () => {
-    installI18n();
-    await assert.rejects(() => importGrafts([{ id: "a" }], "x"), /ImportNotEntries/);
-  });
-
-  test("refuses a format written for a newer graft", async () => {
-    installI18n();
-    await assert.rejects(() => importGrafts({ format: 99, entries: [{ id: "a" }] }, "x"), /ImportFormat/);
+    await assert.rejects(() => importGrafts({ format: 99, entries: [{ id: "a" }] }), /ImportFormat/);
   });
 });
 

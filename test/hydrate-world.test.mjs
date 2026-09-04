@@ -1,13 +1,13 @@
-// Building a file into the world: everything files under the import's name in
-// each sidebar it touches, a sibling resolves, and a document no import wrote
-// is never overwritten or built on.
+// Building pasted grafts into the world: entries file by their own folder
+// paths, a sibling resolves, and a document no import wrote is never
+// overwritten or built on.
 
 import test, { describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 const base = { id: "actorBase0000001", type: "Actor", pack: "kit-actors", folder: "NPCs", patch: { name: "Guard", system: { hp: 10 } } };
 const child = { id: "actorChild000001", type: "Actor", pack: "kit-actors", source: "actorBase0000001", patch: { name: "Captain" } };
-const note = { id: "journal000000001", type: "JournalEntry", pack: "kit-journals", patch: { name: "Notes" } };
+const note = { id: "journal000000001", type: "JournalEntry", pack: "kit-journals", folder: "NPCs", patch: { name: "Notes" } };
 
 let collections;
 let folders;
@@ -58,26 +58,24 @@ afterEach(() => {
 
 async function run(entries) {
   const { hydrateWorld } = await import("../scripts/hydrate.mjs");
-  return hydrateWorld(entries, "Kerra's Kit", {});
+  return hydrateWorld(entries, {});
 }
 const actor = (id) => collections.get("Actor").get(id)?.toObject();
 const folderNamed = (type, name) => folders.find((f) => f.type === type && f.name === name);
 
 describe("hydrateWorld", () => {
-  test("builds into the world, filed under the import's name in each sidebar", async () => {
+  test("builds into the world, filed by each entry's folder path", async () => {
     const { built, skipped } = await run([base, note]);
     assert.deepEqual(skipped, []);
     assert.deepEqual(built, ["Actor.actorBase0000001", "JournalEntry.journal000000001"]);
 
-    const kitActors = folderNamed("Actor", "Kerra's Kit");
     const npcs = folderNamed("Actor", "NPCs");
-    assert.equal(npcs.folder.id, kitActors.id, "the entry's own path nests under the import's folder");
+    assert.equal(npcs.folder, null);
     assert.equal(actor("actorBase0000001").folder, npcs.id);
-    assert.equal(kitActors.folder, null);
-    const kitJournals = folderNamed("JournalEntry", "Kerra's Kit");
-    assert.notEqual(kitJournals.id, kitActors.id, "one folder per type, as Foundry files them");
-    assert.equal(collections.get("JournalEntry").get("journal000000001").toObject().folder, kitJournals.id);
-    assert.equal(actor("actorBase0000001").flags.graft.built, true);
+    const journalNpcs = folderNamed("JournalEntry", "NPCs");
+    assert.notEqual(journalNpcs.id, npcs.id, "one folder per type, as Foundry files them");
+    assert.equal(collections.get("JournalEntry").get("journal000000001").toObject().folder, journalNpcs.id);
+    assert.equal(actor("actorBase0000001").flags.graft.imported, true);
   });
 
   test("a sibling by bare id resolves", async () => {
