@@ -45,7 +45,7 @@ export function originOf(document) {
 // somebody's entire adventure text inside a patch.
 
 /** Adventure schema field per document type. */
-const ADVENTURE_FIELDS = {
+export const ADVENTURE_FIELDS = {
   Actor: "actors", Cards: "cards", Combat: "combats", Folder: "folders",
   Item: "items", JournalEntry: "journal", Macro: "macros",
   Playlist: "playlists", RollTable: "tables", Scene: "scenes",

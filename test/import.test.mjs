@@ -124,3 +124,16 @@ describe("packStem", () => {
     assert.equal(packStem(""), "imported-grafts");
   });
 });
+
+describe("localiseSources, through an assembled Adventure", () => {
+  test("folds a reference to the file's own entry inside its Adventure", () => {
+    const entries = localiseSources([
+      { id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "tryk-adventure" },
+      {
+        id: "bbbbbbbbbbbbbbbb", type: "Actor", pack: "tryk-adventure",
+        source: "Compendium.tryk.tryk-adventure.Adventure.advid00000000001.Actor.aaaaaaaaaaaaaaaa",
+      },
+    ]);
+    assert.equal(entries[1].source, "aaaaaaaaaaaaaaaa");
+  });
+});

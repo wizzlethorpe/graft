@@ -425,15 +425,19 @@ function canonical(value) {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`).join(",")}}`;
 }
 
-/**
- * A short stable digest of what a patch was written against.
- *
- * Two rounds of FNV-1a with different offsets, giving 64 bits as hex. Not
- * cryptographic and does not need to be: this detects an upstream edit, not an
- * adversary.
- */
+/** A short stable digest of what a patch was written against. */
 export function sourceHash(source, patch) {
-  const text = canonical(project(source, patch));
+  return digest(canonical(project(source, patch)));
+}
+
+/**
+ * Sixteen hex characters from a string, which is also a valid document id.
+ *
+ * Two rounds of FNV-1a with different offsets, giving 64 bits. Not
+ * cryptographic and does not need to be: this detects an upstream edit or
+ * names a document deterministically, neither against an adversary.
+ */
+export function digest(text) {
   const fnv = (offset) => {
     let h = offset;
     for (let i = 0; i < text.length; i++) {

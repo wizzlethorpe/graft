@@ -10,9 +10,10 @@
 // dependency. Only the order is new: A must exist before B is applied, and
 // within one module that is ours to work out.
 
-import { embeddedSources, rewriteSources } from "./patch.mjs";
+import { digest, embeddedSources, rewriteSources } from "./patch.mjs";
 
 const DOCUMENT_ID = /^[a-zA-Z0-9]{16}$/;
+const NO_ADVENTURES = new Set();
 
 /**
  * The sources an entry names, in the order to try them.
@@ -33,9 +34,21 @@ export function isDocumentId(id) {
   return typeof id === "string" && DOCUMENT_ID.test(id);
 }
 
-/** Where an entry lands once hydrated, and how anything else addresses it. */
-export function entryUuid(entry, moduleId) {
-  return `Compendium.${moduleId}.${entry.pack}.${entry.type}.${entry.id}`;
+/** The id of the one Adventure graft assembles in an Adventure-typed pack. */
+export function adventureId(moduleId, pack) {
+  return digest(`${moduleId}.${pack}`);
+}
+
+/**
+ * Where an entry lands once hydrated, and how anything else addresses it.
+ *
+ * `adventures` names the packs declared as Adventures. An entry bound for one
+ * is embedded data rather than a document, so its address is the embedded form
+ * `origin.mjs` resolves.
+ */
+export function entryUuid(entry, moduleId, adventures = NO_ADVENTURES) {
+  const inside = adventures.has(entry.pack) ? `Adventure.${adventureId(moduleId, entry.pack)}.` : "";
+  return `Compendium.${moduleId}.${entry.pack}.${inside}${entry.type}.${entry.id}`;
 }
 
 /**
@@ -46,7 +59,7 @@ export function entryUuid(entry, moduleId) {
  * one. What a bare id cannot express is which pack it meant, so an id two
  * entries share names neither and is reported rather than guessed at.
  */
-export function resolveSiblingIds(entries, moduleId) {
+export function resolveSiblingIds(entries, moduleId, adventures = NO_ADVENTURES) {
   const byId = new Map();
   const ambiguous = new Set();
   for (const entry of entries) {
@@ -70,7 +83,7 @@ export function resolveSiblingIds(entries, moduleId) {
         problems.push(`source "${source}" names no entry in this module`);
         return source;
       }
-      return entryUuid(target, moduleId);
+      return entryUuid(target, moduleId, adventures);
     };
 
     const next = { ...entry };
@@ -95,7 +108,7 @@ export function resolveSiblingIds(entries, moduleId) {
  * @returns `{ order, invalid, cycles }`. `invalid` cannot be addressed at all;
  *   `cycles` graft onto each other and are not buildable.
  */
-export function planOrder(entries, moduleId) {
+export function planOrder(entries, moduleId, adventures = NO_ADVENTURES) {
   const invalid = [];
   const named = [];
   for (const entry of entries) {
@@ -105,7 +118,7 @@ export function planOrder(entries, moduleId) {
   }
   // Before the uuid map, so a source naming a sibling by id is an edge like
   // any other from here on and nothing downstream knows the short form.
-  const sibling = resolveSiblingIds(named, moduleId);
+  const sibling = resolveSiblingIds(named, moduleId, adventures);
   invalid.push(...sibling.invalid);
   const usable = sibling.entries;
 
@@ -113,7 +126,7 @@ export function planOrder(entries, moduleId) {
   // Two entries with one uuid would silently collapse to whichever came last.
   const byUuid = new Map();
   for (const entry of usable) {
-    const uuid = entryUuid(entry, moduleId);
+    const uuid = entryUuid(entry, moduleId, adventures);
     if (byUuid.has(uuid)) invalid.push({ entry, reason: `duplicates another entry's id in pack "${entry.pack}"` });
     else byUuid.set(uuid, entry);
   }
@@ -123,7 +136,7 @@ export function planOrder(entries, moduleId) {
   const cycles = [];
 
   const visit = (entry, chain) => {
-    const uuid = entryUuid(entry, moduleId);
+    const uuid = entryUuid(entry, moduleId, adventures);
     if (done.has(uuid)) return;
     if (chain.has(uuid)) {
       const seq = [...chain];
@@ -150,7 +163,7 @@ export function planOrder(entries, moduleId) {
   // document nobody can explain.
   const looped = new Set(cycles.flat());
   return {
-    order: order.filter((e) => !looped.has(entryUuid(e, moduleId))),
+    order: order.filter((e) => !looped.has(entryUuid(e, moduleId, adventures))),
     invalid,
     cycles,
   };
@@ -159,6 +172,9 @@ export function planOrder(entries, moduleId) {
 function describeInvalid(entry) {
   if (!isDocumentId(entry?.id)) {
     return `id must be 16 characters of [a-zA-Z0-9] so the result has a real UUID, got ${JSON.stringify(entry?.id)}`;
+  }
+  if (entry.type === "Adventure") {
+    return "Adventure is a packaging, not an entry type: point entries at an Adventure pack and graft assembles them into one";
   }
   // Optional: an entry with no source is the author's own content, carried
   // whole, and belongs in the same pack as the things it borrows.

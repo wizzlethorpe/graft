@@ -36,7 +36,7 @@ export function localiseSources(entries) {
     const parts = source.split(".");
     if (parts.length < 5) return source;
     const id = parts[parts.length - 1];
-    const pack = parts[parts.length - 3];
+    const pack = parts[2];
     // Never its own id. A document imported out of a pack keeping its id
     // records that pack as where it came from, which reads exactly like a
     // reference to itself and would graft the entry onto its own output.

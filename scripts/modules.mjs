@@ -3,19 +3,22 @@
 // The non-UI half: everything here answers a question about a manifest or a
 // pack index, with nothing on screen.
 
+import { adventureId } from "./plan.mjs";
+import { MEMBER_FIELDS } from "./assemble.mjs";
+
 const MODULE_ID = "graft";
 
 /**
- * The entry format this version understands.
+ * The entry format this version understands. A format 1 file still reads.
  *
  * A newer file is refused rather than half-read: the fields it relies on would
  * be ignored silently, which is worse than saying the module needs a newer graft.
  */
-export const FORMAT = 1;
+export const FORMAT = 2;
 
 /** The format a grafts file declares, or null if what it declares is not one. Absent means the first. */
 export const formatOf = (parsed) => {
-  const declared = parsed?.format ?? FORMAT;
+  const declared = parsed?.format ?? 1;
   return Number.isInteger(declared) && declared > 0 ? declared : null;
 };
 
@@ -102,28 +105,60 @@ export async function readGrafts(moduleId, { onRefused } = {}) {
 }
 
 /**
+ * The packs among `entries` declared as Adventures.
+ *
+ * Read from `game.packs` rather than the manifest: a pack declared since the
+ * server started is not one Foundry can write to, and is reported as such at
+ * build time.
+ */
+export function adventurePacks(moduleId, entries) {
+  const out = new Set();
+  for (const entry of entries) {
+    if (typeof entry?.pack !== "string" || out.has(entry.pack)) continue;
+    if (game.packs.get(`${moduleId}.${entry.pack}`)?.documentName === "Adventure") out.add(entry.pack);
+  }
+  return out;
+}
+
+/**
  * The entries a module declares that are not in its packs.
  *
  * Read from the pack index rather than a stored "already built" flag, so the
  * answer stays true when a document is deleted by hand or an update ships new
- * entries.
+ * entries. An Adventure pack's index knows only the Adventure, so its entries
+ * are looked for inside it.
  */
 export async function unbuilt(moduleId, options) {
   const byPack = new Map();
-  for (const entry of await readGrafts(moduleId, options)) {
+  const declared = await readGrafts(moduleId, options);
+  for (const entry of declared) {
     if (!entry?.id) continue;                  // planOrder reports these
     if (!byPack.has(entry.pack)) byPack.set(entry.pack, []);
     byPack.get(entry.pack).push(entry);
   }
+  const adventures = adventurePacks(moduleId, declared);
 
   const missing = [];
   for (const [name, entries] of byPack) {
     const pack = game.packs.get(`${moduleId}.${name}`);
     if (!pack) continue;                       // a pack Foundry has not read yet
-    const index = await pack.getIndex();
-    missing.push(...entries.filter((e) => !index.get(e.id)));
+    const built = adventures.has(name)
+      ? await assembledIds(pack, adventureId(moduleId, name))
+      : await pack.getIndex();
+    missing.push(...entries.filter((e) => !built.has(e.id)));
   }
   return missing;
+}
+
+/** Every id inside a pack's assembled Adventure, or nothing if it has not been built. */
+async function assembledIds(pack, adventure) {
+  const ids = new Set();
+  const doc = await pack.getDocument(adventure);
+  if (!doc) return ids;
+  for (const field of Object.values(MEMBER_FIELDS)) {
+    for (const member of doc[field] ?? []) ids.add(member._id);
+  }
+  return ids;
 }
 
 /**
@@ -157,16 +192,19 @@ export async function anyBuilt(moduleId) {
 export function withPack(entry) {
   if (entry.pack) return entry;
   const declared = [];
-  const candidates = [];
+  const typed = [];
+  const adventures = [];
   for (const module of graftModules().filter(shipsEntries)) {
     const named = module.flags?.graft?.packs?.[entry.type];
     if (named) declared.push(named);
     for (const pack of module.packs ?? []) {
-      if (pack.type === entry.type) candidates.push(pack.name);
+      if (pack.type === entry.type) typed.push(pack.name);
+      else if (pack.type === "Adventure") adventures.push(pack.name);
     }
   }
   // `flags.graft.packs` exists for the case inference cannot handle: two packs
   // of one type and no way to tell which is meant.
   if (declared.length === 1) return { ...entry, pack: declared[0] };
+  const candidates = typed.length > 0 ? typed : adventures;
   return candidates.length === 1 ? { ...entry, pack: candidates[0] } : entry;
 }

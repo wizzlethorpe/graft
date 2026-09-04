@@ -1,5 +1,5 @@
 {
-  "format": 1,
+  "format": 2,
   "entries": [
     {
       "_comment": "2. A graft onto a graft, declared before its parent on purpose: planOrder has to build the parent first regardless of file order.",
@@ -221,18 +221,10 @@
       }
     },
     {
-      "id": "fleshMountainGr1",
-      "type": "Adventure",
-      "pack": "graft-example-adventures",
-      "source": "Compendium.madv-fleshmountain.madv-fleshmountain-adventure.Adventure.CeteW6YgiNUi0Ykn",
-      "patch": {
-        "name": "Flesh Mountain (grafted)"
-      }
-    },
-    {
+      "_comment": "12. Aimed at a pack declared as an Adventure, so graft assembles this and the next entry into one Adventure instead of writing documents. Same entry shape; only the pack decides.",
       "id": "fleshJournalGr01",
       "type": "JournalEntry",
-      "pack": "graft-example-journals",
+      "pack": "graft-example-adventures",
       "folder": "TMC | Flesh Mountain",
       "source": "Compendium.madv-fleshmountain.madv-fleshmountain-adventure.Adventure.CeteW6YgiNUi0Ykn.JournalEntry.azXUvCHjdm7k31my",
       "patch": {
@@ -240,9 +232,10 @@
       }
     },
     {
+      "_comment": "13. Its folder becomes a folder inside the Adventure, typed Actor, nested as written.",
       "id": "fleshForemanGr01",
       "type": "Actor",
-      "pack": "graft-example-actors",
+      "pack": "graft-example-adventures",
       "folder": "TMC | Flesh Mountain/01. Halls of Flesh",
       "source": "Compendium.madv-fleshmountain.madv-fleshmountain-adventure.Adventure.CeteW6YgiNUi0Ykn.Actor.mmToughBoss00000",
       "patch": {

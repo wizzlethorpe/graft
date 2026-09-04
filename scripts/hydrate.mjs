@@ -12,14 +12,18 @@ import {
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
 } from "./origin.mjs";
-import { planOrder, entryUuid, sourcesOf } from "./plan.mjs";
+import { planOrder, entryUuid, adventureId, sourcesOf } from "./plan.mjs";
 import { rewriteEntry } from "./extend.mjs";
+import { adventurePacks } from "./modules.mjs";
+import { MEMBER_FIELDS, assembleAdventure, adventureFolderOf, membersOf } from "./assemble.mjs";
 
 /**
  * Hydrate a module's entries into its own compendium packs.
  *
  * Its own packs, not the world's, because the result has to be addressable as
- * `Compendium.<module>.<pack>.<Type>.<id>` for anything to graft onto it.
+ * `Compendium.<module>.<pack>.<Type>.<id>` for anything to graft onto it. A
+ * pack declared as an Adventure gets one Adventure holding every entry aimed
+ * at it, each addressable as `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`.
  *
  * Module packs are locked by default, so each is unlocked for the write and put
  * back as it was found: leaving one unlocked invites hand edits that the next
@@ -28,7 +32,9 @@ import { rewriteEntry } from "./extend.mjs";
  * @returns `{ built, skipped, warnings, removed }`, all reportable.
  */
 export async function hydrate(moduleId, entries, { onProgress, declared = entries } = {}) {
-  const { order, invalid, cycles } = planOrder(entries, moduleId);
+  const adventures = adventurePacks(moduleId, entries);
+  const { order, invalid, cycles } = planOrder(entries, moduleId, adventures);
+  const declaredIds = idsByPack([...declared, ...entries]);
   const built = [];
   const warnings = [];
   const skipped = [
@@ -37,18 +43,34 @@ export async function hydrate(moduleId, entries, { onProgress, declared = entrie
   ];
 
   const touched = new Map();   // collection -> its whole prior config entry
+  // uuid -> data this build produced. A sibling inside an Adventure is never
+  // written on its own, so it can only be resolved from here.
+  const produced = new Map();
+  const resolve = async (uuid) => produced.get(uuid) ?? resolveData(uuid);
+  const members = new Map([...adventures].map((pack) => [pack, []]));
+  const ctx = { touched, warnings, resolve, adventures, produced, members };
   let removed = [];
   try {
     for (const [i, entry] of order.entries()) {
       onProgress?.(i + 1, order.length, entry);
       try {
-        built.push(await hydrateOne(entry, moduleId, touched, warnings));
+        const uuid = await hydrateOne(entry, moduleId, ctx);
+        if (uuid) built.push(uuid);
       } catch (err) {
         // A reader missing one dependency should still get everything else.
         skipped.push({ id: entry.id, reason: err.message });
       }
     }
-    removed = await pruneStale(moduleId, [...declared, ...entries], touched);
+    for (const [pack, list] of members) {
+      if (list.length === 0) continue;
+      try {
+        await writeAdventure(moduleId, pack, list, declaredIds.get(pack), touched);
+        built.push(...list.map((m) => m.uuid));
+      } catch (err) {
+        skipped.push(...list.map((m) => ({ id: m.id, reason: `its Adventure could not be written: ${err.message}` })));
+      }
+    }
+    removed = await pruneStale(moduleId, declaredIds, touched);
   } finally {
     await restoreLocks(touched);
     refreshSidebar(touched);
@@ -68,25 +90,21 @@ export async function hydrate(moduleId, entries, { onProgress, declared = entrie
  * touched. Anything unbuildable this run is left alone too, since a reader
  * missing a dependency should not have working content deleted.
  */
-async function pruneStale(moduleId, entries, touched) {
-  const wanted = new Map();
-  for (const entry of entries) {
-    if (!entry?.pack || !entry?.id) continue;
-    if (!wanted.has(entry.pack)) wanted.set(entry.pack, new Set());
-    wanted.get(entry.pack).add(entry.id);
-  }
-
+async function pruneStale(moduleId, declaredIds, touched) {
   const removed = [];
-  for (const [name, ids] of wanted) {
+  for (const [name, ids] of declaredIds) {
     const pack = game.packs.get(`${moduleId}.${name}`);
     if (!pack) continue;
+    // From the pack, not from this run's entries: a transform that dropped
+    // every entry of an Adventure pack must not make its Adventure stale.
+    const wanted = pack.documentName === "Adventure" ? new Set([adventureId(moduleId, name)]) : ids;
     let index;
     try {
       index = await pack.getIndex({ fields: ["flags.graft.built"] });
     } catch {
       continue;                             // an index we cannot read is not one to delete from
     }
-    const stale = index.filter((e) => e?.flags?.graft?.built && !ids.has(e._id));
+    const stale = index.filter((e) => e?.flags?.graft?.built && !wanted.has(e._id));
     if (stale.length === 0) continue;
 
     await unlock(pack, touched);
@@ -102,6 +120,17 @@ async function pruneStale(moduleId, entries, touched) {
     }
   }
   return removed;
+}
+
+/** Entry ids per pack. */
+function idsByPack(entries) {
+  const out = new Map();
+  for (const entry of entries) {
+    if (!entry?.pack || !entry?.id) continue;
+    if (!out.has(entry.pack)) out.set(entry.pack, new Set());
+    out.get(entry.pack).add(entry.id);
+  }
+  return out;
 }
 
 /**
@@ -120,7 +149,7 @@ async function resolveData(uuid) {
   return doc ? doc.toObject() : null;
 }
 
-async function hydrateOne(entry, moduleId, touched, warnings) {
+async function hydrateOne(entry, moduleId, { touched, warnings, resolve, adventures, produced, members }) {
   // No source means the entry carries its own content: the patch is the document.
   let base = {};
   let source = null;
@@ -130,7 +159,7 @@ async function hydrateOne(entry, moduleId, touched, warnings) {
     // requiring it, so exhausting the list is the failure, not missing the
     // first one.
     for (const candidate of candidates) {
-      const data = await resolveData(candidate);
+      const data = await resolve(candidate);
       if (data) { base = data; source = candidate; break; }
     }
     if (!source) {
@@ -159,41 +188,30 @@ async function hydrateOne(entry, moduleId, touched, warnings) {
       + `module.json, restart the Foundry server: a browser reload does not re-read manifests.`,
     );
   }
-  if (pack.documentName !== entry.type) {
+  const assembled = adventures.has(entry.pack);
+  if (assembled) {
+    if (!MEMBER_FIELDS[entry.type]) {
+      throw new Error(`pack "${entry.pack}" is an Adventure, which has nowhere to put a ${entry.type}`);
+    }
+  } else if (pack.documentName !== entry.type) {
     throw new Error(`pack "${entry.pack}" holds ${pack.documentName}, not ${entry.type}`);
   }
-  await unlock(pack, touched);
+  if (!assembled) await unlock(pack, touched);
 
-  const patch = await expandSources(entry.patch ?? {}, resolveData);
+  const patch = await expandSources(entry.patch ?? {}, resolve);
   const data = applyPatch(base, patch);
   data._id = entry.id;
-  data.folder = await ensureFolderPath(pack, entry.folder);
+  data.folder = assembled
+    ? adventureFolderOf(moduleId, entry.pack, entry)
+    : await ensureFolderPath(pack, entry.folder);
   recordSource(data, source);
-  // What makes a document reclaimable later. Without it, pruning could not tell
-  // graft's output from something an author put in the pack by hand.
-  foundry.utils.setProperty(data, "flags.graft.built", true);
 
   const cls = getDocumentClass(entry.type);
   // fromImport is Foundry's own migration path; skipping it lands v13 data
-  // under v14 semantics. An Adventure cannot take it whole (no world
-  // collection server-side), so its content migrates per document.
+  // under v14 semantics.
   let prepared;
   try {
-    if (entry.type === "Adventure") {
-      const { data: migrated, failures } = await migrateContent(data, cls.contentFields, async (c, doc) => {
-        const inner = (await getDocumentClass(c.documentName).fromImport(doc)).toObject();
-        inner._id = doc._id;   // `fromImport` is free to assign its own
-        return inner;
-      });
-      prepared = new cls(migrated, { pack: collection }).toObject();
-      // After construction: if it throws, the fallback below builds the whole
-      // thing unmigrated and these would claim otherwise.
-      for (const f of failures) {
-        warnings.push({ id: `${entry.id}/${f._id}`, reason: `${f.field} ${f._id} could not be migrated (${f.message}); built as authored` });
-      }
-    } else {
-      prepared = (await cls.fromImport(data)).toObject();
-    }
+    prepared = (await cls.fromImport(data)).toObject();
   } catch (err) {
     try {
       prepared = new cls(data, { pack: collection }).toObject();
@@ -204,7 +222,23 @@ async function hydrateOne(entry, moduleId, touched, warnings) {
   }
   prepared._id = entry.id;   // `fromImport` is free to assign its own
 
-  const existing = await pack.getDocument(entry.id);
+  const uuid = entryUuid(entry, moduleId, adventures);
+  if (assembled) {
+    members.get(entry.pack).push({ id: entry.id, uuid, type: entry.type, folder: entry.folder, data: prepared });
+  } else {
+    await writeDocument(pack, cls, collection, prepared);
+  }
+  // After the write, so a sibling never builds on a document Foundry rejected.
+  produced.set(uuid, prepared);
+  return assembled ? null : uuid;
+}
+
+/** Create or update one document in a pack, only if it would change. */
+async function writeDocument(pack, cls, collection, prepared) {
+  // What makes a document reclaimable later. Without it, pruning could not tell
+  // graft's output from something an author put in the pack by hand.
+  foundry.utils.setProperty(prepared, "flags.graft.built", true);
+  const existing = await pack.getDocument(prepared._id);
   if (existing) {
     // A write Foundry would turn into the document already there costs a
     // quarter-second of pack index and disk for no change, and most entries
@@ -216,11 +250,43 @@ async function hydrateOne(entry, moduleId, touched, warnings) {
     }
   } else {
     await cls.create(prepared, { pack: collection, keepId: true, keepEmbeddedIds: true });
-    if (!await pack.getDocument(entry.id)) {
+    if (!await pack.getDocument(prepared._id)) {
       throw new Error("Foundry rejected the document; see the console for the reason");
     }
   }
-  return entryUuid(entry, moduleId);
+}
+
+/**
+ * Fold a pack's members into its one Adventure and write it.
+ *
+ * Constructed rather than imported: `Adventure.fromImport` migrates through a
+ * world collection Adventures do not have, and the members are already
+ * migrated through their own classes.
+ *
+ * A declared member this run did not produce keeps its place from the
+ * existing Adventure, as an unbuilt entry keeps its document in an ordinary
+ * pack. Only an entry no longer declared is dropped.
+ */
+async function writeAdventure(moduleId, packName, members, declaredIds, touched) {
+  const collection = `${moduleId}.${packName}`;
+  const pack = game.packs.get(collection);
+  await unlock(pack, touched);
+
+  const existing = await pack.getDocument(adventureId(moduleId, packName));
+  const fresh = new Set(members.map((m) => m.id));
+  const kept = existing
+    ? membersOf(existing.toObject()).filter((m) => declaredIds.has(m.id) && !fresh.has(m.id))
+    : [];
+  const data = assembleAdventure(moduleId, packName, pack.metadata, [...members, ...kept]);
+
+  const cls = getDocumentClass("Adventure");
+  let prepared;
+  try {
+    prepared = new cls(data, { pack: collection }).toObject();
+  } catch (invalid) {
+    throw new Error(summarizeValidation(invalid));
+  }
+  await writeDocument(pack, cls, collection, prepared);
 }
 
 /** Written afresh by Foundry on every save, so never a real difference. */
@@ -241,32 +307,6 @@ export function identical(prepared, existing) {
     ? { ...rest, _stats: Object.fromEntries(Object.entries(_stats).filter(([k]) => !RESAVED.has(k))) }
     : rest);
   return JSON.stringify(settled(prepared)) === JSON.stringify(settled(existing));
-}
-
-/**
- * Migrate each content document in an Adventure, keeping what fails as it is.
- *
- * `importOne(documentName, doc)` returns the migrated document or throws. A
- * document that cannot migrate stays as authored and is named in `failures`,
- * so one bad scene costs a warning rather than the whole Adventure.
- */
-export async function migrateContent(data, contentFields, importOne) {
-  const out = { ...data };
-  const failures = [];
-  for (const [field, cls] of Object.entries(contentFields)) {
-    const docs = data[field];
-    if (!Array.isArray(docs) || docs.length === 0) continue;
-    out[field] = [];
-    for (const doc of docs) {
-      try {
-        out[field].push(await importOne(cls, doc));
-      } catch (err) {
-        failures.push({ field, _id: doc?._id, message: err.message });
-        out[field].push(doc);
-      }
-    }
-  }
-  return { data: out, failures };
 }
 
 /**

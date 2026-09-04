@@ -8,7 +8,7 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { planOrder, entryUuid, isDocumentId } from "../scripts/plan.mjs";
+import { planOrder, entryUuid, adventureId, isDocumentId } from "../scripts/plan.mjs";
 
 const MOD = "my-adventure";
 const entry = (id, source, over = {}) =>
@@ -239,5 +239,36 @@ describe("an item a patch inserts", () => {
       actor("bbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaa"),
     ], "mine");
     assert.equal(cycles.length > 0, true);
+  });
+});
+
+describe("an entry bound for an Adventure pack", () => {
+  // The pack's declared type decides, so the plan is told which packs are
+  // Adventures rather than reading anything off the entry.
+  const adventures = new Set(["adv"]);
+  const ADV = adventureId("mod", "adv");
+  const entry = (id, over = {}) => ({ id, type: "Actor", pack: "adv", patch: {}, ...over });
+
+  test("is addressed through the Adventure, in the form origin.mjs resolves", () => {
+    assert.equal(
+      entryUuid(entry("aaaaaaaaaaaaaaaa"), "mod", adventures),
+      `Compendium.mod.adv.Adventure.${ADV}.Actor.aaaaaaaaaaaaaaaa`,
+    );
+  });
+
+  test("a bare sibling id resolves to that address", () => {
+    const { order, invalid } = planOrder([
+      entry("bbbbbbbbbbbbbbbb", { source: "aaaaaaaaaaaaaaaa" }),
+      entry("aaaaaaaaaaaaaaaa"),
+    ], "mod", adventures);
+    assert.deepEqual(invalid, []);
+    assert.deepEqual(order.map((e) => e.id), ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]);
+    assert.equal(order[1].source, `Compendium.mod.adv.Adventure.${ADV}.Actor.aaaaaaaaaaaaaaaa`);
+  });
+
+  test("Adventure is not an entry type", () => {
+    const { invalid, order } = planOrder([entry("aaaaaaaaaaaaaaaa", { type: "Adventure" })], "mod");
+    assert.deepEqual(order, []);
+    assert.match(invalid[0].reason, /packaging/);
   });
 });

@@ -65,14 +65,16 @@ Optional, in your `module.json`:
 }
 ```
 
-`entries` defaults to `grafts.json`. `packs` only affects **Copy graft**, which otherwise picks the pack when your module has exactly one of that type and gives up when it has two.
+`entries` defaults to `grafts.json`. `packs` only affects **Copy graft**, which otherwise picks the pack when your module has exactly one of that type, falls back to an Adventure pack when it has none, and gives up when it has two.
+
+A pack declared as `Adventure` collects every entry that names it into one Adventure, named from the pack's `label`, with `img`, `caption` and `description` read from the pack's own `flags.graft`. [Packaging](format.md#packaging) has the details.
 
 A grafts file is an object, not a bare list:
 
 ```json
-{ "format": 1, "entries": [ … ] }
+{ "format": 2, "entries": [ … ] }
 ```
 
-`format` is the version of the entry format the file was written for. There is only one so far, and a file that says nothing is read as version 1. Graft skips a file claiming a version newer than it understands and logs that the reader needs a newer graft, rather than reading it and silently ignoring whatever fields that version added.
+`format` is the version of the entry format the file was written for. A file that says nothing is read as version 1, which differed from 2 only in accepting `type: "Adventure"`; such a file still reads, and only an entry of that type is refused. Graft skips a file claiming a version newer than it understands and logs that the reader needs a newer graft, rather than reading it and silently ignoring whatever fields that version added.
 
 Everything else in the object is left alone, so a module or a graft extension can keep its own data beside the entries.

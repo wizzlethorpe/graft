@@ -3,7 +3,7 @@
 A graft module declares its entries in `grafts.json`, an object holding the format it was written for and an `entries` list, always a list even for one document:
 
 ```json
-{ "format": 1, "entries": [ … ] }
+{ "format": 2, "entries": [ … ] }
 ```
 
 Each entry is an `id` and `type` of your own, a `source` to graft onto, and a `patch`. `id` is a Foundry document id, sixteen characters of `[a-zA-Z0-9]`; `pack` names which of your module's packs the result lands in.
@@ -58,6 +58,35 @@ A `source` that is a bare document id names another entry in the same module. No
 
 Graft uses the first source that resolves, so an author can prefer better content without requiring it. The entry fails only if none of them resolve. A list source records no `sourceHash`, because a hash is taken against the specific document the author diffed and a list does not say which one that was.
 
+## Packaging
+
+Where an entry ends up is decided by the pack it names, as declared in `module.json`. A pack declared with the entry's own `type` gets the entry as a document. A pack declared as `Adventure` gets one Adventure holding every entry that names it, whatever their types. The same entries ship as browsable compendiums or as a single import by changing only the manifest.
+
+```json
+"packs": [
+  {
+    "name": "tryk-adventure",
+    "label": "Tryk Academy",
+    "path": "packs/tryk-adventure",
+    "type": "Adventure",
+    "system": "dnd5e",
+    "flags": {
+      "graft": {
+        "img": "modules/tryk/cover.webp",
+        "caption": "A school of wizardry",
+        "description": "<p>Everything the vault holds, in one import.</p>"
+      }
+    }
+  }
+]
+```
+
+The Adventure is named from the pack's `label`; `img`, `caption` and `description` come from `flags.graft` and are optional. Its id is derived from the module and pack names, so a reader re-importing an updated Adventure updates their world in place. Each entry's `folder` path becomes a folder inside the Adventure, one tree per document type, since Foundry folders are typed. A member that does not build this run keeps its place from the previous build, as an unbuilt entry keeps its document in an ordinary pack; only an entry no longer declared is dropped. An Adventure pack needs a `system` as much as an Actor pack does: Foundry empties the actors and items out of any Adventure read from a systemless pack.
+
+An entry assembled into an Adventure is addressed as `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`, the form graft resolves for any Adventure's contents, so grafting onto it works the same as onto a pack document, from the same module or another.
+
+`Adventure` is not an entry type. An entry declaring one is refused with a reason.
+
 ## Patches
 
 Patches use [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) (JSON Merge Patch), because a patch that mirrors the shape of the document is readable, and `null` already means "delete this key". [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902) is more expressive, and its `test` op would give drift detection for free, but it addresses array members by position.
@@ -86,7 +115,7 @@ An embedded source naming a sibling is an ordering edge like a top-level one, so
 ### What is stripped
 
 - **`_stats`**, whose timestamps differ between identical documents and would report every embedded item as changed.
-- **`folder`**, at the root only. It is kept at depth, which matters for Adventures: they carry their own `folders` array and their documents point into it.
+- **`folder`**, at the root only: a folder id from one world means nothing in another, and the entry's `folder` path carries the organisation instead.
 - **`active`, `navOrder` and `thumb`**, at the root, which say where a Scene sat in the world it was copied from rather than what the scene is: which scene that world is looking at, where it sits in the navigation bar, and a path into that world's own generated thumbnails. `sort` is kept, since a graft may reasonably want to say where its output sits in a pack.
 - **`ownership`** is thinned rather than dropped. Per-user entries are world-local, so graft removes them; `default` stays, since it is how you say "players can see this".
 
@@ -120,7 +149,7 @@ Graft creates everything through `Document.fromImport`, Foundry's own migration 
 
 Graft still reports a source older than the running generation, since migration handles fields that moved but not fields that were removed.
 
-An Adventure cannot take that path whole: the server migrates with `db.Adventure`, and Adventures have no world collection, so any version difference at all crashes it. The documents *inside* an Adventure all have one, so graft migrates them one at a time through their own classes and builds the Adventure around the results; a document that cannot migrate is kept as authored and named individually.
+An Adventure graft assembles is constructed from members that have already been migrated this way, since `Adventure.fromImport` itself migrates through a world collection Adventures do not have.
 
 Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. `fromImport` and `importFromJSON` alike drop a Foundry 13 tile's `occlusion.mode` rather than converting it to the `occlusion.modes` that replaced it, so a roof set to fade stops fading. Graft does not migrate fields by hand; the set of moved fields is open-ended.
 

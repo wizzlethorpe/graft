@@ -6,6 +6,7 @@
 
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { FORMAT, graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
+import { parseAdventureSource, resolveAdventureSource } from "./origin.mjs";
 import { collectTransforms, runTransforms } from "./extend.mjs";
 import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
@@ -211,16 +212,15 @@ async function reportBuild(moduleId, built, skipped, warnings = [], removed = []
   if (built.length > 0) {
     // Collapsed and last: a successful entry needs no action, and a hundred of
     // them would bury the few that do.
-    const rows = built.map((uuid) => {
-      const id = uuid.split(".").pop();
-      const pack = game.packs.get(uuid.split(".").slice(1, 3).join("."));
-      const name = pack?.index?.get(id)?.name ?? id;
+    const rows = [];
+    for (const uuid of built) {
+      const { link, name } = await builtLink(uuid);
       // `data-link` is what Foundry's click handler selects on; the class is
       // only styling.
-      return `<li><a class="content-link" data-link draggable="true" data-uuid="${uuid}">`
-        + `${foundry.utils.escapeHTML(name)}</a></li>`;
-    }).join("");
-    parts.push(`<details><summary>${t("GRAFT.SectionSuccess", { count: built.length })}</summary><ul>${rows}</ul></details>`);
+      rows.push(`<li><a class="content-link" data-link draggable="true" data-uuid="${link}">`
+        + `${foundry.utils.escapeHTML(name)}</a></li>`);
+    }
+    parts.push(`<details><summary>${t("GRAFT.SectionSuccess", { count: built.length })}</summary><ul>${rows.join("")}</ul></details>`);
   }
 
   await foundry.applications.api.DialogV2.prompt({
@@ -229,6 +229,23 @@ async function reportBuild(moduleId, built, skipped, warnings = [], removed = []
     ok: { label: t("GRAFT.Close") },
     position: { width: 520 },
   }).catch(() => {});
+}
+
+/**
+ * What a built uuid links to and is called.
+ *
+ * An entry assembled into an Adventure has no document of its own to open, so
+ * it links to the Adventure and is named from the content inside it.
+ */
+async function builtLink(uuid) {
+  const id = uuid.split(".").pop();
+  const inside = parseAdventureSource(uuid);
+  if (!inside) {
+    const pack = game.packs.get(uuid.split(".").slice(1, 3).join("."));
+    return { link: uuid, name: pack?.index?.get(id)?.name ?? id };
+  }
+  const member = await resolveAdventureSource(uuid);
+  return { link: inside.adventure, name: member?.name ?? id };
 }
 
 // ── copying ─────────────────────────────────────────────────────────────────
@@ -426,7 +443,7 @@ export function addPackControl(app, controls) {
  */
 export const CONTEXT_TYPES = [
   "Actor", "Item", "JournalEntry", "Scene", "RollTable",
-  "Macro", "Playlist", "Cards", "Adventure",
+  "Macro", "Playlist", "Cards",
 ];
 
 /**

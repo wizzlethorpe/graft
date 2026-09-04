@@ -7,7 +7,8 @@
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { FORMAT, anyBuilt, formatOf, readFile, readGrafts, withPack } from "../scripts/modules.mjs";
+import { FORMAT, anyBuilt, formatOf, readFile, readGrafts, unbuilt, withPack } from "../scripts/modules.mjs";
+import { adventureId } from "../scripts/plan.mjs";
 
 describe("the grafts file shape", () => {
   test("takes the object a grafts.json is", () => {
@@ -23,7 +24,7 @@ describe("the grafts file shape", () => {
   });
 
   test("reads a file that declares no format as the first one", () => {
-    assert.equal(formatOf({ entries: [] }), FORMAT);
+    assert.equal(formatOf({ entries: [] }), 1);
   });
 
   test("refuses a format that is not a whole number, a semver string included", () => {
@@ -145,5 +146,43 @@ describe("withPack", () => {
   test("two candidates and no declaration is left blank", () => {
     install(mod("a", [{ name: "a-scenes", type: "Scene" }]), mod("b", [{ name: "b-scenes", type: "Scene" }]));
     assert.equal("pack" in withPack({ type: "Scene" }), false);
+  });
+
+  test("an Adventure pack takes any type, when nothing closer exists", () => {
+    install(mod("tryk", [{ name: "tryk-adventure", type: "Adventure" }]));
+    assert.equal(withPack({ type: "Scene" }).pack, "tryk-adventure");
+  });
+
+  test("a pack of the entry's own type beats an Adventure pack", () => {
+    install(mod("m", [{ name: "m-scenes", type: "Scene" }, { name: "m-adventure", type: "Adventure" }]));
+    assert.equal(withPack({ type: "Scene" }).pack, "m-scenes");
+  });
+});
+
+describe("unbuilt, for an Adventure pack", () => {
+  afterEach(() => { globalThis.game = saved; delete globalThis.fetch; });
+
+  /** A module whose two entries aim at one Adventure pack, holding `adventure` if built. */
+  function install(adventure) {
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ format: FORMAT, entries: [
+      { id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "adv" },
+      { id: "bbbbbbbbbbbbbbbb", type: "Scene", pack: "adv" },
+    ] }) });
+    globalThis.game = {
+      modules: { get: () => ({ flags: {} }) },
+      packs: { get: (c) => (c === "m.adv"
+        ? { documentName: "Adventure", getDocument: async (id) => (id === adventureId("m", "adv") ? adventure : null) }
+        : undefined) },
+    };
+  }
+
+  test("looks for entries inside the Adventure, since the index knows only the wrapper", async () => {
+    install({ actors: [{ _id: "aaaaaaaaaaaaaaaa" }], scenes: [] });
+    assert.deepEqual((await unbuilt("m")).map((e) => e.id), ["bbbbbbbbbbbbbbbb"]);
+  });
+
+  test("no Adventure yet means nothing is built", async () => {
+    install(null);
+    assert.equal((await unbuilt("m")).length, 2);
   });
 });

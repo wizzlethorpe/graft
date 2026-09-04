@@ -34,8 +34,14 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
   hop to the entry's own source would fix it for an author and break it for a
   reader chaining onto somebody else's graft module, and graft cannot tell the
   two apart; `withPack` has the same blind spot.
-- `hydrate`, `ui` and `modules` have no test coverage. `exportDiff` now does,
-  through a stub, and the same approach would cover the rest if it earns it.
+- A document in an ordinary pack that grafts onto a sibling inside an
+  Adventure is written during the build; the Adventure is written after it. If
+  the Adventure write then fails, the dependent already exists, recording an
+  origin nothing resolves. Writing each Adventure as soon as its last member is
+  prepared would close it; not done, since it needs a Foundry-side rejection of
+  a whole Adventure to matter.
+- `ui` has no test coverage. `hydrate` and `modules` are covered through stubs
+  where a decision lives there; `exportDiff` the same way.
 
 ## Wanted
 

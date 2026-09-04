@@ -42,6 +42,8 @@ A graft module declares its entries in `grafts.json`, an object holding the form
 
 Building resolves the source, applies the patch, and creates the result under your id in your pack. A source the reader does not have skips that entry and names it in the report; everything else still builds.
 
+Whether entries become documents in a compendium or one importable Adventure is decided by the pack's declared type in `module.json`, not by the entries; see [Packaging](docs/format.md#packaging).
+
 ## The authoring loop
 
 1. Make a module declaring your packs; `examples/graft-example/` is a working one. Restart the world so Foundry reads the manifest.
@@ -69,6 +71,7 @@ Graft is free and open source, from Wizzlethorpe Labs. If it is useful to you, [
 ```
 scripts/patch.mjs      the format: applyPatch, diff, stripVolatile. Pure.
 scripts/plan.mjs       ids, UUIDs, and build order for chains.
+scripts/assemble.mjs   folds entries aimed at an Adventure pack into one Adventure. Pure.
 scripts/extend.mjs     collects and runs pre-build transforms and export rewriters.
 scripts/yaml.mjs       clipboard output. Pure.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
