@@ -17,23 +17,26 @@ describe("graftsIn", () => {
     assert.deepEqual(graftsIn({ format: 2, entries: [entry] }).entries, [entry]);
   });
 
-  test("refuses a file written for a newer graft, by name", () => {
-    assert.equal(graftsIn({ format: 99, entries: [entry] }).error, "new-format");
-  });
-
-  test("refuses what is none of those", () => {
-    assert.ok(graftsIn({ name: "not an entry" }).error);
-    assert.ok(graftsIn("text").error);
-  });
 });
 
 describe("importGrafts", () => {
   const saved = globalThis.game;
   afterEach(() => { globalThis.game = saved; });
+  const installI18n = () => { globalThis.game = { i18n: { localize: (key) => key, format: (key) => key } }; };
 
   test("says a newer format needs a newer graft", async () => {
-    globalThis.game = { i18n: { localize: (key) => key, format: (key) => key } };
+    installI18n();
     await assert.rejects(() => importGrafts({ format: 99, entries: [{ id: "a" }] }), /ImportFormat/);
+  });
+
+  test("says what shapes it takes when given none of them", async () => {
+    installI18n();
+    await assert.rejects(() => importGrafts({ name: "not an entry" }), /ImportNotEntries/);
+  });
+
+  test("says when there is nothing to build", async () => {
+    installI18n();
+    await assert.rejects(() => importGrafts([]), /ImportEmpty/);
   });
 });
 

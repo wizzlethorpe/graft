@@ -132,7 +132,7 @@ export async function buildAndReport(moduleId) {
     }
     console.groupEnd();
   }
-  await reportBuild(moduleId, built, allSkipped, allWarnings, removed);
+  await reportBuild(title, built, allSkipped, allWarnings, removed);
   return { built, skipped: allSkipped, warnings: allWarnings, removed };
 }
 
@@ -162,8 +162,7 @@ function transformNotice(moduleId) {
  * The reasons are the part worth reading: a missing dependency and an invalid
  * entry want different responses, and only one is the reader's to fix.
  */
-async function reportBuild(moduleId, built, skipped, warnings = [], removed = []) {
-  const title = game.modules.get(moduleId)?.title ?? moduleId;
+async function reportBuild(title, built, skipped, warnings = [], removed = []) {
   const parts = [
     `<p>${t("GRAFT.ReportBuilt", { count: built.length })}`
     + (skipped.length ? t("GRAFT.ReportNotBuilt", { count: skipped.length }) : "")
@@ -338,15 +337,9 @@ async function confirmBulk(count, label) {
   }).catch(() => false);
 }
 
-// ── importing a file ────────────────────────────────────────────────────────
+// ── importing grafts ────────────────────────────────────────────────────────
 
-/**
- * Ask for pasted grafts, or a file to fill the box from, then build them into
- * the world.
- *
- * For content somebody sent you. What it builds is not tracked: there is no
- * manifest to compare against later, so this is an import, not a subscription.
- */
+/** Build pasted or file-loaded grafts into the world. Nothing is tracked afterwards. */
 export async function promptForImport() {
   if (!game.user.isGM) return null;
   const text = await foundry.applications.api.DialogV2.prompt({
@@ -358,12 +351,12 @@ export async function promptForImport() {
       <div class="form-group"><label>${t("GRAFT.ImportFile")}</label>
         <input name="file" type="file" accept="application/json,.json"></div>`,
     render: (_event, dialog) => {
-      const root = dialog?.element ?? dialog;
-      const file = root.querySelector("input[name=file]");
-      const area = root.querySelector("textarea[name=text]");
-      file.addEventListener("change", async () => {
-        const picked = file.files?.[0];
-        if (picked) area.value = await picked.text();
+      const file = dialog.element.querySelector("input[name=file]");
+      const area = dialog.element.querySelector("textarea[name=text]");
+      file.addEventListener("change", () => {
+        file.files?.[0]?.text()
+          .then((text) => { area.value = text; })
+          .catch((err) => ui.notifications.error(t("GRAFT.ImportUnreadable", { reason: err.message })));
       });
     },
     ok: {
@@ -372,7 +365,11 @@ export async function promptForImport() {
     },
     rejectClose: false,
   });
-  if (!text) return null;
+  if (text === null) return null;
+  if (!text) {
+    ui.notifications.warn(t("GRAFT.ImportEmpty"));
+    return null;
+  }
 
   let parsed;
   try { parsed = JSON.parse(text); }

@@ -1,7 +1,3 @@
-// Building pasted grafts into the world: entries file by their own folder
-// paths, a sibling resolves, and a document no import wrote is never
-// overwritten or built on.
-
 import test, { describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 

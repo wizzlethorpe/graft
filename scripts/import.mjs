@@ -1,9 +1,5 @@
-// Building grafts somebody sent you into the world.
-//
-// The same engine, pointed at world collections rather than a module's packs.
-// Pasted entries cannot know which module they came from, so references to
-// their own entries are folded back to bare ids first and resolve against what
-// this import builds.
+// Building grafts somebody sent you into the world: the same engine, pointed
+// at world collections rather than a module's packs.
 
 import { hydrateWorld } from "./hydrate.mjs";
 import { FORMAT, readFile } from "./modules.mjs";
@@ -51,23 +47,20 @@ export function localiseSources(entries) {
 }
 
 /**
- * The entries in what was pasted: one entry, a list of entries, or a grafts
- * file. Returns `{ entries }` or `{ error }`, in `readFile`'s terms.
+ * Entries from one entry, a list, or a grafts file. Returns `readFile`'s shape.
+ *
+ * A list carries no format and is read as the current one: it is what Copy
+ * grafts writes.
  */
 export function graftsIn(parsed) {
   if (Array.isArray(parsed)) return { entries: parsed };
-  if (parsed && typeof parsed === "object" && typeof parsed.id === "string" && !("entries" in parsed)) {
-    return { entries: [parsed] };
-  }
+  if (typeof parsed?.id === "string") return { entries: [parsed] };
   return readFile(parsed);
 }
 
 /**
- * Build pasted grafts into the world.
- *
- * Pre-build transforms run first, under `"world"` rather than a module id: an
- * entry naming a vault builds when the reader has that module, and reports a
- * missing one rather than being refused up front.
+ * Build pasted grafts into the world. Transforms run under `"world"` as the
+ * module id.
  *
  * @returns `{ built, skipped, warnings }`.
  */
