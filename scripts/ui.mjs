@@ -339,7 +339,7 @@ async function confirmBulk(count, label) {
 
 // ── importing grafts ────────────────────────────────────────────────────────
 
-/** Build pasted or file-loaded grafts into the world. Nothing is tracked afterwards. */
+/** Build pasted or file-loaded grafts into the world.*/
 export async function promptForImport() {
   if (!game.user.isGM) return null;
   const text = await foundry.applications.api.DialogV2.prompt({
