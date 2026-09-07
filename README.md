@@ -3,14 +3,12 @@
 [![tests](https://github.com/wizzlethorpe/graft/actions/workflows/test.yml/badge.svg)](https://github.com/wizzlethorpe/graft/actions/workflows/test.yml)
 [![license](https://img.shields.io/github/license/wizzlethorpe/graft)](LICENSE)
 [![release](https://img.shields.io/github/v/release/wizzlethorpe/graft?display_name=tag&sort=semver)](https://github.com/wizzlethorpe/graft/releases/latest)
+[![foundry](https://img.shields.io/endpoint?url=https://foundryshields.com/version?url=https://github.com/wizzlethorpe/graft/releases/latest/download/module.json&style=flat)](https://foundryvtt.com/packages/graft)
 
-Graft packages your changes to somebody else's compendium content as a **diff** and rebuilds the result on the reader's machine. A graft module contains only pointers and patches, never the content it builds on.
 
-**Install:** paste this into Foundry's *Install Module* dialog.
+[Graft](https://foundryvtt.com/packages/graft) packages your changes to somebody else's compendium content as a **diff** and rebuilds the result on the reader's machine. A graft module contains only pointers and patches, never the content it builds on.
 
-```
-https://github.com/wizzlethorpe/graft/releases/latest/download/module.json
-```
+To install, simply search for **Graft** in Foundry's *Install Module* dialog.
 
 > [!IMPORTANT]
 > **Your content is your responsibility.** A patch can still reproduce protected material: a description rewritten in full, a stat block restated, a map's whole wall layout. Graft cannot tell the difference and does not check entitlement; it resolves whatever UUIDs an entry names against whatever the reader has installed.

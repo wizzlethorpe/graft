@@ -37,13 +37,10 @@ node --test 'test/*.test.mjs' >/dev/null || { echo "Error: tests failed" >&2; ex
 echo "==> Version $NEW_VERSION"
 jq --arg v "$NEW_VERSION" '.version = $v' module.json > module.json.tmp && mv module.json.tmp module.json
 
-# Versioned URLs in the *released* manifest. Foundry's registry caches manifest
-# responses, so a /releases/latest/ URL leaves stale versions lingering in the
-# in-app browser. A versioned URL is immutable, so every release is a fresh one.
-# The repo's module.json is put back to /latest/ at the end.
+# Pin the zip to its own tag, so a manifest and the bytes it names cannot
+# disagree. `manifest` stays on /latest/: an installed copy polls it for updates.
 jq --arg v "$NEW_VERSION" --arg repo "$GITHUB_REPO" \
-   '.download = "https://github.com/" + $repo + "/releases/download/v" + $v + "/" + "graft.zip" |
-    .manifest = "https://github.com/" + $repo + "/releases/download/v" + $v + "/module.json"' \
+   '.download = "https://github.com/" + $repo + "/releases/download/v" + $v + "/graft.zip"' \
    module.json > module.json.tmp && mv module.json.tmp module.json
 
 BUILD=$(mktemp -d)
@@ -80,6 +77,8 @@ if [ -z "$FOUNDRY_TOKEN" ]; then
   echo "==> No FOUNDRY_RELEASE_TOKEN in .env; skipping the package registry"
 else
   echo "==> Foundry package registry"
+  # A versioned manifest URL, never /latest/: the registry caches by URL, and
+  # reusing one left the in-app browser serving an already-superseded version.
   RESPONSE=$(curl -sS -X POST "https://foundryvtt.com/_api/packages/release_version/" \
     -H "Content-Type: application/json" \
     -H "Authorization: $FOUNDRY_TOKEN" \
@@ -98,8 +97,7 @@ fi
 
 # Back to /latest/ in the repo, so what is committed is never a stale pin.
 jq --arg repo "$GITHUB_REPO" \
-   '.download = "https://github.com/" + $repo + "/releases/latest/download/graft.zip" |
-    .manifest = "https://github.com/" + $repo + "/releases/latest/download/module.json"' \
+   '.download = "https://github.com/" + $repo + "/releases/latest/download/graft.zip"' \
    module.json > module.json.tmp && mv module.json.tmp module.json
 git add module.json && git commit -qm "Back to latest/ URLs after $NEW_VERSION"
 git push -q origin main
