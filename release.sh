@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Cut a release: bump, test, tag, publish to GitHub and the Foundry registry.
 #
+#   ./release.sh                     # pick a patch/minor/major bump
 #   ./release.sh 1.0.0
 #   ./release.sh 1.0.0 --dry-run     # build and report, publish nothing
 #
@@ -21,12 +22,29 @@ for arg in "$@"; do
     *) [ -n "$NEW_VERSION" ] && { echo "Version given twice" >&2; exit 1; }; NEW_VERSION="$arg" ;;
   esac
 done
-[ -n "$NEW_VERSION" ] || { echo "Usage: ./release.sh <X.Y.Z> [--dry-run]" >&2; exit 1; }
-[[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must be X.Y.Z" >&2; exit 1; }
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 for cmd in jq gh zip node; do command -v "$cmd" >/dev/null || { echo "Error: $cmd required" >&2; exit 1; }; done
 [ -z "$(git status --porcelain)" ] || { echo "Error: working tree is dirty" >&2; exit 1; }
+
+if [ -z "$NEW_VERSION" ]; then
+  CURRENT=$(jq -r '.version' module.json)
+  IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT%%-*}"
+  echo "Current version: $CURRENT"
+  echo "  1) patch  $MAJOR.$MINOR.$((PATCH + 1))"
+  echo "  2) minor  $MAJOR.$((MINOR + 1)).0"
+  echo "  3) major  $((MAJOR + 1)).0.0"
+  echo "  4) custom"
+  read -rp "Choice [1-4]: " CHOICE
+  case "$CHOICE" in
+    1) NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+    2) NEW_VERSION="$MAJOR.$((MINOR + 1)).0" ;;
+    3) NEW_VERSION="$((MAJOR + 1)).0.0" ;;
+    4) read -rp "Version: " NEW_VERSION ;;
+    *) echo "Aborted." >&2; exit 1 ;;
+  esac
+fi
+[[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must be X.Y.Z" >&2; exit 1; }
 
 TAG="v$NEW_VERSION"
 git rev-parse "$TAG" >/dev/null 2>&1 && { echo "Error: $TAG already exists" >&2; exit 1; }
