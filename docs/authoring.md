@@ -72,7 +72,7 @@ A pack declared as `Adventure` collects every entry that names it into one Adven
 A grafts file is an object, not a bare list:
 
 ```json
-{ "format": 2, "entries": [ … ] }
+{ "format": 3, "entries": [ … ] }
 ```
 
 `format` is the entry format version. Absent means 1. Format 1 files still read; only their `type: "Adventure"` entries are refused. A file with a newer format than this graft understands is skipped, with a log line saying graft needs updating.

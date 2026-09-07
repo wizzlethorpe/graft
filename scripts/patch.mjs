@@ -9,6 +9,9 @@
 //   Arrays whose members all carry `_id` merge by that key. Everything else
 //   replaces.
 //
+// Merging by key makes an omitted entry mean "leave it alone", so a member
+// `{ _id, _delete: true }` removes the entry it names.
+//
 // No Foundry and no I/O in this file, so the format can be tested on its own.
 
 /**
@@ -25,6 +28,11 @@ function isPlainObject(v) {
   return proto === Object.prototype || proto === null;
 }
 
+/** A keyed-array member that drops the entry it names rather than patching it. */
+function isRemoval(v) {
+  return isPlainObject(v) && v._delete === true;
+}
+
 /** An array Foundry would treat as a keyed collection rather than a list. */
 export function isKeyedArray(v) {
   return Array.isArray(v) && v.length > 0 && v.every((e) => isPlainObject(e) && typeof e._id === "string");
@@ -37,8 +45,8 @@ export function applyPatch(target, patch) {
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) {
       delete out[key];
-    } else if (isKeyedArray(value) && isKeyedArray(out[key])) {
-      out[key] = mergeById(out[key], value);
+    } else if (isKeyedArray(value)) {
+      out[key] = mergeById(isKeyedArray(out[key]) ? out[key] : [], value);
     } else if (isPlainObject(value)) {
       out[key] = applyPatch(out[key], value);
     } else {
@@ -53,12 +61,12 @@ export function applyPatch(target, patch) {
  *
  * Entries in both are patched, entries only in the patch are appended, and
  * entries only in the target survive. That last is what makes a patch a diff
- * rather than a replacement, and is also why removal is not representable: an
- * omitted entry means "leave it alone".
+ * rather than a replacement, and is why a removal is stated rather than implied.
  */
 function mergeById(target, patch) {
   const byId = new Map(target.map((e) => [e._id, e]));
   for (const entry of patch) {
+    if (isRemoval(entry)) { byId.delete(entry._id); continue; }
     const existing = byId.get(entry._id);
     byId.set(entry._id, existing ? applyPatch(existing, entry) : structuredClone(entry));
   }
@@ -120,6 +128,8 @@ function diffById(source, result, whole) {
     const sub = diff(prior, entry, whole);
     if (sub !== undefined) entries.push({ _id: entry._id, ...sub });
   }
+  const kept = new Set(result.map((e) => e._id));
+  for (const id of before.keys()) if (!kept.has(id)) entries.push({ _id: id, _delete: true });
   return entries.length > 0 ? entries : undefined;
 }
 
@@ -265,7 +275,7 @@ export function rewriteSources(patch, map) {
 export async function referenceSources(patch, { sourceOf, resolve, isWhole }) {
   if (Array.isArray(patch)) {
     return Promise.all(patch.map(async (entry) => {
-      if (!isPlainObject(entry) || typeof entry._id !== "string") return entry;
+      if (!isPlainObject(entry) || typeof entry._id !== "string" || isRemoval(entry)) return entry;
       const source = sourceOf(entry._id);
       if (!source || !isWhole(entry._id)) return referenceSources(entry, { sourceOf, resolve, isWhole });
       const base = await resolve(source);
@@ -397,7 +407,7 @@ export function project(source, patch) {
       const byId = new Map(before.map((e) => [e._id, e]));
       const entries = [];
       for (const entry of value) {
-        if (isSourcedEntry(entry)) continue;
+        if (isSourcedEntry(entry) || isRemoval(entry)) continue;
         const prior = byId.get(entry._id);
         if (prior) entries.push({ _id: entry._id, ...project(prior, entry) });
       }

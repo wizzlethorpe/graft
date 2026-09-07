@@ -114,18 +114,37 @@ test("round trip: applying a recovered diff reproduces the edit", () => {
   assert.deepEqual(applyPatch(BANDIT, patch), mine);
 });
 
-test("removing an item from a keyed array is NOT representable", () => {
-  // Documented, not fixed. Merge-by-id reads an omitted entry as "leave it
-  // alone", so there is nowhere to say "drop this". Expressing it means RFC
-  // 6902 `remove` ops, which address members positionally and break under the
-  // reordering that keying by _id exists to survive. The round trip fails
-  // loudly here rather than silently shipping a patch that does nothing.
+test("removing an item from a keyed array round-trips", () => {
   const mine = structuredClone(BANDIT);
   mine.items = mine.items.filter((i) => i._id !== "itemCrossbow001");
 
   const patch = diff(BANDIT, mine);
-  assert.equal(patch, undefined, "nothing changed that the format can say");
-  assert.equal(applyPatch(BANDIT, patch ?? {}).items.length, 2, "so the item survives");
+  assert.deepEqual(patch, { items: [{ _id: "itemCrossbow001", _delete: true }] });
+  assert.deepEqual(applyPatch(BANDIT, patch), mine);
+});
+
+test("a removal is dropped when the array replaces instead of merging", () => {
+  // The source no longer has the collection the patch was written against, so
+  // merge-by-id does not apply. The sentinel is an instruction, never data, so
+  // it must not reach the document.
+  const out = applyPatch({ name: "Bandit", items: [] }, {
+    items: [{ _id: "itemCrossbow001", _delete: true }, { _id: "itemTorch000001", name: "Torch" }],
+  });
+  assert.deepEqual(out.items, [{ _id: "itemTorch000001", name: "Torch" }]);
+});
+
+test("a removal is never turned into a reference", async () => {
+  // `referenceSources` reads any member carrying an `_id` as a document it
+  // could reference. Left alone, it resolves the source and diffs the sentinel
+  // against it, which resurrects the item and nulls out every field.
+  const patch = { items: [{ _id: "itemCrossbow001", _delete: true }] };
+  const out = await referenceSources(patch, {
+    sourceOf: () => "Compendium.dnd5e.items.Item.crossbow",
+    resolve: async () => ({ _id: "crossbow", name: "Light Crossbow", system: { damage: "1d8" } }),
+    isWhole: () => true,
+  });
+  assert.deepEqual(out, patch);
+  assert.deepEqual(applyPatch(BANDIT, out).items, [BANDIT.items[0]], "and it still removes");
 });
 
 // ── noise ───────────────────────────────────────────────────────────────────
@@ -544,6 +563,18 @@ test("only a change to what the patch touches trips the hash", async () => {
 
   const relevant = { name: "Bandit", system: { hp: { value: 12 }, ac: 12 } };
   assert.match(driftFromSource("x", recorded, relevant, patch).reason, /source has changed/);
+});
+
+test("upstream removing what a patch removes is not drift", async () => {
+  // A removal names an entry the result does not have, so nothing about that
+  // entry can change the patch's meaning. Projecting it made the hash depend
+  // on the item still being there, and upstream deleting it too warned.
+  const source = { items: [{ _id: "itemBow00000000a", q: 1 }, { _id: "itemAxe00000000b", q: 2 }] };
+  const patch = { items: [{ _id: "itemAxe00000000b", _delete: true }] };
+  const recorded = sourceHash(source, patch);
+
+  const gone = { items: [{ _id: "itemBow00000000a", q: 1 }] };
+  assert.equal(driftFromSource("x", recorded, gone, patch), null);
 });
 
 test("reordering a keyed array is not drift", async () => {

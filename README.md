@@ -29,16 +29,17 @@ A graft module declares its entries in `grafts.json`, an object holding the form
     "name": "The Enforcer",
     "system": {
       "attributes": { "hp": { "value": 65 } },
-      "details": { "cr": null }
+      "details": { "cr": 4 }
     },
     "items": [
-      { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } }
+      { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } },
+      { "_id": "2TB9ZSIbtbi4UtSv", "_delete": true }
     ]
   }
 }
 ```
 
-Building resolves the source, applies the patch, and creates the result under your id in your pack. A source the reader does not have skips that entry and names it in the report; everything else still builds.
+An array member carrying an `_id` patches the item it names; one carrying `_delete` removes it, which is how the captain loses his pistol. Building resolves the source, applies the patch, and creates the result under your id in your pack. A source the reader does not have skips that entry and names it in the report; everything else still builds.
 
 Whether entries become documents in a compendium or one importable Adventure is decided by the pack's declared type in `module.json`, not by the entries; see [Packaging](docs/format.md#packaging).
 

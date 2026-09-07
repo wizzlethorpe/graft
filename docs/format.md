@@ -3,7 +3,7 @@
 A graft module declares its entries in `grafts.json`, an object holding the format it was written for and an `entries` list, always a list even for one document:
 
 ```json
-{ "format": 2, "entries": [ … ] }
+{ "format": 3, "entries": [ … ] }
 ```
 
 Each entry is an `id` and `type` of your own, a `source` to graft onto, and a `patch`. `id` is a Foundry document id, sixteen characters of `[a-zA-Z0-9]`; `pack` names which of your module's packs the result lands in.
@@ -18,16 +18,17 @@ Each entry is an `id` and `type` of your own, a `source` to graft onto, and a `p
     "name": "The Enforcer",
     "system": {
       "attributes": { "hp": { "value": 65 } },
-      "details": { "cr": null }
+      "details": { "cr": 4 }
     },
     "items": [
-      { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } }
+      { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } },
+      { "_id": "2TB9ZSIbtbi4UtSv", "_delete": true }
     ]
   }
 }
 ```
 
-In the patch, `null` deletes a key, per RFC 7386, and an array member carrying an `_id` patches the item it names while leaving the rest alone: here the captain's scimitar goes up a damage die, and the pistol and armor ride along untouched. [Patches](#patches) below has the full rules.
+In the patch, an array member carrying an `_id` patches the item it names and leaves the rest alone, and one carrying `_delete` drops it: here the captain's scimitar goes up a damage die, the pistol goes, and the armor rides along untouched. [Patches](#patches) below has the full rules.
 
 Building resolves the source, applies the patch, and creates the result under your id in your pack. If a source cannot be resolved, graft skips that entry and lists it in the report; every other entry still builds.
 
@@ -93,6 +94,16 @@ Patches use [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) (JSON Merge Patch
 
 **The one departure: arrays whose members all carry `_id` merge by that key. Everything else replaces.** Foundry's arrays are collections of embedded documents with no meaningful order, so changing one item's damage should not require restating forty, and should not break when the source reorders them.
 
+Merging by key makes an omitted member mean "leave it alone", so a removal is written explicitly:
+
+```json
+"items": [
+  { "_id": "2TB9ZSIbtbi4UtSv", "_delete": true }
+]
+```
+
+`_delete` is an instruction rather than data: the merge acts on it and drops it. Removing every member of a collection can also be written as an empty array, which replaces rather than merges.
+
 ### Embedded content is a graft too
 
 An embedded document can be somebody else's content as well, so an entry in a keyed array takes one of two shapes: a patch on an item already in the source, or a graft inside the graft, with a `source` and `patch` of its own.
@@ -155,7 +166,6 @@ Import-time migration is also less complete than the migration Foundry runs when
 
 ### Limits
 
-- **Removing an entry from a keyed array** is not expressible: an omitted entry means "leave it alone". Expressing removal would need RFC 6902 `remove`, which addresses by position.
 - **`null` resets, it does not remove.** The key does leave the patched data, but Foundry then loads it against a schema, and an absent field takes its declared initial value. True deletion only works where the schema does not describe the key, in practice `flags`.
 - **Sets serialise as ordered arrays.** `SetField` has no meaningful order but compares as a list, so a reordering reads as a change. Not handled, because guessing which arrays are Sets could silently drop a genuine reorder of a list that is ordered.
 - **Pruning removes only what graft built.** Deleting an entry from `grafts.json` removes the flagged document it built on the next build; documents an author placed in the pack by hand are never touched. An entry a transform skipped this run, a lapsed subscription say, still counts as declared, and graft leaves it alone.

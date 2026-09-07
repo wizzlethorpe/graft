@@ -13,8 +13,9 @@ const MODULE_ID = "graft";
  *
  * A newer file is refused rather than half-read: the fields it relies on would
  * be ignored silently, which is worse than saying the module needs a newer graft.
+ * Format 3 added `_delete`, which an older graft ignores, silently keeping the entry.
  */
-export const FORMAT = 2;
+export const FORMAT = 3;
 
 /** The format a grafts file declares, or null if what it declares is not one. Absent means the first. */
 export const formatOf = (parsed) => {
