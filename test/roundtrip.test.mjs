@@ -13,19 +13,21 @@ const CROSSBOW = "Compendium.phb.equipment.Item.phbLightCrossbo";
 const AMULET = "Compendium.dmg.equipment.Item.dmgAmuletOfHealt";
 const STATS = { coreVersion: "14.367", systemId: "dnd5e", systemVersion: "5.3.3" };
 
+// Every document in a pack sits in one of that pack's folders, and that id
+// means nothing anywhere else.
 const SOURCES = {
   [BANDIT]: {
-    _id: "mmBandit00000000", name: "Bandit", type: "npc", _stats: STATS,
+    _id: "mmBandit00000000", name: "Bandit", type: "npc", _stats: STATS, folder: "packFolderMM001",
     items: [{ _id: "itemScimitar0001", name: "Scimitar" }, { _id: "itemPistol000001", name: "Pistol" }],
   },
   [CROSSBOW]: {
-    _id: "phbLightCrossbo", name: "Light Crossbow", type: "weapon", _stats: STATS,
+    _id: "phbLightCrossbo", name: "Light Crossbow", type: "weapon", _stats: STATS, folder: "packFolderPHB01",
     system: { damage: "1d8", licensed: "PHB text" },
     effects: [{ _id: "fxShared00000001", name: "Crossbow Aura", type: "equipment",
                 system: { licensed: "DMG text" } }],
   },
   [AMULET]: {
-    _id: "dmgAmuletOfHealt", name: "Amulet of Health", type: "equipment", _stats: STATS,
+    _id: "dmgAmuletOfHealt", name: "Amulet of Health", type: "equipment", _stats: STATS, folder: "packFolderDMG01",
     system: { licensed: "DMG text" },
   },
 };

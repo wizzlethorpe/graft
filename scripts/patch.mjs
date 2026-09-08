@@ -291,9 +291,10 @@ export async function referenceSources(patch, { sourceOf, resolve, isWhole }) {
       // Ids dropped from both sides; spreading `_id: undefined` would leave the
       // key present and read as a change.
       const { _id: _mine, ...body } = entry;
-      const { _id: _theirs, ...theirBody } = stripVolatile(base);
-      // `base` is a document at its root, so its folder is world-local. `body`
-      // is already embedded, so its folder points inside an adventure.
+      // Stripped at the same depth as `body`, so a folder the member only
+      // inherited from the source's pack is not a difference. One inside an
+      // adventure still is.
+      const { _id: _theirs, ...theirBody } = stripVolatile(base, false);
       const inner = diff(theirBody, stripVolatile(body, false));
       if (!inner) return { _id: entry._id, source };
       // A referenced document can itself hold somebody else's content, which
