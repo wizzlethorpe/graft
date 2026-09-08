@@ -7,7 +7,7 @@
 
 import {
   applyPatch, currentWorld, diff, driftFromSource, driftWarnings, expandSources,
-  folderPath, folderSegments, referenceSources, sourceHash, stripVolatile,
+  folderPath, folderSegments, project, referenceSources, sourceHash, stripVolatile,
 } from "./patch.mjs";
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
@@ -284,7 +284,7 @@ async function hydrateOne(entry, target, { warnings, resolve, produced }) {
   }
 
   const at = await target.place(entry);
-  const patch = await expandSources(entry.patch ?? {}, resolve);
+  const patch = await expandSources(entry.patch ?? {}, resolve, recordSource);
   const data = applyPatch(base, patch);
   data._id = entry.id;
   recordSource(data, source);
@@ -426,7 +426,9 @@ export function summarizeValidation(err) {
  * which Foundry cannot resolve.
  */
 function recordSource(data, source) {
-  if (!source) return;
+  // A world uuid names a sibling built into this world and resolves nowhere
+  // else, so recording it would hand a reader a source they cannot have.
+  if (!source?.startsWith("Compendium.")) return;
   const inAdventure = parseAdventureSource(source);
   if (inAdventure) {
     foundry.utils.setProperty(data, "flags.graft.origin",
@@ -563,9 +565,11 @@ async function diffEntry(document) {
   const whole = new Set();
   const delta = diff(before, mine, whole) ?? {};
   const patch = await withRefs(delta, (id) => whole.has(id));
-  // Only when there is something to have drifted. A pure reference patches
-  // nothing, so its hash would be the same constant on every entry.
-  const hash = Object.keys(patch).length > 0 ? { sourceHash: sourceHash(before, patch) } : {};
+  // Only when there is something to have drifted. References and removals
+  // project to nothing, so their hash would be the same constant on every
+  // entry, and a constant compares equal forever.
+  const touched = project(before, patch);
+  const hash = Object.keys(touched).length > 0 ? { sourceHash: sourceHash(before, patch) } : {};
   return { ...base, source: sourceUuid, ...hash, patch };
 }
 

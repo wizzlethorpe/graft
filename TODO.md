@@ -40,6 +40,32 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
   origin nothing resolves. Writing each Adventure as soon as its last member is
   prepared would close it; not done, since it needs a Foundry-side rejection of
   a whole Adventure to matter.
+- An embedded source in the adventure form still travels whole, and the build
+  writes a record nothing reads. `recordSource` stamps `flags.graft.origin` on
+  the member, matching what it does for a top-level source, but
+  `embeddedSources` on the export side reads only `_stats.compendiumSource` and
+  `originOf` is only ever asked about the root, so **Copy graft** finds no
+  origin and ships the body. `adventureSourceUuid` already rebuilds the UUID
+  from an origin and a document type; what is missing is the type for an
+  embedded container key (`effects`, `pages`), which `ADVENTURE_FIELDS` does not
+  cover. Reachable whenever a document inside any installed Adventure is named
+  as an embedded source.
+- A nested sourced entry reusing an `_id` its outer source already carries comes
+  back with the fields that source supplied nulled out. The member has a prior,
+  so it diffs as a delta, but `whole` was set for the entire subtree, so
+  `referenceSources` references the delta and diffs it against the full inner
+  source. Reachable only when the outer source's copy already carries the fields
+  the inner one contributes. Building it back re-supplies them from the outer
+  source, so the result is a fat patch rather than a wrong document, until the
+  day the outer source drops that member. Scoping `isWhole` to each reference is
+  worse: the member stops being referenced and its body travels instead. Pinned
+  in `test/roundtrip.test.mjs`.
+- Upgrading past 0.11.0 can raise one false drift warning. Dropping an empty
+  `flags` from a stripped source changed what `project` hashes, so an entry
+  whose patch touches `flags` against a source with no flags of its own no
+  longer matches the `sourceHash` an older graft recorded. Measured at 2 entries
+  in 444 across the vaults in this workspace. **Copy graft** on the entry
+  refreshes the hash.
 - `ui` has no test coverage. `hydrate` and `modules` are covered through stubs
   where a decision lives there; `exportDiff` the same way.
 

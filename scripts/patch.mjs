@@ -121,8 +121,8 @@ function diffById(source, result, whole) {
   for (const entry of result) {
     const prior = before.get(entry._id);
     if (!prior) {
-      whole?.add(entry._id);
-      entries.push(structuredClone(entry));
+      // Everything nested inside a whole member is whole too.
+      entries.push(markWhole(structuredClone(entry), whole));
       continue;
     }
     const sub = diff(prior, entry, whole);
@@ -177,7 +177,9 @@ export function stripVolatile(value, root = true) {
     if (root && ROOT_ONLY.has(k)) continue;
     if (k === "flags" && isPlainObject(v)) {
       const { graft: _ours, ...rest } = v;
-      out[k] = stripVolatile(rest, false);
+      // Omitted when empty, like `ownership`: a `flags` holding nothing but
+      // ours, or nothing at all, must not read as a `flags` key either side.
+      if (Object.keys(rest).length > 0) out[k] = stripVolatile(rest, false);
     } else if (k === "ownership" && isPlainObject(v)) {
       const kept = Object.fromEntries(
         Object.entries(v).filter(([who]) => OWNERSHIP_KEEP.has(who)));
@@ -212,20 +214,26 @@ function isSourcedEntry(v) {
  * Runs before `applyPatch` so the merge stays synchronous. An unresolvable
  * source throws: a statblock silently missing the item it was built around is
  * worse than one that refuses to build and names the dependency.
+ *
+ * `record(member, source)` notes on the member where it came from. Without it
+ * the merge leaves nothing saying an item is somebody else's, and the next
+ * **Copy graft** ships its whole body instead of a reference.
  */
-export async function expandSources(patch, resolve) {
+export async function expandSources(patch, resolve, record) {
   if (Array.isArray(patch)) {
     return Promise.all(patch.map(async (entry) => {
-      if (!isSourcedEntry(entry)) return expandSources(entry, resolve);
+      if (!isSourcedEntry(entry)) return expandSources(entry, resolve, record);
       const base = await resolve(entry.source);
       if (!base) throw new Error(`embedded source ${entry.source} did not resolve`);
-      const inner = await expandSources(entry.patch ?? {}, resolve);
-          return { ...applyPatch(base, inner), _id: entry._id };
+      const inner = await expandSources(entry.patch ?? {}, resolve, record);
+      const member = { ...applyPatch(base, inner), _id: entry._id };
+      record(member, entry.source);
+      return member;
     }));
   }
   if (!isPlainObject(patch)) return patch;
   const out = {};
-  for (const [k, v] of Object.entries(patch)) out[k] = await expandSources(v, resolve);
+  for (const [k, v] of Object.entries(patch)) out[k] = await expandSources(v, resolve, record);
   return out;
 }
 
@@ -287,7 +295,10 @@ export async function referenceSources(patch, { sourceOf, resolve, isWhole }) {
       // `base` is a document at its root, so its folder is world-local. `body`
       // is already embedded, so its folder points inside an adventure.
       const inner = diff(theirBody, stripVolatile(body, false));
-      return { _id: entry._id, source, ...(inner ? { patch: inner } : {}) };
+      if (!inner) return { _id: entry._id, source };
+      // A referenced document can itself hold somebody else's content, which
+      // would otherwise travel whole inside the patch.
+      return { _id: entry._id, source, patch: await referenceSources(inner, { sourceOf, resolve, isWhole }) };
     }));
   }
   if (!isPlainObject(patch)) return patch;

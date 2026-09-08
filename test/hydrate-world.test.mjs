@@ -1,56 +1,20 @@
 import test, { describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
+import { installWorld, uninstallWorld } from "./foundry-stub.mjs";
+
 const base = { id: "actorBase0000001", type: "Actor", pack: "kit-actors", folder: "NPCs", patch: { name: "Guard", system: { hp: 10 } } };
 const child = { id: "actorChild000001", type: "Actor", pack: "kit-actors", source: "actorBase0000001", patch: { name: "Captain" } };
 const note = { id: "journal000000001", type: "JournalEntry", pack: "kit-journals", folder: "NPCs", patch: { name: "Notes" } };
 
 let collections;
 let folders;
-
-class FakeDoc {
-  constructor(data) { this.data = data; }
-  get name() { return this.data.name; }
-  get flags() { return this.data.flags; }
-  toObject() { return structuredClone(this.data); }
-  async update(data) { this.data = data; }
-}
-class ActorCls extends FakeDoc {
-  static documentName = "Actor";
-  static async fromImport(doc) { return new FakeDoc({ ...doc, _id: "reassigned0000ok" }); }
-  static async create(data) { collections.get("Actor").set(data._id, new FakeDoc(data)); }
-}
-class JournalCls extends ActorCls {
-  static documentName = "JournalEntry";
-  static async create(data) { collections.get("JournalEntry").set(data._id, new FakeDoc(data)); }
-}
+let WorldDoc;
 
 beforeEach(() => {
-  collections = new Map([["Actor", new Map()], ["JournalEntry", new Map()]]);
-  folders = [];
-  globalThis.game = { collections, folders };
-  globalThis.Folder = {
-    create: async ({ name, type, folder }) => {
-      const made = { id: `f${folders.length}`.padEnd(16, "0"), name, type, folder: folder ? { id: folder } : null };
-      folders.push(made);
-      return made;
-    },
-  };
-  globalThis.getDocumentClass = (name) => ({ Actor: ActorCls, JournalEntry: JournalCls })[name];
-  globalThis.foundry = { utils: { setProperty(o, p, v) {
-    const ks = p.split("."); let n = o;
-    for (const k of ks.slice(0, -1)) n = n[k] ??= {};
-    n[ks.at(-1)] = v;
-  } } };
-  // World uuids resolve, as they do in Foundry; nothing outside the world does.
-  globalThis.fromUuid = async (uuid) => {
-    const [type, id] = uuid.split(".");
-    return collections.get(type)?.get(id) ?? null;
-  };
+  ({ collections, folders, WorldDoc } = installWorld({ types: ["Actor", "JournalEntry"] }));
 });
-afterEach(() => {
-  for (const k of ["game", "Folder", "getDocumentClass", "foundry", "fromUuid"]) delete globalThis[k];
-});
+afterEach(uninstallWorld);
 
 async function run(entries) {
   const { hydrateWorld } = await import("../scripts/hydrate.mjs");
@@ -83,7 +47,7 @@ describe("hydrateWorld", () => {
   test("never overwrites a document no import wrote", async () => {
     // Dragged out of a graft pack with its id kept: it carries `built`, and
     // the reader may have edited it since.
-    collections.get("Actor").set("actorBase0000001", new FakeDoc({ _id: "actorBase0000001", name: "Mine", flags: { graft: { built: true } } }));
+    collections.get("Actor").set("actorBase0000001", new WorldDoc({ _id: "actorBase0000001", name: "Mine", flags: { graft: { built: true } } }));
     const { built, skipped } = await run([base]);
     assert.deepEqual(built, []);
     assert.match(skipped[0].reason, /Mine already has this id.*not overwritten/);
@@ -100,7 +64,7 @@ describe("hydrateWorld", () => {
   });
 
   test("never builds a sibling on a document no import wrote", async () => {
-    collections.get("Actor").set("actorBase0000001", new FakeDoc({ _id: "actorBase0000001", name: "Mine", flags: { graft: { built: true } }, system: { hp: 99 } }));
+    collections.get("Actor").set("actorBase0000001", new WorldDoc({ _id: "actorBase0000001", name: "Mine", flags: { graft: { built: true } }, system: { hp: 99 } }));
     const { built, skipped } = await run([child, base]);
     assert.deepEqual(built, []);
     assert.match(skipped.find((s) => s.id === "actorChild000001").reason, /did not resolve/);
@@ -108,7 +72,7 @@ describe("hydrateWorld", () => {
   });
 
   test("makes no folder for an entry that fails to prepare", async () => {
-    globalThis.getDocumentClass = () => class extends FakeDoc {
+    globalThis.getDocumentClass = () => class extends WorldDoc {
       static async fromImport() { throw new Error("cannot import"); }
       constructor() { super({}); throw new Error("cannot construct"); }
     };

@@ -10,6 +10,10 @@ import assert from "node:assert/strict";
 
 import { applyPatch, authoredGeneration, diff, driftFromSource, driftWarnings, expandSources, folderPath, folderSegments, isKeyedArray, project, referenceSources, sourceHash, stripVolatile } from "../scripts/patch.mjs";
 
+// These tests are about expansion, not about where a member came from; the
+// build supplies the recorder that answers that.
+const ignoreSource = () => {};
+
 const BANDIT = {
   _id: "mmBandit00000000",
   name: "Bandit",
@@ -248,7 +252,7 @@ test("expanding a pointer rebuilds the item on the reader's machine", async () =
       source: "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt",
       patch: { system: { equipped: true } },
     }],
-  }, resolve);
+  }, resolve, ignoreSource);
 
   const item = expanded.items[0];
   assert.equal(item._id, "IP7kWWdq5km8SZad", "our id, not the source's");
@@ -264,7 +268,7 @@ test("a nested source that does not resolve refuses loudly", async () => {
   // A statblock quietly missing the magic item it was built around is worse
   // than one that will not build and names the dependency.
   await assert.rejects(
-    () => expandSources({ items: [{ _id: "x", source: "Compendium.gone.pack.Item.nope" }] }, resolve),
+    () => expandSources({ items: [{ _id: "x", source: "Compendium.gone.pack.Item.nope" }] }, resolve, ignoreSource),
     /Compendium\.gone\.pack\.Item\.nope did not resolve/,
   );
 });
@@ -276,8 +280,23 @@ test("round trip through a reference reproduces the item", async () => {
   const sourceOf = () => "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt";
 
   const referenced = await referenceSources({ items: [mine] }, { sourceOf, resolve, isWhole: () => true });
-  const expanded = await expandSources(referenced, resolve);
+  const expanded = await expandSources(referenced, resolve, ignoreSource);
   assert.deepEqual(expanded.items[0], mine);
+});
+
+test("a member with no prior is whole all the way down", async () => {
+  // `whole` decides whether referencing a member is safe. Marking only the
+  // member's own id left anything nested inside it looking like a delta, so a
+  // source it carried was never referenced and its body travelled.
+  const whole = new Set();
+  diff({ items: [{ _id: "itemScimitar0001" }] }, {
+    items: [
+      { _id: "itemScimitar0001" },
+      { _id: "itemAmulet000001", effects: [{ _id: "fxAmuletAura0001" }] },
+    ],
+  }, whole);
+  assert.ok(whole.has("itemAmulet000001"), "the member itself");
+  assert.ok(whole.has("fxAmuletAura0001"), "and what it contains");
 });
 
 test("a class instance is opaque, not something to walk into", async () => {
@@ -456,6 +475,11 @@ test("our own flags do not travel, and other modules' still do", async () => {
   assert.deepEqual(out.flags.core, { sheetClass: "" });
   assert.ok(!("graft" in out.journal[0].flags), "at depth too");
   assert.deepEqual(out.journal[0].flags.other, { keep: 1 });
+
+  // Every build writes `flags.graft.built`. Leaving `{}` behind made an
+  // untouched document report a difference on every export.
+  const ours = stripVolatile({ name: "Built", flags: { graft: { built: true } } });
+  assert.ok(!("flags" in ours), "a flags holding nothing but ours is not a flags");
 });
 
 // ── reporting a validation failure ──────────────────────────────────────────

@@ -31,16 +31,14 @@ export function installFoundry({ uuids = {}, packs = {}, modules = {}, world = {
     const data = uuids[uuid];
     return data ? asDocument(data) : null;
   };
-  globalThis.foundry = {
-    utils: {
-      setProperty(obj, path, value) {
-        const keys = path.split(".");
-        let node = obj;
-        for (const k of keys.slice(0, -1)) node = node[k] ??= {};
-        node[keys.at(-1)] = value;
-      },
-    },
-  };
+  globalThis.foundry = { utils: { setProperty } };
+}
+
+function setProperty(obj, path, value) {
+  const keys = path.split(".");
+  let node = obj;
+  for (const k of keys.slice(0, -1)) node = node[k] ??= {};
+  node[keys.at(-1)] = value;
 }
 
 export function uninstallFoundry() {
@@ -63,4 +61,72 @@ export function asDocument(data, { pack = null, uuid = null } = {}) {
     folder: null,
     toObject: () => structuredClone(data),
   };
+}
+
+/**
+ * A world to build into: document collections, the folder list, and the globals
+ * `hydrateWorld` reaches for. `sources` are UUIDs that resolve outside the
+ * world, as a compendium does.
+ *
+ * `fromImport` hands back a different id, as Foundry's does, so a test can pin
+ * that graft assigns its own afterwards.
+ */
+export function installWorld({ types, sources = {} } = {}) {
+  const collections = new Map(types.map((t) => [t, new Map()]));
+  const folders = [];
+
+  class WorldDoc {
+    constructor(data) { this.data = data; }
+    get id() { return this.data._id; }
+    get name() { return this.data.name; }
+    get flags() { return this.data.flags; }
+    get _stats() { return this.data._stats; }
+    get pack() { return null; }
+    get documentName() { return this.data.__type; }
+    get folder() {
+      const find = (id) => folders.find((f) => f.id === id) ?? null;
+      const link = (f) => (f ? { name: f.name, get folder() { return link(find(f.folder?.id)); } } : null);
+      return link(find(this.data.folder));
+    }
+    toObject() { const { __type, ...rest } = structuredClone(this.data); return rest; }
+    async update(data) { this.data = { ...data, __type: this.data.__type }; }
+  }
+
+  globalThis.game = {
+    collections, folders,
+    release: { generation: 14 },
+    system: { id: "dnd5e", version: "5.3.3" },
+    modules: { get: () => null },
+  };
+  globalThis.Hooks = { callAll: () => {} };
+  globalThis.Folder = { create: async ({ name, type, folder }) => {
+    const made = { id: `f${folders.length}`.padEnd(16, "0"), name, type, folder: folder ? { id: folder } : null };
+    folders.push(made);
+    return made;
+  } };
+  globalThis.getDocumentClass = (name) => class extends WorldDoc {
+    static async fromImport(doc) { return new WorldDoc({ ...doc, _id: "reassigned0000ok", __type: name }); }
+    static async create(data) { collections.get(name).set(data._id, new WorldDoc({ ...data, __type: name })); }
+  };
+  globalThis.foundry = { utils: {
+    setProperty(obj, path, value) {
+      const keys = path.split(".");
+      let node = obj;
+      for (const k of keys.slice(0, -1)) node = node[k] ??= {};
+      node[keys.at(-1)] = value;
+    },
+  } };
+  globalThis.fromUuid = async (uuid) => {
+    if (sources[uuid]) return new WorldDoc(structuredClone(sources[uuid]));
+    const [type, id] = uuid.split(".");
+    return collections.get(type)?.get(id) ?? null;
+  };
+
+  return { collections, folders, WorldDoc };
+}
+
+export function uninstallWorld() {
+  uninstallFoundry();
+  delete globalThis.Folder;
+  delete globalThis.getDocumentClass;
 }

@@ -59,6 +59,8 @@ A `source` that is a bare document id names another entry in the same graft set.
 
 Graft uses the first source that resolves, so an author can prefer better content without requiring it. The entry fails only if none of them resolve. A list source records no `sourceHash`, because a hash is taken against the specific document the author diffed and a list does not say which one that was.
 
+**Copy graft** on the result names the one source that resolved, not the list. The built document came from one place and cannot say what the alternatives were, so an author re-copying an entry restores the fallbacks by hand.
+
 ## Packaging
 
 The pack an entry names, as declared in `module.json`, decides where it ends up. A pack declared with the entry's own `type` gets the entry as a document. A pack declared as `Adventure` gets one Adventure holding every entry that names it, whatever their types. Changing the manifest alone switches the same entries between browsable compendiums and a single import.
@@ -129,6 +131,7 @@ An embedded source naming a sibling is an ordering edge like a top-level one, so
 - **`folder`**, at the root only. A folder id is world-local; the entry's `folder` path carries the structure instead.
 - **`active`, `navOrder` and `thumb`**, at the root, which say where a Scene sat in the world it was copied from rather than what the scene is: which scene that world is looking at, where it sits in the navigation bar, and a path into that world's own generated thumbnails. `sort` is kept, since a graft may reasonably want to say where its output sits in a pack.
 - **`ownership`** is thinned rather than dropped. Per-user entries are world-local, so graft removes them; `default` stays, since it is how you say "players can see this".
+- **`flags.graft`**, graft's own record of where a copy came from, which would be a lie on the other end. A `flags` holding nothing else is dropped with it, so a built document does not read as having gained one.
 
 Nothing else is stripped, and in particular **no other module's flags**. Those are that module's data, and graft leaves them alone. A patch is a diff against a live document, so it carries whatever other modules have written on it: a flag one of them stamps in your world is a fact about your world, and it travels unless you take it out.
 
