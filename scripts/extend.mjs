@@ -4,12 +4,23 @@
 
 const PHASES = ["entries", "sources"];
 
+/**
+ * A registration from another module, checked. Returns it, so a collector
+ * reads as one line; `what` and `key` are what the three kinds differ in.
+ */
+export function registered(what, key, thing) {
+  if (typeof thing?.id !== "string" || !thing.id) throw new Error(`a graft ${what} needs an id`);
+  if (typeof thing[key] !== "function") {
+    throw new Error(`graft ${what} "${thing.id}" needs a ${key} function`);
+  }
+  return thing;
+}
+
 /** The transforms registered for one module's build, in the order they run. Collecting runs nothing. */
 export function collectTransforms(moduleId) {
   const transforms = [];
   const register = (t) => {
-    if (typeof t?.id !== "string" || !t.id) throw new Error("a graft transform needs an id");
-    if (typeof t.transform !== "function") throw new Error(`graft transform "${t.id}" needs a transform function`);
+    registered("transform", "transform", t);
     const phase = t.phase ?? PHASES[0];
     if (!PHASES.includes(phase)) throw new Error(`graft transform "${t.id}" has no phase "${t.phase}"`);
     transforms.push({ label: t.id, ...t, phase });
@@ -66,11 +77,7 @@ function normalize(result) {
 /** The export rewriters. Collecting runs nothing. */
 export function collectRewriters() {
   const rewriters = [];
-  Hooks.callAll("graftExport", (r) => {
-    if (typeof r?.id !== "string" || !r.id) throw new Error("a graft export rewriter needs an id");
-    if (typeof r.rewrite !== "function") throw new Error(`graft export rewriter "${r.id}" needs a rewrite function`);
-    rewriters.push(r);
-  });
+  Hooks.callAll("graftExport", (r) => rewriters.push(registered("export rewriter", "rewrite", r)));
   return rewriters;
 }
 

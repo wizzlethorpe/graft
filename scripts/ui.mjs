@@ -8,6 +8,7 @@ import { hydrate, exportDiff } from "./hydrate.mjs";
 import { FORMAT, graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
 import { parseAdventureSource, resolveAdventureSource } from "./origin.mjs";
 import { collectTransforms, runTransforms } from "./extend.mjs";
+import { placeAssets } from "./assets.mjs";
 import * as progress from "./progress.mjs";
 import { toYaml } from "./yaml.mjs";
 import { importGrafts } from "./import.mjs";
@@ -47,12 +48,13 @@ export async function promptForUnbuilt() {
 
   for (const module of graftModules()) {
     if (suppressed.has(module.id)) continue;
-    const missing = await unbuilt(module.id, { onRefused: sayRefused });
+    const { missing, assets } = await unbuilt(module.id, { onRefused: sayRefused });
     if (missing.length === 0) continue;
 
     const build = await foundry.applications.api.DialogV2.confirm({
       window: { title: t("GRAFT.PromptTitle", { module: module.title }) },
-      content: t("GRAFT.PromptBody", { module: module.title, count: missing.length }) + transformNotice(module.id),
+      content: t("GRAFT.PromptBody", { module: module.title, count: missing.length })
+        + downloadNotice(module.id, assets),
       yes: { label: t("GRAFT.PromptBuild") },
       no: { label: t("GRAFT.PromptLater") },
       modal: false,
@@ -68,7 +70,7 @@ export async function promptForUnbuilt() {
 
 /** Build one module and say what happened, on screen and in the console. */
 export async function buildAndReport(moduleId) {
-  const entries = await readGrafts(moduleId, { onRefused: sayRefused });
+  const { entries, assets } = await readGrafts(moduleId, { onRefused: sayRefused });
   if (entries.length === 0) {
     ui.notifications.warn(t("GRAFT.NoEntries", { module: moduleId }));
     return null;
@@ -76,8 +78,15 @@ export async function buildAndReport(moduleId) {
 
   const title = game.modules.get(moduleId)?.title ?? moduleId;
   progress.begin(`Graft: ${title}`);
-  let prepared, built, skipped, warnings, removed;
+  let placed, prepared, built, skipped, warnings, removed;
   try {
+    // Before transforms: an entry whose source is a file has nothing to
+    // resolve until the handler that fetches it has run.
+    placed = await placeAssets(assets, {
+      onPhase: progress.phase,
+      onFile: progress.step,
+      redownload: askRedownload,
+    });
     // Other modules rewrite entries before anything is built. Their failures
     // use the same shape as build failures, so the reader sees one report.
     prepared = await runTransforms(collectTransforms(moduleId), entries, {
@@ -98,8 +107,8 @@ export async function buildAndReport(moduleId) {
   } finally {
     progress.end();
   }
-  const allSkipped = [...prepared.skipped, ...skipped];
-  const allWarnings = [...prepared.warnings, ...warnings];
+  const allSkipped = [...placed.skipped, ...prepared.skipped, ...skipped];
+  const allWarnings = [...placed.warnings, ...prepared.warnings, ...warnings];
 
   // Building answers the prompt, so stop suppressing it: if entries go missing
   // later the reader should be asked again.
@@ -149,11 +158,18 @@ function groupByReporter(skipped) {
   return [...groups].sort((a, b) => (a[0] === null ? -1 : b[0] === null ? 1 : 0));
 }
 
-/** Said only when there is something to say, so it stays worth reading. */
-function transformNotice(moduleId) {
+/**
+ * What the build will reach outside the world for.
+ *
+ * Both halves matter: a file with an assets block downloads whether or not any
+ * transform runs, and promising otherwise is a promise graft then breaks.
+ */
+export function downloadNotice(moduleId, assets) {
   const names = collectTransforms(moduleId).map((tr) => tr.label);
-  if (names.length === 0) return t("GRAFT.PromptNoDownload");
-  return t("GRAFT.PromptTransforms", { transforms: names.join(", ") });
+  if (names.length > 0) return t("GRAFT.PromptTransforms", { transforms: names.join(", ") });
+  return Object.keys(assets ?? {}).length > 0
+    ? t("GRAFT.PromptAssets")
+    : t("GRAFT.PromptNoDownload");
 }
 
 /**
@@ -243,13 +259,13 @@ async function builtLink(uuid) {
 
 // ── copying ─────────────────────────────────────────────────────────────────
 
-/** One document to the clipboard, as a graft entry. */
+/** One document to the clipboard, as a whole grafts file. */
 export async function copyOne(doc) {
   try {
     const entry = withPack(await exportDiff(doc));
     // JSON, because grafts.json is JSON and what you copy should be what you
     // paste. YAML is for the other destination, a vault page's frontmatter.
-    const text = JSON.stringify(entry, null, 2);
+    const text = JSON.stringify({ format: FORMAT, entries: [entry] }, null, 2);
     await game.clipboard.copyPlainText(text);
     ui.notifications.info(
       Object.keys(entry.patch).length > 0
@@ -289,8 +305,7 @@ function fileName(label) {
 /**
  * Download the same entries Copy would have put on the clipboard.
  *
- * Wrapped in the file object, even for one document: this writes a whole
- * `grafts.json`, where Copy writes entries to paste into one.
+ * Saves the same whole `grafts.json` Copy puts on the clipboard.
  */
 export async function downloadGrafts(docs, label) {
   if (docs.length === 0) {
@@ -323,7 +338,7 @@ export async function copyMany(docs, label) {
   }
   const { entries, failed } = await graftsFor(docs);
 
-  await game.clipboard.copyPlainText(JSON.stringify(entries, null, 2));
+  await game.clipboard.copyPlainText(JSON.stringify({ format: FORMAT, entries }, null, 2));
   reportExport(entries, failed, label, "GRAFT.CopiedMany", "GRAFT.CopiedManySkipped");
   return entries;
 }
@@ -338,6 +353,20 @@ async function confirmBulk(count, label) {
 }
 
 // ── importing grafts ────────────────────────────────────────────────────────
+
+/**
+ * Whether to fetch every asset again when some are already on disk. Closing
+ * the dialog keeps them.
+ */
+export async function askRedownload(already, total) {
+  const all = await foundry.applications.api.DialogV2.confirm({
+    window: { title: t("GRAFT.RedownloadTitle") },
+    content: `<p>${t("GRAFT.RedownloadIntro", { already, total })}</p>`,
+    yes: { label: t("GRAFT.RedownloadAll") },
+    no: { label: t("GRAFT.RedownloadKeep"), default: true },
+  }).catch(() => false);
+  return all === true;
+}
 
 /** Build pasted or file-loaded grafts into the world.*/
 export async function promptForImport() {
@@ -378,7 +407,7 @@ export async function promptForImport() {
     return null;
   }
   try {
-    const result = await importGrafts(parsed);
+    const result = await importGrafts(parsed, { redownload: askRedownload });
     await reportBuild(t("GRAFT.ImportTitle"), result.built, result.skipped, result.warnings);
     return result;
   } catch (err) {
@@ -444,70 +473,63 @@ export const CONTEXT_TYPES = [
 export function addCopyGraftContext(documentName, menuItems) {
   if (!game.user.isGM || !Array.isArray(menuItems)) return;
   if (menuItems.some((i) => i?.name === t("GRAFT.CopyOne"))) return;
-  menuItems.push({
-    name: t("GRAFT.CopyOne"),
-    icon: '<i class="fa-solid fa-code-branch"></i>',
+  const item = (key, icon, act) => ({
+    name: t(key),
+    icon,
     callback: async (target) => {
       const el = elementOf(target);
       const id = el?.dataset?.documentId ?? el?.dataset?.entryId;
       const doc = id ? game.collections.get(documentName)?.get(id) : null;
-      if (doc) await copyOne(doc);
+      if (doc) await act(doc);
       else ui.notifications.warn(t("GRAFT.NoDocument"));
     },
   });
-  menuItems.push({
-    name: t("GRAFT.ExportOne"),
-    icon: '<i class="fa-solid fa-file-arrow-down"></i>',
-    callback: async (target) => {
-      const el = elementOf(target);
-      const id = el?.dataset?.documentId ?? el?.dataset?.entryId;
-      const doc = id ? game.collections.get(documentName)?.get(id) : null;
-      if (doc) await downloadGrafts([doc], doc.name);
-      else ui.notifications.warn(t("GRAFT.NoDocument"));
-    },
-  });
+  menuItems.push(
+    item("GRAFT.CopyOne", '<i class="fa-solid fa-code-branch"></i>', (doc) => copyOne(doc)),
+    item("GRAFT.ExportOne", '<i class="fa-solid fa-file-arrow-down"></i>',
+      (doc) => downloadGrafts([doc], doc.name)),
+  );
 }
 
 /** And Copy grafts on a folder, which is how people group work. */
 export function addCopyFolderGrafts(html, menuItems) {
   if (!game.user.isGM || !Array.isArray(menuItems)) return;
   if (menuItems.some((i) => i?.name === t("GRAFT.CopyMany"))) return;
-  menuItems.push({
-    name: t("GRAFT.CopyMany"),
-    icon: '<i class="fa-solid fa-clipboard-list"></i>',
+  const item = (key, icon, act) => ({
+    name: t(key),
+    icon,
     callback: async (target) => {
-      const el = elementOf(target);
-      const folder = folderFrom(el);
-      // World folders only. Copying runs one way on purpose: the world is where
-      // you build, the compendium is where graft puts things.
-      if (folder && (folder.pack || folder.type === "Compendium")) {
-        return ui.notifications.warn(
-          t("GRAFT.WorldOnly"));
-      }
-      if (!folder) {
-        // The dataset is logged because which attribute this version uses is
-        // invisible from a notification.
-        console.warn("Graft | could not identify a folder from", el,
-          "dataset:", el?.dataset ? { ...el.dataset } : el);
-        return ui.notifications.warn(t("GRAFT.NoFolder"));
-      }
+      const folder = worldFolder(target);
+      if (!folder) return;
       const docs = folderContents(folder);
-      if (await confirmBulk(docs.length, folder.name)) await copyMany(docs, folder.name);
+      if (await confirmBulk(docs.length, folder.name)) await act(docs, folder.name);
     },
   });
-  menuItems.push({
-    name: t("GRAFT.ExportMany"),
-    icon: '<i class="fa-solid fa-file-arrow-down"></i>',
-    callback: async (target) => {
-      const folder = folderFrom(elementOf(target));
-      if (folder && (folder.pack || folder.type === "Compendium")) {
-        return ui.notifications.warn(t("GRAFT.WorldOnly"));
-      }
-      if (!folder) return ui.notifications.warn(t("GRAFT.NoFolder"));
-      const docs = folderContents(folder);
-      if (await confirmBulk(docs.length, folder.name)) await downloadGrafts(docs, folder.name);
-    },
-  });
+  menuItems.push(
+    item("GRAFT.CopyMany", '<i class="fa-solid fa-clipboard-list"></i>', copyMany),
+    item("GRAFT.ExportMany", '<i class="fa-solid fa-file-arrow-down"></i>', downloadGrafts),
+  );
+}
+
+/** The world folder a menu item was opened on, or null after saying why not. */
+function worldFolder(target) {
+  const el = elementOf(target);
+  const folder = folderFrom(el);
+  // Copying runs one way on purpose: the world is where you build, the
+  // compendium is where graft puts things.
+  if (folder && (folder.pack || folder.type === "Compendium")) {
+    ui.notifications.warn(t("GRAFT.WorldOnly"));
+    return null;
+  }
+  if (!folder) {
+    // The dataset is logged because which attribute this version uses is
+    // invisible from a notification.
+    console.warn("Graft | could not identify a folder from", el,
+      "dataset:", el?.dataset ? { ...el.dataset } : el);
+    ui.notifications.warn(t("GRAFT.NoFolder"));
+    return null;
+  }
+  return folder;
 }
 
 /**

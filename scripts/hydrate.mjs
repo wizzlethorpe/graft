@@ -6,13 +6,15 @@
 // pack, writing a document.
 
 import {
-  applyPatch, currentWorld, diff, driftFromSource, driftWarnings, expandSources,
-  folderPath, folderSegments, project, referenceSources, sourceHash, stripVolatile,
+  applyPatch, authoredGeneration, currentWorld, diff, driftFromSource, driftWarnings,
+  expandSources, folderPath, folderSegments, project, referenceSources, sourceHash,
+  stripVolatile,
 } from "./patch.mjs";
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
 } from "./origin.mjs";
 import { planOrder, entryUuid, adventureId, sourcesOf } from "./plan.mjs";
+import { dataUrl } from "./paths.mjs";
 import { rewriteEntry } from "./extend.mjs";
 import { adventurePacks } from "./modules.mjs";
 import { MEMBER_FIELDS, assembleAdventure, adventureFolderOf, membersOf } from "./assemble.mjs";
@@ -80,7 +82,14 @@ async function build(target, entries, onProgress) {
   // uuid -> data this build produced. A sibling inside an Adventure is never
   // written on its own, so it can only be resolved from here.
   const produced = new Map();
-  const resolve = async (uuid) => produced.get(uuid) ?? target.resolve(uuid);
+  // Read once per build, not once per use: within one build the answer to a
+  // uuid cannot change, and the same one is asked for dozens of times.
+  const seen = new Map();
+  const resolve = async (uuid) => {
+    if (produced.has(uuid)) return produced.get(uuid);
+    if (!seen.has(uuid)) seen.set(uuid, target.resolve(uuid));
+    return seen.get(uuid);
+  };
   for (const [i, entry] of order.entries()) {
     onProgress?.(i + 1, order.length, entry);
     try {
@@ -156,7 +165,10 @@ function documentPlace({ segments, type, folders, find, context }) {
  * dragged out of a graft pack carries `built` but not this.
  */
 function worldTarget() {
-  const foreign = (uuid, data) => !uuid.startsWith("Compendium.") && !data.flags?.graft?.imported;
+  // A file an asset handler placed is not a world document, so the rule that
+  // protects the reader's own content does not apply to it.
+  const foreign = (uuid, data) =>
+    !uuid.startsWith("Compendium.") && !isFileSource(uuid) && !data.flags?.graft?.imported;
   return {
     uuid: (entry) => `${entry.type}.${entry.id}`,
     resolve: async (uuid) => {
@@ -250,10 +262,31 @@ function idsByPack(entries) {
  * `.toObject()` is not optional; see `isPlainObject` in patch.mjs.
  */
 export async function resolveData(uuid) {
+  if (isFileSource(uuid)) return readJsonFile(uuid);
   const fromAdventure = await resolveAdventureSource(uuid);
   if (fromAdventure !== null) return fromAdventure;
   const doc = await fromUuid(uuid);
   return doc ? doc.toObject() : null;
+}
+
+/** A source naming a placed file: no document type or id ends in `.json`. */
+export function isFileSource(source) {
+  return typeof source === "string" && /\.json$/i.test(source);
+}
+
+/**
+ * Null rather than a throw for anything unreadable: a file source can sit in a
+ * fallback list, and a throw would abort before the next candidate is tried.
+ */
+async function readJsonFile(path) {
+  try {
+    const res = await fetch(dataUrl(path));
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && typeof data === "object" && !Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 async function hydrateOne(entry, target, { warnings, resolve, produced }) {
@@ -271,7 +304,9 @@ async function hydrateOne(entry, target, { warnings, resolve, produced }) {
     }
     if (!source) {
       throw new Error(candidates.length === 1
-        ? `source ${candidates[0]} did not resolve; is its module installed and enabled?`
+        ? isFileSource(candidates[0])
+          ? `source ${candidates[0]} is not on disk, or holds no document; did its asset handler run?`
+          : `source ${candidates[0]} did not resolve; is its module installed and enabled?`
         : `none of ${candidates.length} sources resolved: ${candidates.join(", ")}`);
     }
     warnings.push(...driftWarnings(entry.id, base, currentWorld()));
@@ -328,7 +363,10 @@ async function writeDocument(find, cls, context, prepared) {
   if (existing) {
     // Compared, not remembered: a stored digest goes stale across a Foundry
     // upgrade or a hand edit in the pack. A pack write costs ~234ms.
-    if (!identical(prepared, existing.toObject())) {
+    const stored = existing.toObject();
+    const changed = difference(prepared, stored);
+    if (changed !== null || outdated(stored, game.release.generation)) {
+      console.log(`Graft | rewrote ${prepared._id}: ${changed ?? "written by an older Foundry"}`);
       await existing.update(prepared, { diff: false, recursive: false });
     }
   } else {
@@ -373,24 +411,104 @@ async function writeAdventure(moduleId, packName, members, declaredIds, touched)
   await writeDocument((id) => pack.getDocument(id), cls, { pack: collection }, prepared);
 }
 
-/** Written afresh by Foundry on every save, so never a real difference. */
-const RESAVED = new Set(["modifiedTime", "lastModifiedBy"]);
+/**
+ * The one `_stats` key graft writes, and so the only one worth comparing.
+ * Foundry writes the rest whatever the document said. What the versions there
+ * do say is read by `outdated`.
+ */
+const COMPARED_STATS = new Set(["compendiumSource"]);
 
-/** Key order is not a difference; two schemas can emit the same data either way. */
-function ordered(value) {
-  if (Array.isArray(value)) return value.map(ordered);
+/**
+ * A document projected onto what a comparison should see: keys in a fixed
+ * order, since two schemas can emit the same data either way, `_stats` down to
+ * what graft writes, and no empty objects, which a system's flag scaffolding
+ * adds and a merge patch cannot express anyway. Embedded pages and items carry
+ * their own `_stats`, which is why this applies at every depth.
+ */
+function settled(value, inStats = false) {
+  if (Array.isArray(value)) return value.map((v) => settled(v));
   if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) return value;
   const out = {};
-  for (const k of Object.keys(value).sort()) out[k] = ordered(value[k]);
+  for (const k of Object.keys(value).sort()) {
+    if (inStats && !COMPARED_STATS.has(k)) continue;
+    const v = settled(value[k], k === "_stats");
+    if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) continue;
+    out[k] = v;
+  }
   return out;
 }
 
-/** Whether writing `prepared` over `existing` would leave anything different. */
-export function identical(prepared, existing) {
-  const settled = ({ _stats, ...rest }) => ordered(_stats && typeof _stats === "object"
-    ? { ...rest, _stats: Object.fromEntries(Object.entries(_stats).filter(([k]) => !RESAVED.has(k))) }
-    : rest);
-  return JSON.stringify(settled(prepared)) === JSON.stringify(settled(existing));
+const LOOKS_HTML = /<[a-z][^>]*>/i;
+const TAG = /<[a-zA-Z][a-zA-Z0-9-]*(?:"[^"]*"|'[^']*'|[^>"'])*>/g;
+const EMPTY_ATTRIBUTE = /\s+[a-zA-Z][a-zA-Z0-9-]*=""/g;
+
+/**
+ * The one string both forms of an HTML field settle on.
+ *
+ * `cleanHTML` is the client twin of the sanitiser Foundry runs server-side on
+ * write. Empty attributes are where the two disagree: the server drops
+ * `hidden=""` and bares `data-link=""`, the browser writes both as `x=""`.
+ */
+function canonical(html) {
+  return foundry.utils.cleanHTML(html)
+    .replace(TAG, (tag) => tag.replace(EMPTY_ATTRIBUTE, ""));
+}
+
+/** Both sides of a comparison with their HTML fields made comparable. */
+function sanitized(value) {
+  if (typeof value === "string") return LOOKS_HTML.test(value) ? canonical(value) : value;
+  if (Array.isArray(value)) return value.map(sanitized);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitized(v)]));
+}
+
+/** The first path at which two settled documents differ, or null. */
+function walk(a, b, path) {
+  const plain = (v) => v && typeof v === "object" && !Array.isArray(v)
+    && Object.getPrototypeOf(v) === Object.prototype;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return `${path}.length`;
+    for (let i = 0; i < a.length; i++) {
+      const at = walk(a[i], b[i], `${path}[${i}]`);
+      if (at) return at;
+    }
+    return null;
+  }
+  if (plain(a) && plain(b)) {
+    for (const k of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+      if (!(k in a)) return `${path}.${k} (only in the stored one)`;
+      if (!(k in b)) return `${path}.${k} (only in the built one)`;
+      const at = walk(a[k], b[k], `${path}.${k}`);
+      if (at) return at;
+    }
+    return null;
+  }
+  return JSON.stringify(a) === JSON.stringify(b) ? null : (path || "(root)");
+}
+
+/**
+ * Where writing `prepared` over `existing` would change something, named, or
+ * null if it would change nothing.
+ *
+ * The HTML pass costs a parse per field, so it is only paid once the plain
+ * comparison has found something.
+ */
+export function difference(prepared, existing) {
+  const a = settled(prepared);
+  const b = settled(existing);
+  if (JSON.stringify(a) === JSON.stringify(b)) return null;
+  const cleanA = sanitized(a);
+  const cleanB = sanitized(b);
+  return JSON.stringify(cleanA) === JSON.stringify(cleanB) ? null : walk(cleanA, cleanB, "");
+}
+
+/**
+ * Whether Foundry last wrote `stored` under an older generation, which makes
+ * rebuilding it the thing that migrates it.
+ */
+export function outdated(stored, generation) {
+  const authored = authoredGeneration(stored);
+  return authored !== null && authored < generation;
 }
 
 /**

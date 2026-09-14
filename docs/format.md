@@ -3,7 +3,7 @@
 A graft module declares its entries in `grafts.json`, an object holding the format it was written for and an `entries` list, always a list even for one document:
 
 ```json
-{ "format": 3, "entries": [ … ] }
+{ "format": 4, "entries": [ … ], "assets": { … } }
 ```
 
 Each entry is an `id` and `type` of your own, a `source` to graft onto, and a `patch`. `id` is a Foundry document id, sixteen characters of `[a-zA-Z0-9]`; `pack` names which of your module's packs the result lands in.
@@ -41,6 +41,12 @@ Building resolves the source, applies the patch, and creates the result under yo
 Folder ids do not survive to another machine, but the folder structure does. Graft creates folders during the build and matches them by name and parent, so renaming one by hand survives the next build.
 
 **`source`** is optional. Without one, the patch is the whole document, so a graft module can also carry original content. A `source` that is present but empty is an error.
+
+A `source` may also be a path to a JSON file that an asset handler placed, recognised by its `.json` ending: no document type or id ends that way, and a UUID has no path. The file is the base document the patch applies over, so content that lives outside a compendium is a source like any other.
+
+```json
+"source": "graft/my-vault/bandit-captain.json"
+```
 
 A `source` that is a bare document id names another entry in the same graft set. The form is unambiguous: no document type name is sixteen characters, and a bare id is not a UUID. It does not encode the module id or the pack, so it survives a module rename and works when the file is imported into another world. Two entries with the same id make a bare id ambiguous, and graft reports that as an error.
 
@@ -186,3 +192,39 @@ Grafting onto a graft is not a special case. Another author names your output th
 Order does matter. `planOrder` sorts entries so that anything grafted onto a sibling in the same module is built after it, and refuses two entries that graft onto each other rather than half-building them. Sources outside the module need no sequencing; Foundry already reports a missing dependency.
 
 The open risk is drift: if the base you built on is rebuilt against a new source, your patch may still apply and produce something different.
+
+## Assets
+
+`assets` names files that have to be on disk before anything builds: art an entry points at, and JSON files an entry uses as its `source`. It is an object keyed by handler, and each key holds whatever that handler needs.
+
+```json
+"assets": {
+  "http": {
+    "auth": { "https://notes.example.com": "<bearer token>" },
+    "files": [
+      { "source": "https://notes.example.com/maps/harbor.webp?v=8f2c1a", "destination": "graft/my-vault/harbor.webp", "size": 812004 }
+    ]
+  }
+}
+```
+
+Graft ships the `http` handler; a module registers its own with [`graftAssets`](hooks.md). A key no installed handler claims is one line in the report, and the entries that needed those files then fail on their own with the source they could not resolve.
+
+A handler only places files. It never rewrites entries, so an entry naming a placed file has to name the path the handler will put it at.
+
+**`http`** takes `files`, each `{ source, destination, size }`, and an optional `auth` mapping an origin to a bearer token. Versioning belongs in the source URL, as a query parameter or any other scheme; graft treats the URL as opaque and only compares it for equality. `size` is the file's byte length, used as a fallback when nothing is known about a file already on disk.
+
+`source` may be a list of alternatives, and an alternative may name a file inside a zip with a fragment:
+
+```json
+{ "source": ["https://example.com/art.zip?v=3#maps/harbor.webp", "https://example.com/maps/harbor.webp"],
+  "destination": "graft/my-module/maps/harbor.webp", "size": 812004 }
+```
+
+A fragment never reaches the server, so it cannot collide with the query a version lives in. Graft fetches a zip whole when at least half the files naming it need fetching, so a first import takes the zip and a rebuild with one changed file takes that file's own URL instead. A file whose only sources are zip members takes its zip regardless. Whatever a zip cannot supply, missing or unreadable, falls back to the file's own URL. Zips must be stored or deflated; zip64 is refused.
+
+A file is fetched when it is not on disk, when the record says it was placed from a URL the file no longer lists, or when its ETag has moved since graft wrote it. Otherwise it is left alone. The record lives at `graft/placed.json` and holds every source a destination listed when it was written, and its ETag. A file is current when any source it lists now is one it listed then, so one that moved between zips is not fetched again. Deleting the record makes the next build re-check everything against `size` alone.
+
+This record is the one place graft keeps state rather than reading reality, because the reality here cannot be read: a data directory has no listing that says which URL a file came from, and Foundry's `FilePicker` has no delete, so a wrong answer cannot be cleaned up. The record is advisory either way, since every check still goes to the file on disk.
+
+When some files are already on disk, graft asks once whether to keep them and fetch only what changed, or download everything again.

@@ -6,7 +6,7 @@
 
 **3. Build in your world, the ordinary way.** Import a monster and edit it, drag items onto it, create your own documents. Nothing in this step is graft-specific.
 
-**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Paste the result into the `entries` list in `grafts.json`, beside your `module.json`.
+**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Either copies a whole `grafts.json`: keep it as the file beside your `module.json`, or lift its `entries` into the one you already have.
 
 **5. Build**, from the prompt on world load or from **Build grafts** in your pack's window header, and read the report.
 
@@ -72,7 +72,7 @@ A pack declared as `Adventure` collects every entry that names it into one Adven
 A grafts file is an object, not a bare list:
 
 ```json
-{ "format": 3, "entries": [ … ] }
+{ "format": 4, "entries": [ … ] }
 ```
 
 `format` is the entry format version. Absent means 1. Format 1 files still read; only their `type: "Adventure"` entries are refused. A file with a newer format than this graft understands is skipped, with a log line saying graft needs updating.

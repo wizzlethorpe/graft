@@ -2,6 +2,7 @@
 // at world collections rather than a module's packs.
 
 import { hydrateWorld } from "./hydrate.mjs";
+import { placeAssets } from "./assets.mjs";
 import { FORMAT, readFile } from "./modules.mjs";
 import { rewriteSources } from "./patch.mjs";
 import { collectTransforms, runTransforms } from "./extend.mjs";
@@ -47,25 +48,13 @@ export function localiseSources(entries) {
 }
 
 /**
- * Entries from one entry, a list, or a grafts file. Returns `readFile`'s shape.
- *
- * A list carries no format and is read as the current one: it is what Copy
- * grafts writes.
- */
-export function graftsIn(parsed) {
-  if (Array.isArray(parsed)) return { entries: parsed };
-  if (typeof parsed?.id === "string") return { entries: [parsed] };
-  return readFile(parsed);
-}
-
-/**
- * Build pasted grafts into the world. Transforms run under `"world"` as the
- * module id.
+ * Build a pasted grafts file into the world. Transforms run under `"world"` as
+ * the module id.
  *
  * @returns `{ built, skipped, warnings }`.
  */
-export async function importGrafts(parsed) {
-  const file = graftsIn(parsed);
+export async function importGrafts(parsed, { redownload } = {}) {
+  const file = readFile(parsed);
   if (file.error === "new-format") {
     throw new Error(t("GRAFT.ImportFormat", { format: file.format, reads: FORMAT }));
   }
@@ -75,6 +64,10 @@ export async function importGrafts(parsed) {
 
   progress.begin(`Graft: ${t("GRAFT.ImportTitle")}`);
   try {
+    // Before planning: a file source resolves to nothing until it is placed.
+    const assets = await placeAssets(file.assets, {
+      onPhase: progress.phase, onFile: progress.step, redownload,
+    });
     const prepared = await runTransforms(collectTransforms(WORLD), localiseSources(declared), {
       onTransform: (tr) => progress.phase(tr.label),
     });
@@ -86,8 +79,8 @@ export async function importGrafts(parsed) {
     });
     return {
       ...result,
-      skipped: [...prepared.skipped, ...result.skipped],
-      warnings: [...prepared.warnings, ...result.warnings],
+      skipped: [...assets.skipped, ...prepared.skipped, ...result.skipped],
+      warnings: [...assets.warnings, ...prepared.warnings, ...result.warnings],
     };
   } finally {
     progress.end();

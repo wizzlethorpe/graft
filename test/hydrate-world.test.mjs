@@ -86,3 +86,69 @@ describe("hydrateWorld", () => {
     assert.match(skipped[0].reason, /not a document type a world holds/);
   });
 });
+
+describe("a file source", () => {
+  const savedFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = savedFetch; });
+
+  /** Serve `files` at the routes an asset handler would have placed them at. */
+  const serve = (files) => {
+    globalThis.fetch = async (url) => {
+      // dataUrl encodes each segment and cache-busts, so undo both to look up.
+      const path = decodeURIComponent(String(url).split("?")[0]).replace(/^\//, "");
+      const body = files[path];
+      return body
+        ? { ok: true, json: async () => body }
+        : { ok: false, json: async () => null };
+    };
+  };
+
+  test("a source ending in .json is read off disk, not looked up as a uuid", async () => {
+    serve({ "graft/vault/guard.json": { name: "Guard", system: { hp: 10 } } });
+    const { skipped } = await run([{
+      id: "actorFile0000001", type: "Actor",
+      source: "graft/vault/guard.json", patch: { name: "Captain" },
+    }]);
+    assert.deepEqual(skipped, []);
+    const built = actor("actorFile0000001");
+    assert.equal(built.name, "Captain", "the patch applied over the file's contents");
+    assert.equal(built.system.hp, 10, "the file supplied the base document");
+  });
+
+  test("a file a handler never placed skips that entry and says so", async () => {
+    serve({});
+    const { built, skipped } = await run([{
+      id: "actorFile0000002", type: "Actor",
+      source: "graft/vault/missing.json", patch: { name: "Nobody" },
+    }]);
+    assert.deepEqual(built, []);
+    assert.equal(skipped.length, 1);
+    assert.match(skipped[0].reason, /is not on disk/);
+  });
+});
+
+describe("resolving sources", () => {
+  const savedFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = savedFetch; });
+
+  test("reads each source once, however many entries graft onto it", async () => {
+    // A vault's NPCs share a handful of statblocks: one Southaven build asked
+    // for the same commoner forty times.
+    const reads = [];
+    const base = { name: "Commoner", type: "npc", system: { hp: 4 } };
+    globalThis.fromUuid = async (uuid) => {
+      reads.push(uuid);
+      return { toObject: () => ({ ...base }) };
+    };
+    const entries = ["a", "b", "c"].map((n, i) => ({
+      id: `actorShared0000${i}`, type: "Actor",
+      source: "Compendium.mm.actors.Actor.mmCommoner000000",
+      patch: { name: `NPC ${n}` },
+    }));
+    const { skipped } = await run(entries);
+    assert.deepEqual(skipped, []);
+    assert.equal(reads.length, 1, `read the same source ${reads.length} times`);
+    assert.equal(actor("actorShared00000").system.hp, 4, "the cached copy still supplied the base");
+    assert.equal(actor("actorShared00002").name, "NPC c");
+  });
+});

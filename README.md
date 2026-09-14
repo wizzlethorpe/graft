@@ -17,7 +17,7 @@ To install, simply search for **Graft** in Foundry's *Install Module* dialog.
 
 ## An entry
 
-A graft module declares its entries in `grafts.json`, an object holding the format it was written for and an `entries` list. Each entry is an `id` and `type` of your own, the `pack` of yours the result lands in, a `source` to graft onto, and a `patch`.
+A graft module declares its entries in `grafts.json`, an object holding the format it was written for, an `entries` list, and an optional `assets` block naming files to fetch first. Each entry is an `id` and `type` of your own, the `pack` of yours the result lands in, a `source` to graft onto, and a `patch`.
 
 ```json
 {
@@ -47,7 +47,7 @@ Whether entries become documents in a compendium or one importable Adventure is 
 
 1. Make a module declaring your packs; `examples/graft-example/` is a working one. Restart the world so Foundry reads the manifest.
 2. Build your content in the world, the ordinary way: import, edit, drag items on.
-3. Right-click a document or folder for **Copy graft** and paste the result into the `entries` list in `grafts.json`.
+3. Right-click a document or folder for **Copy graft**. It copies a whole `grafts.json`: keep it as your file, or lift its `entries` into the one you have.
 4. Build, from the prompt on world load or from **Build grafts** in a pack window's header, and read the report.
 5. Test what a reader without your sources gets: disable a module you graft onto and build again.
 
@@ -72,6 +72,9 @@ scripts/patch.mjs      the format: applyPatch, diff, stripVolatile. Pure.
 scripts/plan.mjs       ids, UUIDs, and build order for chains.
 scripts/assemble.mjs   folds entries aimed at an Adventure pack into one Adventure. Pure.
 scripts/extend.mjs     collects and runs pre-build transforms and export rewriters.
+scripts/assets.mjs     asset handlers, and the built-in http one.
+scripts/zip.mjs        reads a zip in the browser, for the http handler. Pure.
+scripts/paths.mjs      a Foundry data path as a URL. Pure.
 scripts/yaml.mjs       clipboard output. Pure.
 scripts/i18n.mjs       localised text.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.

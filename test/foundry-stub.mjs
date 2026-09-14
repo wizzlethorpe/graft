@@ -31,7 +31,7 @@ export function installFoundry({ uuids = {}, packs = {}, modules = {}, world = {
     const data = uuids[uuid];
     return data ? asDocument(data) : null;
   };
-  globalThis.foundry = { utils: { setProperty } };
+  globalThis.foundry = { utils: { setProperty, cleanHTML: (html) => html } };
 }
 
 function setProperty(obj, path, value) {

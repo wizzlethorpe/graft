@@ -14,8 +14,10 @@ const MODULE_ID = "graft";
  * A newer file is refused rather than half-read: the fields it relies on would
  * be ignored silently, which is worse than saying the module needs a newer graft.
  * Format 3 added `_delete`, which an older graft ignores, silently keeping the entry.
+ * Format 4 added `assets`, which an older graft ignores, leaving every entry
+ * that names a fetched file unresolvable.
  */
-export const FORMAT = 3;
+export const FORMAT = 4;
 
 /** The format a grafts file declares, or null if what it declares is not one. Absent means the first. */
 export const formatOf = (parsed) => {
@@ -39,7 +41,11 @@ export function readFile(parsed) {
   if (format > FORMAT) return { error: "new-format", format };
   const entries = entriesIn(parsed);
   if (!entries) return { error: "no-entries" };
-  return { entries };
+  const assets = parsed?.assets;
+  if (assets !== undefined && (assets === null || typeof assets !== "object" || Array.isArray(assets))) {
+    return { error: "bad-assets" };
+  }
+  return { entries, assets: assets ?? {} };
 }
 
 /** What to tell the author of a file graft would not read. */
@@ -51,6 +57,8 @@ function refusal(result, where) {
       return `${where} declares ${JSON.stringify(result.declared)} as its format, which is not a format number.`;
     case "new-format":
       return `${where} is format ${result.format}; this graft reads ${FORMAT}. Update graft.`;
+    case "bad-assets":
+      return `${where} has an "assets" block that is not an object keyed by handler.`;
     default:
       return `${where} declares no "entries" list.`;
   }
@@ -83,6 +91,7 @@ export async function readGrafts(moduleId, { onRefused } = {}) {
     : null;
 
   const entries = [];
+  const assets = {};
   for (const file of files ?? ["grafts.json"]) {
     let parsed = null;
     try {
@@ -101,8 +110,10 @@ export async function readGrafts(moduleId, { onRefused } = {}) {
       continue;
     }
     entries.push(...result.entries);
+    // Later files win a key they share, which is the same rule entries follow.
+    Object.assign(assets, result.assets);
   }
-  return entries;
+  return { entries, assets };
 }
 
 /**
@@ -122,7 +133,8 @@ export function adventurePacks(moduleId, entries) {
 }
 
 /**
- * The entries a module declares that are not in its packs.
+ * `{ missing, assets }`: the entries a module declares that are not in its
+ * packs, and the assets block a build of them would place.
  *
  * Read from the pack index rather than a stored "already built" flag, so the
  * answer stays true when a document is deleted by hand or an update ships new
@@ -131,7 +143,7 @@ export function adventurePacks(moduleId, entries) {
  */
 export async function unbuilt(moduleId, options) {
   const byPack = new Map();
-  const declared = await readGrafts(moduleId, options);
+  const { entries: declared, assets } = await readGrafts(moduleId, options);
   for (const entry of declared) {
     if (!entry?.id) continue;                  // planOrder reports these
     if (!byPack.has(entry.pack)) byPack.set(entry.pack, []);
@@ -148,7 +160,7 @@ export async function unbuilt(moduleId, options) {
       : await pack.getIndex();
     missing.push(...entries.filter((e) => !built.has(e.id)));
   }
-  return missing;
+  return { missing, assets };
 }
 
 /** Every id inside a pack's assembled Adventure, or nothing if it has not been built. */

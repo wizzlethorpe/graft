@@ -16,7 +16,7 @@ const DOCUMENT_ID = /^[a-zA-Z0-9]{16}$/;
 const NO_ADVENTURES = new Set();
 
 /**
- * The sources an entry names, in the order to try them.
+ * The sources an entry or an asset file names, in the order to try them.
  *
  * A list is a fallback: "the bestiary copy if that module is installed,
  * otherwise the reference one". The first that resolves wins, so an author can

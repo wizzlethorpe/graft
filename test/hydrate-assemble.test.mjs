@@ -69,13 +69,17 @@ beforeEach(() => {
   globalThis.game = {
     packs: { get: (c) => packs[c] ?? null },
     settings: { get: () => ({}), set: async () => {} },
+    release: { generation: 14 },
   };
   globalThis.getDocumentClass = (name) => ({ Actor: ActorCls, Adventure: AdventureCls })[name];
-  globalThis.foundry = { utils: { setProperty(o, p, v) {
-    const ks = p.split("."); let n = o;
-    for (const k of ks.slice(0, -1)) n = n[k] ??= {};
-    n[ks.at(-1)] = v;
-  } } };
+  globalThis.foundry = { utils: {
+    cleanHTML: (html) => html,
+    setProperty(o, p, v) {
+      const ks = p.split("."); let n = o;
+      for (const k of ks.slice(0, -1)) n = n[k] ??= {};
+      n[ks.at(-1)] = v;
+    },
+  } };
   globalThis.fromUuid = async () => null;   // nothing resolves from outside the build
   globalThis.ui = { notifications: { warn: () => {}, info: () => {} } };
 });

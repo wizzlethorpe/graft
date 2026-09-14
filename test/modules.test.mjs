@@ -33,6 +33,12 @@ describe("the grafts file shape", () => {
     assert.equal(formatOf({ format: true }), null);
   });
 
+  test("refuses an assets block that is not keyed by handler, rather than reading it as empty", () => {
+    // Coerced to {} here, a file's assets were silently never placed.
+    assert.equal(readFile({ format: 1, entries: [], assets: [{ source: "x" }] }).error, "bad-assets");
+    assert.deepEqual(readFile({ format: 1, entries: [] }).assets, {}, "no block at all is not an error");
+  });
+
   test("names the newer format, so the reader can be told which", () => {
     const result = readFile({ format: FORMAT + 1, entries: [] });
     assert.equal(result.error, "new-format");
@@ -53,19 +59,27 @@ describe("readGrafts on a file it will not read", () => {
 
   test("builds the entries of a file it can read", async () => {
     installModuleFile({ format: FORMAT, entries: [{ id: "a" }] });
-    assert.deepEqual(await readGrafts("m"), [{ id: "a" }]);
+    assert.deepEqual((await readGrafts("m")).entries, [{ id: "a" }]);
+  });
+
+  test("carries the assets block through, so a module build can place its files", async () => {
+    // Without this the block is read and dropped, and every entry sourcing a
+    // placed file fails asking whether some module is installed.
+    const assets = { http: { files: [{ source: "https://x/a.png", destination: "graft/a.png", size: 1 }] } };
+    installModuleFile({ format: FORMAT, entries: [{ id: "a" }], assets });
+    assert.deepEqual((await readGrafts("m")).assets, assets);
   });
 
   test("builds nothing from a bare list, and reports which refusal it was", async () => {
     installModuleFile([{ id: "a" }]);
     const refused = [];
-    assert.deepEqual(await readGrafts("m", { onRefused: (r) => refused.push(r.error) }), []);
+    assert.deepEqual((await readGrafts("m", { onRefused: (r) => refused.push(r.error) })).entries, []);
     assert.deepEqual(refused, ["old-format"]);
   });
 
   test("builds nothing from a format it does not understand", async () => {
     installModuleFile({ format: FORMAT + 1, entries: [{ id: "a" }] });
-    assert.deepEqual(await readGrafts("m"), []);
+    assert.deepEqual((await readGrafts("m")).entries, []);
   });
 });
 
@@ -178,11 +192,11 @@ describe("unbuilt, for an Adventure pack", () => {
 
   test("looks for entries inside the Adventure, since the index knows only the wrapper", async () => {
     install({ actors: [{ _id: "aaaaaaaaaaaaaaaa" }], scenes: [] });
-    assert.deepEqual((await unbuilt("m")).map((e) => e.id), ["bbbbbbbbbbbbbbbb"]);
+    assert.deepEqual((await unbuilt("m")).missing.map((e) => e.id), ["bbbbbbbbbbbbbbbb"]);
   });
 
   test("no Adventure yet means nothing is built", async () => {
     install(null);
-    assert.equal((await unbuilt("m")).length, 2);
+    assert.equal((await unbuilt("m")).missing.length, 2);
   });
 });

@@ -1,6 +1,6 @@
 # Hooks and API
 
-Graft itself fetches nothing: a source is a compendium document the reader already has, and building touches nothing outside the world. Content that has to come from elsewhere, a deployed vault or a subscription service, belongs in a module of its own, and graft gives it three moments to act.
+A source is a compendium document the reader already has, so most of a build touches nothing outside the world. What has to come from elsewhere arrives two ways: a file's `assets` block, fetched by a handler (graft ships `http`), and content a module of its own resolves. Graft gives both their moments to act.
 
 **`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into the world.
 
@@ -17,6 +17,23 @@ Hooks.on("graftPreBuild", (moduleId, register) => {
 ```
 
 `transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `phase` is `"entries"` (the default) for a transform that produces or rewrites entries, or `"sources"` for one that makes the documents their sources name resolvable. Every entries transform runs before any sources one, registration order deciding within a phase, so a materialiser sees the entries after every marker has been expanded. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. Build as much as possible and report the rest: graft reports a failing transform and builds on without it. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
+
+**`graftAssets`** fires before a build, to collect the handlers for the `assets` block. `register` takes `{ id, place }`, where `id` matches the key in the file and `place(config, { onPhase, onFile, redownload })` fetches whatever that block names. `redownload(already, total)` asks the reader once whether to fetch files that are already on disk; resolving true means fetch everything. Registering replaces a handler already under that id, including the built-in `http` one.
+
+```js
+Hooks.on("graftAssets", (register) => {
+  register({
+    id: "my-service",
+    async place(config, { onPhase, onFile, redownload }) {
+      onPhase("My Service", config.files.length);
+      for (const file of config.files) { onFile(file.name); /* fetch and upload */ }
+      return { skipped: [], warnings: [] };
+    },
+  });
+});
+```
+
+`place` returns `{ skipped, warnings }` in the builder's `{ id, reason }` shape, or nothing. A handler that throws is one report line and the remaining handlers still run. Its only job is to put bytes at a path; it never rewrites entries, so the paths it writes to must be derivable from what the entries already name.
 
 **`graftExport`** fires when **Copy graft** has an entry ready, so a module that fetched the source can name it the way its own users would. Graft collects these the same way; `document` is the one being copied.
 
@@ -49,5 +66,7 @@ game.modules.get("graft").api    // buildPacks, hydrate, readGrafts, unbuilt, an
 ```
 
 `resolve(uuid)` returns a document's plain data, or null. It reads every form graft writes, including an entry inside an assembled Adventure.
+
+`readGrafts(moduleId)` returns `{ entries, assets }`: the module's declared entries and the `assets` block a build of them would place. `unbuilt(moduleId)` returns `{ missing, assets }`, the entries not in the packs and the same block.
 
 `unbuilt` looks entries up by the ids the module declares, so it says nothing about a module whose entries a transform expands: that `grafts.json` names a source to fetch, and there are no ids until a build has run. `anyBuilt` is the question such a module can ask instead, answered from the pack index alone. It counts only what graft made, so a document a reader added by hand is not mistaken for a build.

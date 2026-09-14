@@ -6,18 +6,7 @@
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { importGrafts, graftsIn, localiseSources } from "../scripts/import.mjs";
-
-describe("graftsIn", () => {
-  const entry = { id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", patch: {} };
-
-  test("takes one entry, a list of entries, or a grafts file", () => {
-    assert.deepEqual(graftsIn(entry).entries, [entry]);
-    assert.deepEqual(graftsIn([entry, entry]).entries, [entry, entry]);
-    assert.deepEqual(graftsIn({ format: 2, entries: [entry] }).entries, [entry]);
-  });
-
-});
+import { importGrafts, localiseSources } from "../scripts/import.mjs";
 
 describe("importGrafts", () => {
   const saved = globalThis.game;
@@ -36,7 +25,14 @@ describe("importGrafts", () => {
 
   test("says when there is nothing to build", async () => {
     installI18n();
-    await assert.rejects(() => importGrafts([]), /ImportEmpty/);
+    await assert.rejects(() => importGrafts({ format: 4, entries: [] }), /ImportEmpty/);
+  });
+
+  test("takes a whole file and refuses a bare list, which cannot carry assets", async () => {
+    installI18n();
+    const entry = { id: "aaaaaaaaaaaaaaaa", type: "Actor", patch: {} };
+    await assert.rejects(() => importGrafts([entry]), /ImportNotEntries/);
+    await assert.rejects(() => importGrafts(entry), /ImportNotEntries/);
   });
 });
 
