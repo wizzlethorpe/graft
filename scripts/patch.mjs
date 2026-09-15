@@ -22,7 +22,7 @@
  * `toObject()` output, and checking the prototype turns a forgotten call into a
  * wrong answer rather than a stack overflow.
  */
-function isPlainObject(v) {
+export function isPlainObject(v) {
   if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
   const proto = Object.getPrototypeOf(v);
   return proto === Object.prototype || proto === null;

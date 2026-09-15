@@ -109,6 +109,7 @@ export function installWorld({ types, sources = {} } = {}) {
     static async create(data) { collections.get(name).set(data._id, new WorldDoc({ ...data, __type: name })); }
   };
   globalThis.foundry = { utils: {
+    getRoute: (path) => path,
     setProperty(obj, path, value) {
       const keys = path.split(".");
       let node = obj;

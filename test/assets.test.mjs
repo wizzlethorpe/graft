@@ -78,7 +78,7 @@ describe("the http handler's own checks", () => {
       return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
     };
     globalThis.foundry = {
-      utils: {},
+      utils: { getRoute: (path) => path },
       applications: { apps: { FilePicker: { implementation: {
         browse: async () => ({ files: [] }),
         createDirectory: async () => {},
@@ -100,7 +100,7 @@ describe("the http handler's own checks", () => {
       return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
     };
     globalThis.foundry = {
-      utils: {},
+      utils: { getRoute: (path) => path },
       applications: { apps: { FilePicker: { implementation: {
         browse: async () => ({ files: [] }),
         createDirectory: async () => {},
@@ -150,7 +150,7 @@ describe("a fetch the server refuses", () => {
       return { ok: false, status };
     };
     globalThis.foundry = {
-      utils: {},
+      utils: { getRoute: (path) => path },
       applications: { apps: { FilePicker: { implementation: {
         browse: async () => ({ files: [] }),
         createDirectory: async () => {},
@@ -197,7 +197,7 @@ describe("the re-download choice", () => {
       return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
     };
     globalThis.foundry = {
-      utils: {},
+      utils: { getRoute: (path) => path },
       applications: { apps: { FilePicker: { implementation: {
         browse: async () => ({ files: files.map((f) => f.destination) }),
         createDirectory: async () => {},
@@ -245,7 +245,7 @@ describe("a zip the handler cannot use", () => {
       return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
     };
     globalThis.foundry = {
-      utils: {},
+      utils: { getRoute: (path) => path },
       applications: { apps: { FilePicker: { implementation: {
         browse: async () => { throw new Error("no such directory"); },
         createDirectory: async () => {},

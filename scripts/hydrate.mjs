@@ -7,14 +7,14 @@
 
 import {
   applyPatch, authoredGeneration, currentWorld, diff, driftFromSource, driftWarnings,
-  expandSources, folderPath, folderSegments, project, referenceSources, sourceHash,
-  stripVolatile,
+  expandSources, folderPath, folderSegments, isPlainObject, project, referenceSources,
+  sourceHash, stripVolatile,
 } from "./patch.mjs";
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
 } from "./origin.mjs";
 import { planOrder, entryUuid, adventureId, sourcesOf } from "./plan.mjs";
-import { dataUrl } from "./paths.mjs";
+import { readDataJson } from "./paths.mjs";
 import { rewriteEntry } from "./extend.mjs";
 import { adventurePacks } from "./modules.mjs";
 import { MEMBER_FIELDS, assembleAdventure, adventureFolderOf, membersOf } from "./assemble.mjs";
@@ -262,7 +262,7 @@ function idsByPack(entries) {
  * `.toObject()` is not optional; see `isPlainObject` in patch.mjs.
  */
 export async function resolveData(uuid) {
-  if (isFileSource(uuid)) return readJsonFile(uuid);
+  if (isFileSource(uuid)) return readDataJson(uuid);
   const fromAdventure = await resolveAdventureSource(uuid);
   if (fromAdventure !== null) return fromAdventure;
   const doc = await fromUuid(uuid);
@@ -270,23 +270,8 @@ export async function resolveData(uuid) {
 }
 
 /** A source naming a placed file: no document type or id ends in `.json`. */
-export function isFileSource(source) {
+function isFileSource(source) {
   return typeof source === "string" && /\.json$/i.test(source);
-}
-
-/**
- * Null rather than a throw for anything unreadable: a file source can sit in a
- * fallback list, and a throw would abort before the next candidate is tried.
- */
-async function readJsonFile(path) {
-  try {
-    const res = await fetch(dataUrl(path));
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data && typeof data === "object" && !Array.isArray(data) ? data : null;
-  } catch {
-    return null;
-  }
 }
 
 async function hydrateOne(entry, target, { warnings, resolve, produced }) {
@@ -364,9 +349,7 @@ async function writeDocument(find, cls, context, prepared) {
     // Compared, not remembered: a stored digest goes stale across a Foundry
     // upgrade or a hand edit in the pack. A pack write costs ~234ms.
     const stored = existing.toObject();
-    const changed = difference(prepared, stored);
-    if (changed !== null || outdated(stored, game.release.generation)) {
-      console.log(`Graft | rewrote ${prepared._id}: ${changed ?? "written by an older Foundry"}`);
+    if (differs(prepared, stored) || outdated(stored, game.release.generation)) {
       await existing.update(prepared, { diff: false, recursive: false });
     }
   } else {
@@ -412,27 +395,17 @@ async function writeAdventure(moduleId, packName, members, declaredIds, touched)
 }
 
 /**
- * The one `_stats` key graft writes, and so the only one worth comparing.
- * Foundry writes the rest whatever the document said. What the versions there
- * do say is read by `outdated`.
- */
-const COMPARED_STATS = new Set(["compendiumSource"]);
-
-/**
- * A document projected onto what a comparison should see: keys in a fixed
- * order, since two schemas can emit the same data either way, `_stats` down to
- * what graft writes, and no empty objects, which a system's flag scaffolding
- * adds and a merge patch cannot express anyway. Embedded pages and items carry
- * their own `_stats`, which is why this applies at every depth.
+ * A document as a comparison should see it: keys sorted, `_stats` down to the
+ * one key graft writes, and no empty objects, which a system's schema adds.
  */
 function settled(value, inStats = false) {
   if (Array.isArray(value)) return value.map((v) => settled(v));
-  if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) return value;
+  if (!isPlainObject(value)) return value;
   const out = {};
   for (const k of Object.keys(value).sort()) {
-    if (inStats && !COMPARED_STATS.has(k)) continue;
+    if (inStats && k !== "compendiumSource") continue;
     const v = settled(value[k], k === "_stats");
-    if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0) continue;
+    if (isPlainObject(v) && Object.keys(v).length === 0) continue;
     out[k] = v;
   }
   return out;
@@ -443,63 +416,31 @@ const TAG = /<[a-zA-Z][a-zA-Z0-9-]*(?:"[^"]*"|'[^']*'|[^>"'])*>/g;
 const EMPTY_ATTRIBUTE = /\s+[a-zA-Z][a-zA-Z0-9-]*=""/g;
 
 /**
- * The one string both forms of an HTML field settle on.
- *
- * `cleanHTML` is the client twin of the sanitiser Foundry runs server-side on
- * write. Empty attributes are where the two disagree: the server drops
- * `hidden=""` and bares `data-link=""`, the browser writes both as `x=""`.
+ * An HTML field as Foundry's client cleaner leaves it, less the empty
+ * attributes, which the server's sanitiser drops or bares where the client keeps them.
  */
 function canonical(html) {
   return foundry.utils.cleanHTML(html)
     .replace(TAG, (tag) => tag.replace(EMPTY_ATTRIBUTE, ""));
 }
 
-/** Both sides of a comparison with their HTML fields made comparable. */
+/**
+ * Both sides with their HTML made comparable. Sniffing for HTML is enough: both
+ * go through the same cleaner, so only a change the sanitiser itself erases compares equal.
+ */
 function sanitized(value) {
   if (typeof value === "string") return LOOKS_HTML.test(value) ? canonical(value) : value;
   if (Array.isArray(value)) return value.map(sanitized);
-  if (!value || typeof value !== "object") return value;
+  if (!isPlainObject(value)) return value;
   return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitized(v)]));
 }
 
-/** The first path at which two settled documents differ, or null. */
-function walk(a, b, path) {
-  const plain = (v) => v && typeof v === "object" && !Array.isArray(v)
-    && Object.getPrototypeOf(v) === Object.prototype;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return `${path}.length`;
-    for (let i = 0; i < a.length; i++) {
-      const at = walk(a[i], b[i], `${path}[${i}]`);
-      if (at) return at;
-    }
-    return null;
-  }
-  if (plain(a) && plain(b)) {
-    for (const k of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
-      if (!(k in a)) return `${path}.${k} (only in the stored one)`;
-      if (!(k in b)) return `${path}.${k} (only in the built one)`;
-      const at = walk(a[k], b[k], `${path}.${k}`);
-      if (at) return at;
-    }
-    return null;
-  }
-  return JSON.stringify(a) === JSON.stringify(b) ? null : (path || "(root)");
-}
-
-/**
- * Where writing `prepared` over `existing` would change something, named, or
- * null if it would change nothing.
- *
- * The HTML pass costs a parse per field, so it is only paid once the plain
- * comparison has found something.
- */
-export function difference(prepared, existing) {
+/** Whether writing `prepared` over `existing` would change anything. The HTML pass parses every field, so it runs only once the plain comparison differs. */
+export function differs(prepared, existing) {
   const a = settled(prepared);
   const b = settled(existing);
-  if (JSON.stringify(a) === JSON.stringify(b)) return null;
-  const cleanA = sanitized(a);
-  const cleanB = sanitized(b);
-  return JSON.stringify(cleanA) === JSON.stringify(cleanB) ? null : walk(cleanA, cleanB, "");
+  if (JSON.stringify(a) === JSON.stringify(b)) return false;
+  return JSON.stringify(sanitized(a)) !== JSON.stringify(sanitized(b));
 }
 
 /**

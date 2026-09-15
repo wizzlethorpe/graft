@@ -5,9 +5,9 @@
 // places files. It never rewrites entries, so an entry naming a file as its
 // source has to name the path the handler will put it at.
 
-import { dataUrl } from "./paths.mjs";
+import { dataUrl, readDataJson } from "./paths.mjs";
 import { sourcesOf } from "./plan.mjs";
-import { registered } from "./extend.mjs";
+import { validRegistration } from "./extend.mjs";
 import { centralDirectory, readMember } from "./zip.mjs";
 
 const HOOK = "graftAssets";
@@ -21,7 +21,7 @@ const RECORD = "graft/placed.json";
 export function collectHandlers(refuse) {
   const handlers = new Map();
   const register = (h) => {
-    try { handlers.set(h.id, registered("asset handler", "place", h)); }
+    try { handlers.set(h.id, validRegistration("asset handler", "place", h)); }
     catch (err) { refuse(err.message); }
   };
   register(httpHandler);
@@ -119,18 +119,10 @@ export function planZips(usable, needed, threshold) {
   return { zips, direct };
 }
 
-const MIME = {
-  webp: "image/webp", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-  gif: "image/gif", svg: "image/svg+xml", avif: "image/avif",
-  ogg: "audio/ogg", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4",
-  webm: "video/webm", mp4: "video/mp4",
-  pdf: "application/pdf", json: "application/json", txt: "text/plain",
-};
-
-/** Foundry's upload rejects a generic content type, which hosts and zips both give. */
+/** Foundry's upload rejects a generic content type, which hosts and zips both give, so the extension decides. */
 function typeFor(path, type = "") {
   const usable = type && type !== "application/octet-stream";
-  return usable ? type : MIME[path.split(".").pop()?.toLowerCase()] ?? "";
+  return usable ? type : CONST.UPLOADABLE_FILE_EXTENSIONS[path.split(".").pop()?.toLowerCase()] ?? "";
 }
 
 /** Vault paths come back from `browse` percent-encoded and are authored plain. */
@@ -138,16 +130,18 @@ const decode = (path) => { try { return decodeURIComponent(path); } catch { retu
 
 const dirOf = (path) => path.split("/").slice(0, -1).join("/");
 
-/** The files already in each of `dirs`, as decoded paths. */
+/** The files already in each of `dirs`, as decoded paths, and which of `dirs` exist. */
 async function listing(dirs) {
   const present = new Set();
+  const found = new Set();
   for (const dir of dirs) {
     try {
       const result = await fp().browse("data", dir);
+      found.add(dir);
       for (const path of result?.files ?? []) present.add(decode(path));
     } catch { /* not created yet: nothing is present */ }
   }
-  return present;
+  return { present, found };
 }
 
 async function head(path) {
@@ -160,16 +154,7 @@ async function head(path) {
   }
 }
 
-async function readRecord() {
-  try {
-    const res = await fetch(dataUrl(RECORD));
-    if (!res.ok) return {};
-    const data = await res.json();
-    return data && typeof data === "object" ? data : {};
-  } catch {
-    return {};
-  }
-}
+const readRecord = async () => (await readDataJson(RECORD)) ?? {};
 
 async function writeRecord(record) {
   await ensureDirectory(dirOf(RECORD));
@@ -235,11 +220,8 @@ export const httpHandler = {
       else usable.push(file);
     }
 
-    const dirs = new Set(usable.map((f) => dirOf(f.destination)));
-    const present = await listing(dirs);
+    const { present, found } = await listing(new Set(usable.map((f) => dirOf(f.destination))));
     const record = await readRecord();
-    // Once per directory, not once per file.
-    for (const dir of dirs) await ensureDirectory(dir);
 
     const already = usable.filter((f) => present.has(f.destination)).length;
     const everything = already > 0 && redownload ? await redownload(already, usable.length) : false;
@@ -253,6 +235,11 @@ export const httpHandler = {
         if (needsFetch(file, { present: known, head: meta, record: record[file.destination] })) needed.push(file);
         else onFile?.(file.destination.split("/").pop());
       });
+    }
+
+    // Only where a file is about to land, and only where browse found nothing.
+    for (const dir of new Set(needed.map((f) => dirOf(f.destination)))) {
+      if (!found.has(dir)) await ensureDirectory(dir);
     }
 
     let changed = false;

@@ -224,13 +224,16 @@ async function builtLink(uuid) {
 
 // ── copying ─────────────────────────────────────────────────────────────────
 
+/** Entries as the whole grafts.json that Copy and Export both produce. */
+const graftsFile = (entries) => JSON.stringify({ format: FORMAT, entries }, null, 2);
+
 /** One document to the clipboard, as a whole grafts file. */
 export async function copyOne(doc) {
   try {
     const entry = withPack(await exportDiff(doc));
     // JSON, because grafts.json is JSON and what you copy should be what you
     // paste. YAML is for the other destination, a vault page's frontmatter.
-    const text = JSON.stringify({ format: FORMAT, entries: [entry] }, null, 2);
+    const text = graftsFile([entry]);
     await game.clipboard.copyPlainText(text);
     ui.notifications.info(
       Object.keys(entry.patch).length > 0
@@ -278,7 +281,7 @@ export async function downloadGrafts(docs, label) {
     return null;
   }
   const { entries, failed } = await graftsFor(docs);
-  saveJson(JSON.stringify({ format: FORMAT, entries }, null, 2), fileName(label));
+  saveJson(graftsFile(entries), fileName(label));
   reportExport(entries, failed, label, "GRAFT.Downloaded", "GRAFT.DownloadedSkipped");
   return entries;
 }
@@ -303,7 +306,7 @@ export async function copyMany(docs, label) {
   }
   const { entries, failed } = await graftsFor(docs);
 
-  await game.clipboard.copyPlainText(JSON.stringify({ format: FORMAT, entries }, null, 2));
+  await game.clipboard.copyPlainText(graftsFile(entries));
   reportExport(entries, failed, label, "GRAFT.CopiedMany", "GRAFT.CopiedManySkipped");
   return entries;
 }
