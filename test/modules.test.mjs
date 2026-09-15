@@ -71,7 +71,7 @@ describe("readGrafts on a file it will not read", () => {
   });
 
   test("keeps the first file's block for a handler two files declare, and says so", async () => {
-    // Merged silently, every file's http files but the last were dropped.
+    // Merged, a later file's block would silently replace an earlier one's.
     const block = (name) => ({ http: { files: [{ source: `https://x/${name}.png`, destination: `d/${name}.png` }] } });
     const warned = [];
     globalThis.game = { modules: { get: () => ({ flags: { graft: { entries: ["a.json", "b.json"] } } }) } };

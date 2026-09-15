@@ -9,13 +9,8 @@ import { MEMBER_FIELDS } from "./assemble.mjs";
 const MODULE_ID = "graft";
 
 /**
- * The entry format this version understands. A format 1 file still reads.
- *
- * A newer file is refused rather than half-read: the fields it relies on would
- * be ignored silently, which is worse than saying the module needs a newer graft.
- * Format 3 added `_delete`, which an older graft ignores, silently keeping the entry.
- * Format 4 added `assets`, which an older graft ignores, leaving every entry
- * that names a fetched file unresolvable.
+ * The entry format this version understands; older formats still read. A newer
+ * file is refused rather than half-read, since the fields it relies on would be ignored.
  */
 export const FORMAT = 4;
 

@@ -225,6 +225,6 @@ A fragment never reaches the server, so it cannot collide with the query a versi
 
 A file is fetched when it is not on disk, when the record says it was placed from a URL the file no longer lists, or when its ETag has moved since graft wrote it. Otherwise it is left alone. The record lives at `graft/placed.json` and holds every source a destination listed when it was written, and its ETag. A file is current when any source it lists now is one it listed then, so one that moved between zips is not fetched again. Deleting the record makes the next build re-check everything against `size` alone.
 
-This record is the one place graft keeps state rather than reading reality, because the reality here cannot be read: a data directory has no listing that says which URL a file came from, and Foundry's `FilePicker` has no delete, so a wrong answer cannot be cleaned up. The record is advisory either way, since every check still goes to the file on disk.
+This record is the one place graft keeps state rather than reading reality, because a data directory cannot say which URL a file came from. Every check still goes to the file on disk as well.
 
 When some files are already on disk, graft asks once whether to keep them and fetch only what changed, or download everything again.

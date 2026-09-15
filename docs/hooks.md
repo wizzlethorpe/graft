@@ -50,7 +50,7 @@ Hooks.on("graftExport", (register) => {
 
 Return the entry untouched when it is not yours. A rewriter that throws fails the copy, which **Copy graft** reports: the gesture is interactive and pressing it again is free, so failing loudly beats quietly writing a plainer name.
 
-**`graftBuilt`** fires after every module build, whether it came from the world-load prompt, a compendium header, or the pack control. It carries the built UUIDs, so a module that wants to act on what a build produced (record it, inspect it, download the files its documents name) starts from here. An entry assembled into an Adventure is named `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`, which `fromUuid` rejects; read built documents with `api.resolve`.
+**`graftBuilt`** fires after every build: a module's, whether started from the world-load prompt, a compendium header or the pack control, and an **Import grafts**, whose `moduleId` is `"world"`. It carries the built UUIDs, so a module that records or inspects what a build produced starts from here. An entry assembled into an Adventure is named `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`, which `fromUuid` rejects; read built documents with `api.resolve`.
 
 ```js
 Hooks.on("graftBuilt", (moduleId, { built, skipped, warnings, removed }) => {

@@ -63,6 +63,23 @@ describe("hydrateWorld", () => {
     assert.equal(folders.length, made, "folders are matched by type, name and parent, not made again");
   });
 
+  test("rewrites an unchanged document an older Foundry wrote, and leaves one this Foundry wrote alone", async () => {
+    // Rebuilding is what migrates a document to the running generation.
+    await run([base]);
+    const stored = collections.get("Actor").get("actorBase0000001");
+    const writes = [];
+    const update = stored.update.bind(stored);
+    stored.update = async (data, options) => { writes.push(data); return update(data, options); };
+
+    stored.data._stats = { coreVersion: "14.367" };
+    await run([base]);
+    assert.equal(writes.length, 0, "rewrote a document nothing had changed");
+
+    stored.data._stats = { coreVersion: "13.346" };
+    await run([base]);
+    assert.equal(writes.length, 1, "left a document an older Foundry wrote unmigrated");
+  });
+
   test("never builds a sibling on a document no import wrote", async () => {
     collections.get("Actor").set("actorBase0000001", new WorldDoc({ _id: "actorBase0000001", name: "Mine", flags: { graft: { built: true } }, system: { hp: 99 } }));
     const { built, skipped } = await run([child, base]);
@@ -132,8 +149,6 @@ describe("resolving sources", () => {
   afterEach(() => { globalThis.fetch = savedFetch; });
 
   test("reads each source once, however many entries graft onto it", async () => {
-    // A vault's NPCs share a handful of statblocks: one Southaven build asked
-    // for the same commoner forty times.
     const reads = [];
     const base = { name: "Commoner", type: "npc", system: { hp: 4 } };
     globalThis.fromUuid = async (uuid) => {

@@ -1,9 +1,40 @@
-// Asset handlers: who gets each block, and whether a file has to be fetched.
+// Asset handlers: who gets each block, and whether and how a file is placed.
 
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { placeAssets, needsFetch, unusable, httpHandler, planZips, zipMember } from "../scripts/assets.mjs";
+import { placeAssets, needsFetch, unusable, httpHandler, planZips, pool, zipMember } from "../scripts/assets.mjs";
+
+const saved = { fetch: globalThis.fetch, foundry: globalThis.foundry, CONST: globalThis.CONST, Hooks: globalThis.Hooks };
+afterEach(() => Object.assign(globalThis, saved));
+
+/**
+ * A data directory and a network for the http handler. Returns what the handler
+ * did to them: the directories it made and the files it uploaded.
+ */
+function stubFoundry({ fetch, browse = async () => ({ files: [] }), refuseUpload = () => null }) {
+  const did = { directories: [], uploads: [] };
+  globalThis.fetch = fetch;
+  globalThis.CONST = { UPLOADABLE_FILE_EXTENSIONS: { png: "image/png", txt: "text/plain", json: "application/json" } };
+  globalThis.foundry = {
+    utils: { getRoute: (path) => path },
+    applications: { apps: { FilePicker: { implementation: {
+      browse,
+      createDirectory: async (_source, path) => { did.directories.push(path); },
+      upload: async (_source, dir, file) => {
+        const refusal = refuseUpload(dir);
+        if (refusal) return { status: "error", message: refusal };
+        did.uploads.push({ path: `${dir}/${file.name}`, type: file.type, text: await file.text() });
+        return { status: "success" };
+      },
+    } } } },
+  };
+  return did;
+}
+
+const ok = (body, type = "image/png") => ({ ok: true, status: 200, blob: async () => new Blob([body], { type }) });
+const missing = { ok: false, status: 404, headers: new Map() };
 
 describe("placeAssets", () => {
   test("hands each block to the handler its key names", async () => {
@@ -43,20 +74,15 @@ describe("placeAssets", () => {
   });
 
   test("reports a module's broken handler registration, and places the rest", async () => {
-    // Thrown out of the hook, it failed the whole build before any report.
-    const saved = globalThis.Hooks;
+    // A throw from the hook would fail the whole build before any report.
     let ran = false;
     globalThis.Hooks = { callAll: (_hook, register) => {
       register({ id: "broken" });
       register({ id: "good", place: () => { ran = true; } });
     } };
-    try {
-      const { skipped } = await placeAssets({ good: {} });
-      assert.ok(ran, "a working handler did not run after a broken one registered");
-      assert.match(skipped[0].reason, /"broken" needs a place function/);
-    } finally {
-      globalThis.Hooks = saved;
-    }
+    const { skipped } = await placeAssets({ good: {} });
+    assert.ok(ran, "a working handler did not run after a broken one registered");
+    assert.match(skipped[0].reason, /"broken" needs a place function/);
   });
 
   test("no assets block is not an error", async () => {
@@ -65,26 +91,13 @@ describe("placeAssets", () => {
 });
 
 describe("the http handler's own checks", () => {
-  const saved = { fetch: globalThis.fetch, foundry: globalThis.foundry };
-  afterEach(() => { globalThis.fetch = saved.fetch; globalThis.foundry = saved.foundry; });
-
   test("places the other files when one of them cannot be used", async () => {
-    // Reading a destination before the check threw out of place() entirely,
-    // so one malformed entry left every other file in the block unfetched.
     const fetched = [];
-    globalThis.fetch = async (url, init = {}) => {
-      if (init.method === "HEAD" || String(url).includes("placed.json")) return { ok: false };
+    stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
       fetched.push(String(url));
-      return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
-    };
-    globalThis.foundry = {
-      utils: { getRoute: (path) => path },
-      applications: { apps: { FilePicker: { implementation: {
-        browse: async () => ({ files: [] }),
-        createDirectory: async () => {},
-        upload: async () => ({ status: "success" }),
-      } } } },
-    };
+      return ok("x");
+    } });
     const { skipped } = await httpHandler.place({ files: [
       { source: "https://x/a.png" },
       { source: "https://x/b.png", destination: "d/b.png", size: 1 },
@@ -94,25 +107,17 @@ describe("the http handler's own checks", () => {
   });
 
   test("warns when the record of what was placed cannot be written", async () => {
-    // Failing quietly, the next build fetched these files again with nothing said.
-    globalThis.fetch = async (url, init = {}) => {
-      if (init.method === "HEAD" || String(url).includes("placed.json")) return { ok: false };
-      return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
-    };
-    globalThis.foundry = {
-      utils: { getRoute: (path) => path },
-      applications: { apps: { FilePicker: { implementation: {
-        browse: async () => ({ files: [] }),
-        createDirectory: async () => {},
-        upload: async (_source, dir) => (dir === "graft" ? { status: "error", message: "disk full" } : { status: "success" }),
-      } } } },
-    };
+    // Unreported, the next build fetches these files again with nothing said.
+    stubFoundry({
+      fetch: async (url, init = {}) => (init.method === "HEAD" || String(url).includes("placed.json") ? missing : ok("x")),
+      refuseUpload: (dir) => (dir === "graft" ? "disk full" : null),
+    });
     const { skipped, warnings } = await httpHandler.place({ files: [{ source: "https://x/a.png", destination: "d/a.png", size: 1 }] });
     assert.deepEqual(skipped, []);
     assert.match(warnings[0]?.reason ?? "", /could not be written \(disk full\)/);
   });
 
-  test("names a file it cannot use instead of throwing out of the whole block", () => {
+  test("says why a file cannot be used", () => {
     assert.match(unusable({ source: "https://x/a.png" }), /no destination/);
     assert.match(unusable({ destination: "graft/a.png" }), /no source/);
   });
@@ -137,26 +142,72 @@ describe("the http handler's own checks", () => {
   });
 });
 
-describe("a fetch the server refuses", () => {
-  const saved = { fetch: globalThis.fetch, foundry: globalThis.foundry };
-  afterEach(() => { globalThis.fetch = saved.fetch; globalThis.foundry = saved.foundry; });
+describe("placing files out of a zip", () => {
+  const pack = readFileSync(new URL("./fixtures/pack.zip", import.meta.url));
+  const files = [
+    ["maps/stored.txt", "d/stored.txt"],
+    ["maps/deflated.txt", "d/deflated.txt"],
+    ["tokens/a%20b.txt", "t/a b.txt"],
+  ].map(([member, destination]) => ({
+    source: [`https://x/pack.zip#${member}`, `https://x/${destination}?v=1`],
+    destination,
+    size: 1,
+  }));
 
+  /** Serves the fixture as the zip, and `record` as what an earlier build placed. */
+  const network = (record) => async (url, init = {}) => {
+    if (init.method === "HEAD") return { ok: true, headers: new Map([["etag", "W/1"], ["content-length", "1"]]) };
+    const u = String(url);
+    if (u.includes("placed.json")) return record ? { ok: true, json: async () => record } : missing;
+    if (u.startsWith("https://x/pack.zip")) {
+      return { ok: true, status: 200, arrayBuffer: async () => pack.buffer.slice(pack.byteOffset, pack.byteOffset + pack.byteLength) };
+    }
+    throw new Error(`fetched ${u}, which the zip should have supplied`);
+  };
+
+  test("writes each member where its file says, typed by its destination, and records where it came from", async () => {
+    const did = stubFoundry({ fetch: network(null), browse: async () => { throw new Error("no such directory"); } });
+    const { skipped, warnings } = await httpHandler.place({ files });
+    assert.deepEqual(skipped, []);
+    assert.deepEqual(warnings, []);
+    const placed = Object.fromEntries(did.uploads.map((u) => [u.path, u]));
+    assert.equal(placed["d/stored.txt"]?.text, "stored bytes");
+    assert.equal(placed["d/deflated.txt"]?.text, "deflated ".repeat(200));
+    assert.equal(placed["t/a b.txt"]?.text, "a name with a space");
+    assert.equal(placed["d/stored.txt"]?.type, "text/plain", "a zip member carries no type of its own");
+    assert.deepEqual(did.directories.sort(), ["d", "graft", "t"]);
+    const record = JSON.parse(placed["graft/placed.json"]?.text ?? "{}");
+    assert.deepEqual(record["t/a b.txt"], { sources: files[2].source, etag: "W/1" });
+  });
+
+  test("makes no directory that browsing already found, even for a file it writes there", async () => {
+    const did = stubFoundry({ fetch: network(null), browse: async () => ({ files: [] }) });
+    await httpHandler.place({ files });
+    assert.equal(did.uploads.length, 4, "three files and the record");
+    assert.deepEqual(did.directories, ["graft"]);
+  });
+
+  test("touches nothing on a rebuild where every file is current", async () => {
+    const record = Object.fromEntries(files.map((f) => [f.destination, { sources: f.source, etag: "W/1" }]));
+    const did = stubFoundry({
+      fetch: network(record),
+      browse: async (_source, dir) => ({ files: files.filter((f) => f.destination.startsWith(`${dir}/`)).map((f) => f.destination) }),
+    });
+    await httpHandler.place({ files });
+    assert.deepEqual(did.uploads, []);
+    assert.deepEqual(did.directories, [], "made directories nothing was about to be written into");
+  });
+});
+
+describe("a fetch the server refuses", () => {
   /** Refuses everything, and records whether a bearer was offered. */
   function refusing(status) {
     const offered = [];
-    globalThis.fetch = async (url, init = {}) => {
-      if (init.method === "HEAD" || String(url).includes("placed.json")) return { ok: false };
+    stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
       offered.push(Boolean(init.headers?.Authorization));
       return { ok: false, status };
-    };
-    globalThis.foundry = {
-      utils: { getRoute: (path) => path },
-      applications: { apps: { FilePicker: { implementation: {
-        browse: async () => ({ files: [] }),
-        createDirectory: async () => {},
-        upload: async () => ({ status: "success" }),
-      } } } },
-    };
+    } });
     return offered;
   }
 
@@ -169,7 +220,7 @@ describe("a fetch the server refuses", () => {
   });
 
   test("says a token is missing rather than expired for an origin it has none for", async () => {
-    // Sending the reader to re-download a file that was never the problem.
+    // Blaming the token would send the reader to download a file that was never the problem.
     const offered = refusing(403);
     const { skipped } = await httpHandler.place({ auth: { "https://elsewhere": "t" }, files: [file] });
     assert.deepEqual(offered, [false], "a bearer was sent to an origin it was not for");
@@ -179,31 +230,19 @@ describe("a fetch the server refuses", () => {
 });
 
 describe("the re-download choice", () => {
-  const saved = { fetch: globalThis.fetch, foundry: globalThis.foundry };
-  afterEach(() => { globalThis.fetch = saved.fetch; globalThis.foundry = saved.foundry; });
-
-  /**
-   * A world where every destination is already on disk and recorded as
-   * current, so nothing should be fetched unless the reader asks for it.
-   */
-  function worldWithEverythingPlaced(files) {
+  /** Every destination already on disk and recorded as current. */
+  function everythingPlaced(files) {
     const fetched = [];
     const record = Object.fromEntries(files.map((f) => [f.destination, { sources: [f.source], etag: "W/1" }]));
-    globalThis.fetch = async (url, init = {}) => {
-      const path = decodeURIComponent(String(url).split("?")[0]).replace(/^\//, "");
-      if (init.method === "HEAD") return { ok: true, headers: new Map([["etag", "W/1"], ["content-length", "1"]]) };
-      if (path === "graft/placed.json") return { ok: true, json: async () => record };
-      fetched.push(String(url));
-      return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
-    };
-    globalThis.foundry = {
-      utils: { getRoute: (path) => path },
-      applications: { apps: { FilePicker: { implementation: {
-        browse: async () => ({ files: files.map((f) => f.destination) }),
-        createDirectory: async () => {},
-        upload: async () => ({ status: "success" }),
-      } } } },
-    };
+    stubFoundry({
+      fetch: async (url, init = {}) => {
+        if (init.method === "HEAD") return { ok: true, headers: new Map([["etag", "W/1"], ["content-length", "1"]]) };
+        if (String(url).includes("placed.json")) return { ok: true, json: async () => record };
+        fetched.push(String(url));
+        return ok("x");
+      },
+      browse: async () => ({ files: files.map((f) => f.destination) }),
+    });
     return fetched;
   }
 
@@ -213,7 +252,7 @@ describe("the re-download choice", () => {
   ];
 
   test("asks when files are already here, and skips them when told to", async () => {
-    const fetched = worldWithEverythingPlaced(files);
+    const fetched = everythingPlaced(files);
     const asked = [];
     await httpHandler.place({ files }, { redownload: async (n, total) => { asked.push([n, total]); return false; } });
     assert.deepEqual(asked, [[2, 2]], "was not asked, or was told the wrong counts");
@@ -222,36 +261,24 @@ describe("the re-download choice", () => {
 
   test("fetches everything when told to, whatever the record says", async () => {
     // The record says both are current; the reader overruling it is the point.
-    const fetched = worldWithEverythingPlaced(files);
+    const fetched = everythingPlaced(files);
     await httpHandler.place({ files }, { redownload: async () => true });
     assert.deepEqual(fetched.sort(), ["https://x/a.png", "https://x/b.png"]);
   });
 });
 
 describe("a zip the handler cannot use", () => {
-  const saved = { fetch: globalThis.fetch, foundry: globalThis.foundry };
-  afterEach(() => { globalThis.fetch = saved.fetch; globalThis.foundry = saved.foundry; });
-
   test("says so, and still delivers its files from their own URLs", async () => {
-    // Silently falling back made a push that never shipped the zip look
-    // identical to one that did.
     const fetched = [];
-    globalThis.fetch = async (url, init = {}) => {
-      if (init.method === "HEAD") return { ok: false, headers: new Map() };
-      const u = String(url);
-      if (u.includes("placed.json")) return { ok: false };
-      fetched.push(u);
-      if (u.includes(".zip")) return { ok: false, status: 404 };
-      return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
-    };
-    globalThis.foundry = {
-      utils: { getRoute: (path) => path },
-      applications: { apps: { FilePicker: { implementation: {
-        browse: async () => { throw new Error("no such directory"); },
-        createDirectory: async () => {},
-        upload: async () => ({ status: "success" }),
-      } } } },
-    };
+    stubFoundry({
+      fetch: async (url, init = {}) => {
+        const u = String(url);
+        if (init.method === "HEAD" || u.includes("placed.json")) return missing;
+        fetched.push(u);
+        return u.includes(".zip") ? { ok: false, status: 404 } : ok("x");
+      },
+      browse: async () => { throw new Error("no such directory"); },
+    });
     const files = ["a", "b"].map((n) => ({
       source: [`https://x/pack.zip#${n}.png`, `https://x/${n}.png?v=1`], destination: `d/${n}.png`, size: 1,
     }));
@@ -267,9 +294,6 @@ describe("a zip the handler cannot use", () => {
 
 describe("pool", () => {
   test("runs the whole list, and no more than the limit at once", async () => {
-    // Every file is a fetch, an upload and a HEAD; serialising them is what
-    // made a 361-asset import take minutes.
-    const { pool } = await import("../scripts/assets.mjs");
     const items = Array.from({ length: 25 }, (_, i) => i);
     const done = [];
     let live = 0, peak = 0;
@@ -299,7 +323,7 @@ describe("zipMember", () => {
   });
 
   test("keeps a stray percent sign in a member name rather than throwing", () => {
-    // Thrown, it took the whole http block down with it.
+    // A throw here would take the whole http block down.
     assert.equal(zipMember("https://x/pack.zip#100%.png").path, "100%.png");
   });
 
@@ -338,7 +362,6 @@ describe("planZips", () => {
     assert.deepEqual(direct, []);
   });
 
-
   test("sends a file with no zip at all straight to its own URL", () => {
     const plain = { destination: "d/p.png", source: "https://x/p.png" };
     assert.deepEqual(planZips([plain], [plain], 0.5).direct, [plain]);
@@ -367,7 +390,7 @@ describe("needsFetch", () => {
     }), true);
   });
 
-  test("fetches when the file moved since it was written", () => {
+  test("fetches when the file changed on disk since it was written", () => {
     assert.equal(needsFetch(file, {
       present: true, head: head("100", 'W/"64-99"'), record: { sources: [file.source], etag: 'W/"64-1a"' },
     }), true);

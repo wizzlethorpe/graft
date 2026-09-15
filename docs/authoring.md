@@ -77,4 +77,4 @@ A grafts file is an object, not a bare list:
 
 `format` is the entry format version. Absent means 1. Format 1 files still read; only their `type: "Adventure"` entries are refused. A file with a newer format than this graft understands is skipped, with a log line saying graft needs updating.
 
-Everything else in the object is left alone, so a module or a graft extension can keep its own data beside the entries.
+`assets` is reserved: an object keyed by handler, naming files a build fetches first. Everything else in the object is left alone, so a module or a graft extension can keep its own data beside the entries.

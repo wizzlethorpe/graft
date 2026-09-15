@@ -18,6 +18,14 @@ describe("centralDirectory", () => {
   test("refuses bytes that are not a zip, rather than reading garbage", () => {
     assert.throws(() => centralDirectory(new TextEncoder().encode("not a zip at all, just text")), /not a zip/);
   });
+
+  test("refuses a zip64 archive rather than reading past what it can address", () => {
+    const end = new Uint8Array(22);
+    const view = new DataView(end.buffer);
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint32(16, 0xffffffff, true);
+    assert.throws(() => centralDirectory(end), /zip64/);
+  });
 });
 
 describe("readMember", () => {
@@ -30,6 +38,12 @@ describe("readMember", () => {
     const member = centralDirectory(pack).get("maps/deflated.txt");
     assert.equal(member.method, 8, "the fixture's member is not actually deflated");
     assert.equal(text(await readMember(pack, member)), "deflated ".repeat(200));
+  });
+
+  test("refuses a compression method it cannot inflate", async () => {
+    const local = new Uint8Array(30);
+    new DataView(local.buffer).setUint32(0, 0x04034b50, true);
+    await assert.rejects(() => readMember(local, { method: 12, compressed: 0, local: 0 }), /unsupported zip compression method 12/);
   });
 
   test("reads a member whose name has a space in it", async () => {

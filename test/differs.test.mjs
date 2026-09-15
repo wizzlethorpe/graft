@@ -1,10 +1,5 @@
-// Deciding whether a write would change anything, so an unchanged rebuild
-// can skip it, and naming what changed when it would.
-//
-// The cost this exists for is real: a compendium write measured ~234ms against
-// ~8ms to prepare the document, so on a rebuild where little moved almost all
-// of the time is spent writing what is already there. Compared rather than
-// remembered, so nothing can go stale.
+// Whether a rebuild has to write a document. A write costs about 234ms against
+// 8ms to prepare one, so skipping what did not change is most of a rebuild's speed.
 
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -80,7 +75,7 @@ describe("differs", () => {
 
   test("a version Foundry writes is not a difference", () => {
     // A sourced document carries the pack's versions, and Foundry writes its
-    // own. Comparing them rewrote every sourced document on every build.
+    // own. Comparing them would rewrite every sourced document on every build.
     const fromPack = doc({ _stats: { coreVersion: "13.346", systemVersion: "4.1.0" } });
     const stored = doc({ _stats: { coreVersion: "14.367", systemVersion: "5.3.3" } });
     assert.equal(differs(fromPack, stored), false);

@@ -28,7 +28,6 @@ describe("downloadNotice", () => {
   });
 
   test("names both when the file carries assets and transforms run", () => {
-    // A registered transform used to hide the assets notice entirely.
     install(transform("moulinette"));
     const notice = downloadNotice("m", { http: { files: [{}] } });
     assert.match(notice, /GRAFT\.PromptAssets/);

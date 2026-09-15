@@ -114,6 +114,20 @@ export async function buildAndReport(moduleId) {
   return { built, skipped, warnings, removed };
 }
 
+/**
+ * Whether to fetch every asset again when some are already on disk. Closing
+ * the dialog keeps them.
+ */
+export async function askRedownload(already, total) {
+  const all = await foundry.applications.api.DialogV2.confirm({
+    window: { title: t("GRAFT.RedownloadTitle") },
+    content: `<p>${t("GRAFT.RedownloadIntro", { already, total })}</p>`,
+    yes: { label: t("GRAFT.RedownloadAll") },
+    no: { label: t("GRAFT.RedownloadKeep"), default: true },
+  }).catch(() => false);
+  return all === true;
+}
+
 /** Build failures first, then each transform's, each under its own heading. */
 function groupByReporter(skipped) {
   const groups = new Map();
@@ -270,11 +284,7 @@ function fileName(label) {
   return `${stem || "grafts"}.grafts.json`;
 }
 
-/**
- * Download the same entries Copy would have put on the clipboard.
- *
- * Saves the same whole `grafts.json` Copy puts on the clipboard.
- */
+/** Save the grafts.json Copy would have put on the clipboard. */
 export async function downloadGrafts(docs, label) {
   if (docs.length === 0) {
     ui.notifications.warn(t("GRAFT.NothingToExport", { label }));
@@ -321,20 +331,6 @@ async function confirmBulk(count, label) {
 }
 
 // ── importing grafts ────────────────────────────────────────────────────────
-
-/**
- * Whether to fetch every asset again when some are already on disk. Closing
- * the dialog keeps them.
- */
-export async function askRedownload(already, total) {
-  const all = await foundry.applications.api.DialogV2.confirm({
-    window: { title: t("GRAFT.RedownloadTitle") },
-    content: `<p>${t("GRAFT.RedownloadIntro", { already, total })}</p>`,
-    yes: { label: t("GRAFT.RedownloadAll") },
-    no: { label: t("GRAFT.RedownloadKeep"), default: true },
-  }).catch(() => false);
-  return all === true;
-}
 
 /** Build pasted or file-loaded grafts into the world.*/
 export async function promptForImport() {

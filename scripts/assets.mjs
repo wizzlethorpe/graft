@@ -1,14 +1,11 @@
-// Getting bytes onto disk before anything is built.
-//
-// A grafts file's `assets` block is keyed by handler: each key names who knows
-// how to fetch that kind, and holds whatever that handler needs. A handler only
-// places files. It never rewrites entries, so an entry naming a file as its
-// source has to name the path the handler will put it at.
+// Getting bytes onto disk before anything is built. A grafts file's `assets`
+// block is keyed by handler, and a handler only places files, never entries.
 
 import { dataUrl, readDataJson } from "./paths.mjs";
 import { sourcesOf } from "./plan.mjs";
 import { validRegistration } from "./extend.mjs";
 import { centralDirectory, readMember } from "./zip.mjs";
+import { t } from "./i18n.mjs";
 
 const HOOK = "graftAssets";
 
@@ -58,12 +55,8 @@ export async function placeAssets(assets, { onPhase, onFile, redownload, handler
 }
 
 /**
- * Whether a file has to be fetched, given the listing, a HEAD and the record.
- *
- * Every source carries its version, so a file is unchanged when any source it
- * offers now is one it offered when written; that holds when it has moved to
- * another zip. The ETag says nothing has touched it since. Size is the
- * fallback where no record exists, and cannot tell two versions of one length apart.
+ * Whether a file has to be fetched. It is current when a source it offers now
+ * is one it offered when written and its ETag has not moved; with no record, size decides.
  */
 export function needsFetch(file, { present, head, record }) {
   if (!present) return true;
@@ -75,7 +68,6 @@ export function needsFetch(file, { present, head, record }) {
   if (head && file.size != null && String(file.size) === head.length) return false;
   return true;
 }
-
 
 /** `{ zip, path }` for a source naming a member of a zip (`pack.zip#dir/a.png`), or null. */
 export function zipMember(source) {
@@ -89,11 +81,8 @@ export function zipMember(source) {
 }
 
 /**
- * Which zips to fetch whole this build, and which files go to their own URL.
- *
- * A zip is fetched when at least `threshold` of the files naming it need
- * fetching: a first import takes the zip, a rebuild with one changed map does
- * not. A file whose only sources are zip members has nowhere else to go.
+ * Which zips to fetch whole, when at least `threshold` of the files naming one
+ * need fetching, and which files go to their own URL. A file with no URL of its own takes its zip.
  */
 export function planZips(usable, needed, threshold) {
   const zipsOf = (file) => new Set(sourcesOf(file).map(zipMember).filter(Boolean).map((m) => m.zip));
@@ -125,7 +114,7 @@ function typeFor(path, type = "") {
   return usable ? type : CONST.UPLOADABLE_FILE_EXTENSIONS[path.split(".").pop()?.toLowerCase()] ?? "";
 }
 
-/** Vault paths come back from `browse` percent-encoded and are authored plain. */
+/** Paths come back from `browse` percent-encoded. */
 const decode = (path) => { try { return decodeURIComponent(path); } catch { return path; } };
 
 const dirOf = (path) => path.split("/").slice(0, -1).join("/");
@@ -185,17 +174,12 @@ export async function pool(items, limit, task) {
 
 const CONCURRENCY = 8;
 
-/**
- * Fetch a zip whole when at least this share of what the file takes from it
- * needs fetching; below it, each file comes from its own URL. Tune from timings.
- */
+/** Fetch a zip whole when at least this share of the files naming it need fetching. */
 const ZIP_THRESHOLD = 0.5;
 
 /**
- * `{ auth?: { <origin>: <token> }, files: [{ source, destination, size }] }`
- *
- * `redownload(already, total)` is asked once when some files are already on
- * disk, and resolving true fetches everything regardless of the record.
+ * `{ auth?: { <origin>: <token> }, files: [{ source, destination, size }] }`.
+ * `redownload(already, total)` is asked once when files are already on disk; true fetches everything.
  */
 export const httpHandler = {
   id: "http",
@@ -220,26 +204,24 @@ export const httpHandler = {
       else usable.push(file);
     }
 
-    const { present, found } = await listing(new Set(usable.map((f) => dirOf(f.destination))));
+    const dirs = new Set(usable.map((f) => dirOf(f.destination)));
+    const { present, found } = await listing(dirs);
     const record = await readRecord();
+    // Only what browsing did not find: everything in such a directory is about to be written.
+    for (const dir of dirs) if (!found.has(dir)) await ensureDirectory(dir);
 
     const already = usable.filter((f) => present.has(f.destination)).length;
     const everything = already > 0 && redownload ? await redownload(already, usable.length) : false;
 
-    onPhase?.("Assets", usable.length);
     const needed = everything ? [...usable] : [];
     if (!everything) {
+      onPhase?.(t("GRAFT.PhaseAssets"), usable.length);
       await pool(usable, CONCURRENCY, async (file) => {
         const known = present.has(file.destination);
         const meta = known ? await head(file.destination) : null;
         if (needsFetch(file, { present: known, head: meta, record: record[file.destination] })) needed.push(file);
-        else onFile?.(file.destination.split("/").pop());
+        onFile?.(file.destination.split("/").pop());
       });
-    }
-
-    // Only where a file is about to land, and only where browse found nothing.
-    for (const dir of new Set(needed.map((f) => dirOf(f.destination)))) {
-      if (!found.has(dir)) await ensureDirectory(dir);
     }
 
     let changed = false;
@@ -280,7 +262,7 @@ export const httpHandler = {
       }
     }
 
-    if (direct.length > 0) onPhase?.("Assets", direct.length);
+    if (direct.length > 0) onPhase?.(t("GRAFT.PhaseAssets"), direct.length);
     await pool(direct, CONCURRENCY, async (file) => {
       const urls = sourcesOf(file).filter((s) => !zipMember(s));
       for (const url of urls) {
@@ -307,11 +289,8 @@ export const httpHandler = {
 };
 
 /**
- * Why a file cannot be placed, or null.
- *
- * The destination comes from a pasted file and becomes an upload path, so it
- * has to stay inside the data directory. A prefix cannot be required: each
- * publisher picks its own, and a vault's is its own name.
+ * Why a file cannot be placed, or null. Its destination comes from a pasted file
+ * and becomes an upload path, so it has to stay inside the data directory.
  */
 export function unusable(file) {
   const sources = Array.isArray(file?.source) ? file.source : [file?.source];
@@ -332,9 +311,7 @@ async function authorizedFetch(url, auth) {
   if (sent) headers.Authorization = `Bearer ${auth[origin]}`;
   const res = await fetch(url, { headers });
   if (res.status === 401 || res.status === 403) {
-    // Only a token that was actually sent can have expired. Saying so about an
-    // origin this file carries no token for sends the reader to re-download a
-    // file that was never the problem.
+    // Only a token that was actually sent can have expired.
     throw new Error(sent
       ? `${res.status} from ${origin}; the token in this grafts file has expired, download it again`
       : `${res.status} fetching ${url}; this grafts file carries no token for ${origin ?? "that origin"}`);

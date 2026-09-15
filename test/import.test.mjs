@@ -46,7 +46,7 @@ describe("importGrafts, into a world", () => {
   afterEach(uninstallWorld);
 
   test("fires graftBuilt, as every build does whoever started it", async () => {
-    // A module tracking what was last built never heard about an import.
+    // A module tracking what was last built has to hear about imports too.
     installWorld({ types: ["Actor"] });
     globalThis.game.i18n = { localize: (key) => key, format: (key) => key };
     const fired = [];

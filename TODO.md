@@ -66,8 +66,7 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
   longer matches the `sourceHash` an older graft recorded. Measured at 2 entries
   in 444 across the vaults in this workspace. **Copy graft** on the entry
   refreshes the hash.
-- `ui` has no test coverage. `hydrate` and `modules` are covered through stubs
-  where a decision lives there; `exportDiff` the same way.
+- `ui` is covered only where a decision is a pure function, such as `downloadNotice`. `hydrate` and `modules` are covered through stubs where a decision lives there; `exportDiff` the same way.
 
 ## Wanted
 

@@ -74,12 +74,13 @@ scripts/assemble.mjs   folds entries aimed at an Adventure pack into one Adventu
 scripts/extend.mjs     collects and runs pre-build transforms and export rewriters.
 scripts/assets.mjs     asset handlers, and the built-in http one.
 scripts/zip.mjs        reads a zip in the browser, for the http handler. Pure.
-scripts/paths.mjs      a Foundry data path as a URL. Pure.
+scripts/paths.mjs      reading a file out of the Foundry data directory.
 scripts/yaml.mjs       clipboard output. Pure.
 scripts/i18n.mjs       localised text.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
 scripts/modules.mjs    reads what a module declares.
 scripts/import.mjs     building grafts somebody sent you into the world.
+scripts/build.mjs      one build, from a module or an import: assets, transforms, documents.
 scripts/origin.mjs     recovers a document's true source.
 scripts/progress.mjs   the build's progress bar.
 scripts/ui.mjs         controls, menus, dialogs.
