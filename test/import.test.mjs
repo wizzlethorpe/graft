@@ -7,6 +7,7 @@ import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { importGrafts, localiseSources } from "../scripts/import.mjs";
+import { installWorld, uninstallWorld } from "./foundry-stub.mjs";
 
 describe("importGrafts", () => {
   const saved = globalThis.game;
@@ -28,11 +29,31 @@ describe("importGrafts", () => {
     await assert.rejects(() => importGrafts({ format: 4, entries: [] }), /ImportEmpty/);
   });
 
+  test("names a malformed assets block rather than calling the file entry-less", async () => {
+    installI18n();
+    await assert.rejects(() => importGrafts({ format: 4, entries: [{ id: "a" }], assets: [] }), /ImportBadAssets/);
+  });
+
   test("takes a whole file and refuses a bare list, which cannot carry assets", async () => {
     installI18n();
     const entry = { id: "aaaaaaaaaaaaaaaa", type: "Actor", patch: {} };
     await assert.rejects(() => importGrafts([entry]), /ImportNotEntries/);
     await assert.rejects(() => importGrafts(entry), /ImportNotEntries/);
+  });
+});
+
+describe("importGrafts, into a world", () => {
+  afterEach(uninstallWorld);
+
+  test("fires graftBuilt, as every build does whoever started it", async () => {
+    // A module tracking what was last built never heard about an import.
+    installWorld({ types: ["Actor"] });
+    globalThis.game.i18n = { localize: (key) => key, format: (key) => key };
+    const fired = [];
+    globalThis.Hooks = { callAll: (hook, ...args) => { if (hook === "graftBuilt") fired.push(args); } };
+    const result = await importGrafts({ format: 4, entries: [{ id: "aaaaaaaaaaaaaaaa", type: "Actor", patch: { name: "Guard" } }] });
+    assert.deepEqual(result.built, ["Actor.aaaaaaaaaaaaaaaa"]);
+    assert.deepEqual(fired, [["world", result]]);
   });
 });
 

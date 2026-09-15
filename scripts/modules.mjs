@@ -110,8 +110,13 @@ export async function readGrafts(moduleId, { onRefused } = {}) {
       continue;
     }
     entries.push(...result.entries);
-    // Later files win a key they share, which is the same rule entries follow.
-    Object.assign(assets, result.assets);
+    for (const [kind, config] of Object.entries(result.assets)) {
+      // graft cannot merge a handler's block without knowing its shape, so the
+      // first file to declare one keeps it.
+      if (Object.hasOwn(assets, kind)) {
+        console.warn(`Graft | ${moduleId}/${file} declares "${kind}" assets, which an earlier file already declares; ignored.`);
+      } else assets[kind] = config;
+    }
   }
   return { entries, assets };
 }

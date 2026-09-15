@@ -42,6 +42,23 @@ describe("placeAssets", () => {
     assert.deepEqual(skipped, [{ by: "http", id: "a.png", reason: "404" }]);
   });
 
+  test("reports a module's broken handler registration, and places the rest", async () => {
+    // Thrown out of the hook, it failed the whole build before any report.
+    const saved = globalThis.Hooks;
+    let ran = false;
+    globalThis.Hooks = { callAll: (_hook, register) => {
+      register({ id: "broken" });
+      register({ id: "good", place: () => { ran = true; } });
+    } };
+    try {
+      const { skipped } = await placeAssets({ good: {} });
+      assert.ok(ran, "a working handler did not run after a broken one registered");
+      assert.match(skipped[0].reason, /"broken" needs a place function/);
+    } finally {
+      globalThis.Hooks = saved;
+    }
+  });
+
   test("no assets block is not an error", async () => {
     assert.deepEqual(await placeAssets(undefined, { handlers: new Map() }), { skipped: [], warnings: [] });
   });
@@ -74,6 +91,25 @@ describe("the http handler's own checks", () => {
     ] });
     assert.deepEqual(fetched, ["https://x/b.png"]);
     assert.match(skipped[0].reason, /no destination/);
+  });
+
+  test("warns when the record of what was placed cannot be written", async () => {
+    // Failing quietly, the next build fetched these files again with nothing said.
+    globalThis.fetch = async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return { ok: false };
+      return { ok: true, status: 200, blob: async () => new Blob(["x"], { type: "image/png" }) };
+    };
+    globalThis.foundry = {
+      utils: {},
+      applications: { apps: { FilePicker: { implementation: {
+        browse: async () => ({ files: [] }),
+        createDirectory: async () => {},
+        upload: async (_source, dir) => (dir === "graft" ? { status: "error", message: "disk full" } : { status: "success" }),
+      } } } },
+    };
+    const { skipped, warnings } = await httpHandler.place({ files: [{ source: "https://x/a.png", destination: "d/a.png", size: 1 }] });
+    assert.deepEqual(skipped, []);
+    assert.match(warnings[0]?.reason ?? "", /could not be written \(disk full\)/);
   });
 
   test("names a file it cannot use instead of throwing out of the whole block", () => {
@@ -260,6 +296,11 @@ describe("zipMember", () => {
 
   test("decodes the member path, so a name with a space finds its entry", () => {
     assert.equal(zipMember("https://x/pack.zip#tokens/a%20b.png").path, "tokens/a b.png");
+  });
+
+  test("keeps a stray percent sign in a member name rather than throwing", () => {
+    // Thrown, it took the whole http block down with it.
+    assert.equal(zipMember("https://x/pack.zip#100%.png").path, "100%.png");
   });
 
   test("leaves a fragment on anything that is not a zip alone", () => {

@@ -7,9 +7,8 @@
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { FORMAT, graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
 import { parseAdventureSource, resolveAdventureSource } from "./origin.mjs";
-import { collectTransforms, runTransforms } from "./extend.mjs";
-import { placeAssets } from "./assets.mjs";
-import * as progress from "./progress.mjs";
+import { collectTransforms } from "./extend.mjs";
+import { runBuild } from "./build.mjs";
 import { toYaml } from "./yaml.mjs";
 import { importGrafts } from "./import.mjs";
 import { t } from "./i18n.mjs";
@@ -77,38 +76,12 @@ export async function buildAndReport(moduleId) {
   }
 
   const title = game.modules.get(moduleId)?.title ?? moduleId;
-  progress.begin(`Graft: ${title}`);
-  let placed, prepared, built, skipped, warnings, removed;
-  try {
-    // Before transforms: an entry whose source is a file has nothing to
-    // resolve until the handler that fetches it has run.
-    placed = await placeAssets(assets, {
-      onPhase: progress.phase,
-      onFile: progress.step,
-      redownload: askRedownload,
-    });
-    // Other modules rewrite entries before anything is built. Their failures
-    // use the same shape as build failures, so the reader sees one report.
-    prepared = await runTransforms(collectTransforms(moduleId), entries, {
-      onTransform: (tr) => progress.phase(tr.label),
-    });
-    ({ built, skipped, warnings, removed } = await hydrate(moduleId, prepared.entries, {
-      // A transform that skipped an entry drops it from its output; the entry
-      // still exists, and what was built for it last time is not stale.
-      declared: entries,
-      // The total is only known once planning has dropped what it cannot
-      // build, which is the first thing the callback is told.
-      onProgress: (i, total, entry) => {
-        if (i === 1) progress.phase(t("GRAFT.PhaseBuilding"), total);
-        progress.step(entry.id);
-        console.log(`Graft | ${i}/${total} ${entry.id}`);
-      },
-    }));
-  } finally {
-    progress.end();
-  }
-  const allSkipped = [...placed.skipped, ...prepared.skipped, ...skipped];
-  const allWarnings = [...placed.warnings, ...prepared.warnings, ...warnings];
+  const { built, skipped, warnings, removed } = await runBuild({
+    moduleId, title, assets, entries, redownload: askRedownload,
+    // A transform that skipped an entry drops it from its output; the entry
+    // still exists, and what was built for it last time is not stale.
+    write: (prepared, options) => hydrate(moduleId, prepared, { ...options, declared: entries }),
+  });
 
   // Building answers the prompt, so stop suppressing it: if entries go missing
   // later the reader should be asked again.
@@ -117,32 +90,28 @@ export async function buildAndReport(moduleId) {
     await game.settings.set(MODULE_ID, SUPPRESSED, [...suppressed]);
   }
 
-  // Every build reports, whoever started it. A module tracking what it last
-  // built cannot see the pack control or the compendium header from here.
-  Hooks.callAll("graftBuilt", moduleId, { built, skipped: allSkipped, warnings: allWarnings, removed });
-
   // Logged as well as shown, because a console line can go into a bug report.
   if (removed.length > 0) {
     console.group(`Graft | ${removed.length} removed`);
     for (const { id, name, pack } of removed) console.log(`${name} (${id}) from ${pack}`);
     console.groupEnd();
   }
-  if (allWarnings.length > 0) {
-    console.group(`Graft | ${allWarnings.length} built with warnings`);
-    for (const { by, id, reason } of allWarnings) {
+  if (warnings.length > 0) {
+    console.group(`Graft | ${warnings.length} built with warnings`);
+    for (const { by, id, reason } of warnings) {
       console.warn(`${by ? `[${by}] ` : ""}${id}: ${reason}`);
     }
     console.groupEnd();
   }
-  if (allSkipped.length > 0) {
-    console.group(`Graft | ${allSkipped.length} skipped`);
-    for (const { by, id, reason } of allSkipped) {
+  if (skipped.length > 0) {
+    console.group(`Graft | ${skipped.length} skipped`);
+    for (const { by, id, reason } of skipped) {
       console.warn(`${by ? `[${by}] ` : ""}${id}: ${reason}`);
     }
     console.groupEnd();
   }
-  await reportBuild(title, built, allSkipped, allWarnings, removed);
-  return { built, skipped: allSkipped, warnings: allWarnings, removed };
+  await reportBuild(title, built, skipped, warnings, removed);
+  return { built, skipped, warnings, removed };
 }
 
 /** Build failures first, then each transform's, each under its own heading. */
@@ -158,18 +127,14 @@ function groupByReporter(skipped) {
   return [...groups].sort((a, b) => (a[0] === null ? -1 : b[0] === null ? 1 : 0));
 }
 
-/**
- * What the build will reach outside the world for.
- *
- * Both halves matter: a file with an assets block downloads whether or not any
- * transform runs, and promising otherwise is a promise graft then breaks.
- */
+/** What the build will reach outside the world for: the file's assets, the transforms that run, or both. */
 export function downloadNotice(moduleId, assets) {
   const names = collectTransforms(moduleId).map((tr) => tr.label);
-  if (names.length > 0) return t("GRAFT.PromptTransforms", { transforms: names.join(", ") });
-  return Object.keys(assets ?? {}).length > 0
-    ? t("GRAFT.PromptAssets")
-    : t("GRAFT.PromptNoDownload");
+  const notices = [
+    ...(Object.keys(assets ?? {}).length > 0 ? [t("GRAFT.PromptAssets")] : []),
+    ...(names.length > 0 ? [t("GRAFT.PromptTransforms", { transforms: names.join(", ") })] : []),
+  ];
+  return notices.length > 0 ? notices.join("") : t("GRAFT.PromptNoDownload");
 }
 
 /**

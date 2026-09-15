@@ -70,6 +70,22 @@ describe("readGrafts on a file it will not read", () => {
     assert.deepEqual((await readGrafts("m")).assets, assets);
   });
 
+  test("keeps the first file's block for a handler two files declare, and says so", async () => {
+    // Merged silently, every file's http files but the last were dropped.
+    const block = (name) => ({ http: { files: [{ source: `https://x/${name}.png`, destination: `d/${name}.png` }] } });
+    const warned = [];
+    globalThis.game = { modules: { get: () => ({ flags: { graft: { entries: ["a.json", "b.json"] } } }) } };
+    globalThis.fetch = async (url) => ({
+      ok: true,
+      json: async () => ({ format: FORMAT, entries: [{ id: String(url) }], assets: block(String(url).endsWith("a.json") ? "a" : "b") }),
+    });
+    console.warn = (message) => warned.push(message);
+    const { entries, assets } = await readGrafts("m");
+    assert.equal(entries.length, 2);
+    assert.deepEqual(assets, block("a"));
+    assert.match(warned.join("\n"), /b\.json declares "http" assets/);
+  });
+
   test("builds nothing from a bare list, and reports which refusal it was", async () => {
     installModuleFile([{ id: "a" }]);
     const refused = [];

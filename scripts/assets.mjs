@@ -17,10 +17,13 @@ const fp = () => foundry.applications.apps.FilePicker.implementation;
 /** The record of what this world has placed: destination -> `{ sources, etag }`. */
 const RECORD = "graft/placed.json";
 
-/** Every asset handler, `http` first so a module can replace it. */
-export function collectHandlers() {
+/** Every asset handler, `http` first so a module can replace it. A registration that fails goes to `refuse`. */
+export function collectHandlers(refuse) {
   const handlers = new Map();
-  const register = (h) => handlers.set(h.id, registered("asset handler", "place", h));
+  const register = (h) => {
+    try { handlers.set(h.id, registered("asset handler", "place", h)); }
+    catch (err) { refuse(err.message); }
+  };
   register(httpHandler);
   Hooks.callAll(HOOK, register);
   return handlers;
@@ -30,11 +33,15 @@ export function collectHandlers() {
  * Run each handler over its own block. A block with no handler is one report
  * line, since the entries that needed it fail on their own besides.
  */
-export async function placeAssets(assets, { onPhase, onFile, redownload, handlers = collectHandlers() } = {}) {
+export async function placeAssets(assets, { onPhase, onFile, redownload, handlers } = {}) {
   const skipped = [];
   const warnings = [];
-  for (const [kind, config] of Object.entries(assets ?? {})) {
-    const handler = handlers.get(kind);
+  const kinds = Object.entries(assets ?? {});
+  if (kinds.length === 0) return { skipped, warnings };
+  // Another module's broken registration costs that handler, not the build.
+  const available = handlers ?? collectHandlers((reason) => skipped.push({ by: "assets", id: "(handler)", reason }));
+  for (const [kind, config] of kinds) {
+    const handler = available.get(kind);
     if (!handler) {
       skipped.push({ by: kind, id: "(assets)", reason: `no handler for "${kind}" assets is installed` });
       continue;
@@ -78,7 +85,7 @@ export function zipMember(source) {
   const path = source.slice(hash + 1);
   let pathname;
   try { pathname = new URL(zip, "http://relative").pathname; } catch { return null; }
-  return path && /\.zip$/i.test(pathname) ? { zip, path: decodeURIComponent(path) } : null;
+  return path && /\.zip$/i.test(pathname) ? { zip, path: decode(path) } : null;
 }
 
 /**
@@ -165,13 +172,8 @@ async function readRecord() {
 }
 
 async function writeRecord(record) {
-  const file = new File([JSON.stringify(record)], RECORD.split("/").pop(), { type: "application/json" });
-  try {
-    await ensureDirectory(dirOf(RECORD));
-    await fp().upload("data", dirOf(RECORD), file, {}, { notify: false });
-  } catch (err) {
-    console.warn("Graft | could not record what was placed:", err);
-  }
+  await ensureDirectory(dirOf(RECORD));
+  await upload(RECORD, JSON.stringify(record), "application/json");
 }
 
 async function ensureDirectory(dir) {
@@ -281,7 +283,7 @@ export const httpHandler = {
         const entry = directory.get(path);
         if (!entry) { missing.push(path); reasons.set(file, `${zip} holds no ${path}`); direct.push(file); return; }
         try {
-          placed(file, await upload(file.destination, await readMember(bytes, entry), typeFor(path)));
+          placed(file, await upload(file.destination, await readMember(bytes, entry), typeFor(file.destination)));
         } catch (err) {
           reasons.set(file, err.message); direct.push(file);
         }
@@ -307,7 +309,12 @@ export const httpHandler = {
       skipped.push({ id: file.destination, reason: reasons.get(file) ?? "no source it could fetch" });
     });
 
-    if (changed) await writeRecord(record);
+    if (changed) {
+      try { await writeRecord(record); }
+      catch (err) {
+        warnings.push({ id: RECORD, reason: `could not be written (${err.message}); the next build may fetch these files again` });
+      }
+    }
     return { skipped, warnings };
   },
 };
