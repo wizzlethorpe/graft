@@ -59,9 +59,33 @@ export async function hydrate(moduleId, entries, { onProgress, declared = entrie
   return { ...result, removed };
 }
 
-/** Build a set of entries into the world, filed by their `folder` paths. Unlike `hydrate`, nothing is pruned. */
-export async function hydrateWorld(entries, { onProgress } = {}) {
-  return build(worldTarget(), entries, onProgress);
+/**
+ * Build a set of entries into the world, filed by their `folder` paths. Unlike `hydrate`, nothing is pruned.
+ *
+ * `confirmOverwrite(existing)` is asked once, before anything is written, when
+ * entries land on documents no import wrote. Without it they are refused.
+ */
+export async function hydrateWorld(entries, { onProgress, confirmOverwrite } = {}) {
+  const existing = worldCollisions(entries);
+  const overwrite = existing.length > 0 && confirmOverwrite ? await confirmOverwrite(existing) === true : false;
+  const replaced = [];
+  const result = await build(worldTarget(overwrite, replaced), entries, onProgress);
+  return {
+    ...result,
+    warnings: [...result.warnings, ...replaced.map(({ id, name }) => ({
+      id, reason: `replaced ${name}, which was in your world before this import`,
+    }))],
+  };
+}
+
+/** The documents `entries` would land on that no import wrote, so are the reader's own. */
+export function worldCollisions(entries) {
+  const found = [];
+  for (const entry of entries) {
+    const existing = game.collections.get(entry.type)?.get(entry.id);
+    if (existing && !existing.flags?.graft?.imported) found.push({ id: entry.id, type: entry.type, name: existing.name });
+  }
+  return found;
 }
 
 /**
@@ -160,11 +184,12 @@ function documentPlace({ segments, type, folders, find, context }) {
 /**
  * The world's own collections.
  *
- * A world document an import did not write is never written over and never
- * built on. `flags.graft.imported` marks the ones an import wrote; a document
- * dragged out of a graft pack carries `built` but not this.
+ * A world document an import did not write is never built on, and written over
+ * only when `overwrite` says the reader agreed to it. `flags.graft.imported`
+ * marks the ones an import wrote; a document dragged out of a graft pack
+ * carries `built` but not this.
  */
-function worldTarget() {
+function worldTarget(overwrite, replaced) {
   // A file an asset handler placed is not a world document, so the rule that
   // protects the reader's own content does not apply to it.
   const foreign = (uuid, data) =>
@@ -180,7 +205,10 @@ function worldTarget() {
       if (!collection) throw new Error(`${entry.type} is not a document type a world holds`);
       const existing = collection.get(entry.id);
       if (existing && !existing.flags?.graft?.imported) {
-        throw new Error(`${existing.name} already has this id in your world and no import wrote it; not overwritten`);
+        if (!overwrite) {
+          throw new Error(`${existing.name} already has this id in your world and no import wrote it; not overwritten`);
+        }
+        replaced.push({ id: entry.id, name: existing.name });
       }
       const at = documentPlace({
         segments: folderSegments(entry.folder), type: entry.type, folders: game.folders,

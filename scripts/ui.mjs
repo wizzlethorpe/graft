@@ -128,6 +128,26 @@ export async function askRedownload(already, total) {
   return all === true;
 }
 
+/** Enough names to recognise what is at stake without a dialog nobody reads. */
+const OVERWRITE_NAMES = 10;
+
+/**
+ * Whether to replace world documents an import would land on that no import
+ * wrote. Closing the dialog keeps them, and those entries are skipped.
+ */
+export async function askOverwrite(existing) {
+  const shown = existing.slice(0, OVERWRITE_NAMES).map((e) => e.name).join(", ");
+  const rest = existing.length - OVERWRITE_NAMES;
+  const more = rest > 0 ? t("GRAFT.OverwriteMore", { count: rest }) : "";
+  const all = await foundry.applications.api.DialogV2.confirm({
+    window: { title: t("GRAFT.OverwriteTitle") },
+    content: `<p>${t("GRAFT.OverwriteIntro", { count: existing.length })}</p><p>${shown}${more}</p>`,
+    yes: { label: t("GRAFT.OverwriteReplace") },
+    no: { label: t("GRAFT.OverwriteKeep"), default: true },
+  }).catch(() => false);
+  return all === true;
+}
+
 /** Build failures first, then each transform's, each under its own heading. */
 function groupByReporter(skipped) {
   const groups = new Map();
@@ -371,7 +391,7 @@ export async function promptForImport() {
     return null;
   }
   try {
-    const result = await importGrafts(parsed, { redownload: askRedownload });
+    const result = await importGrafts(parsed, { redownload: askRedownload, confirmOverwrite: askOverwrite });
     await reportBuild(t("GRAFT.ImportTitle"), result.built, result.skipped, result.warnings);
     return result;
   } catch (err) {

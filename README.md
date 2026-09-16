@@ -6,53 +6,80 @@
 [![foundry](https://img.shields.io/endpoint?url=https://foundryshields.com/version?url=https://github.com/wizzlethorpe/graft/releases/latest/download/module.json&style=flat)](https://foundryvtt.com/packages/graft)
 
 
-[Graft](https://foundryvtt.com/packages/graft) packages your changes to somebody else's compendium content as a **diff** and rebuilds the result on the reader's machine. A graft module contains only pointers and patches, never the content it builds on.
+[Graft](https://foundryvtt.com/packages/graft) packages your changes to somebody else's compendium content as a **diff**, and rebuilds the result in somebody else's world. What travels is pointers and patches.
 
 To install, simply search for **Graft** in Foundry's *Install Module* dialog.
 
 > [!IMPORTANT]
-> **Your content is your responsibility.** A patch can still reproduce protected material: a description rewritten in full, a stat block restated, a map's whole wall layout. Graft cannot tell the difference and does not check entitlement; it resolves whatever UUIDs an entry names against whatever the reader has installed.
->
-> Check what your grafts contain before publishing, and honour the licences of what you build on.
+> **Your content is your responsibility.** A patch can still reproduce protected material (a description rewritten in full, a stat block restated, a map's whole wall layout). Check what your grafts contain before publishing, and honour the licences of what you build on.
 
-## An entry
+## Example
 
-A graft module declares its entries in `grafts.json`, an object holding the format it was written for, an `entries` list, and an optional `assets` block naming files to fetch first. Each entry is an `id` and `type` of your own, the `pack` of yours the result lands in, a `source` to graft onto, and a `patch`.
+This example supposes you are running a D&D 5th Edition world in FoundryVTT.
+
+**1. Build a Graft.** Import Bandit Captain from either the SRD or the Monster Manual, put it in a folder, and edit it in the ordinary sheet. For example, I renamed it to "The Enforcer", put its hit points up to 65, raised its CR, upgraded the scimitar to a d8, and deleted the pistol.
+
+**2. Copy it.** Right-click the actor in the sidebar and choose **Copy graft**. The same control sits in the header of an open sheet, and **Copy grafts** on a folder takes everything in it and its subfolders. Your clipboard now holds a whole `grafts.json`:
 
 ```json
 {
-  "id": "banditCaptain001",
-  "type": "Actor",
-  "pack": "my-actors",
-  "source": "Compendium.dnd-monster-manual.actors.Actor.mmBanditCaptain0",
-  "patch": {
-    "name": "The Enforcer",
-    "system": {
-      "attributes": { "hp": { "value": 65 } },
-      "details": { "cr": 4 }
-    },
-    "items": [
-      { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } },
-      { "_id": "2TB9ZSIbtbi4UtSv", "_delete": true }
-    ]
-  }
+  "format": 4,
+  "entries": [
+    {
+      "id": "banditCaptain001",
+      "type": "Actor",
+      "folder": "Harbor Raiders",
+      "source": "Compendium.dnd-monster-manual.actors.Actor.mmBanditCaptain0",
+      "sourceHash": "a5bc24cd72abd37f",
+      "patch": {
+        "name": "The Enforcer",
+        "system": {
+          "attributes": { "hp": { "value": 65 } },
+          "details": { "cr": 4 }
+        },
+        "items": [
+          { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } },
+          { "_id": "2TB9ZSIbtbi4UtSv", "_delete": true }
+        ]
+      }
+    }
+  ]
 }
 ```
 
-An array member carrying an `_id` patches the item it names; one carrying `_delete` removes it, which is how the captain loses his pistol. Building resolves the source, applies the patch, and creates the result under your id in your pack. A source the reader does not have skips that entry and names it in the report; everything else still builds.
+Read it before you send it:
 
-Whether entries become documents in a compendium or one importable Adventure is decided by the pack's declared type in `module.json`, not by the entries; see [Packaging](docs/format.md#packaging).
+- **`source`** is a reference to the document you built on.
+- **`patch`** is only what you changed, as an [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) merge patch. A key set to `null` removes it.
+- In **`items`**, a member carrying an `_id` patches the relevant item, so the scimitar's damage die moves and nothing else about it does. An array carrying `_delete` drops it, which is how we specify that the captain should lose his pistol. Notice that the aspects of the document that were not touched in our edits are not mentioned in the graft. 
+- **`folder`** specifies where the document should be put.
+- **`sourceHash`** digests the parts of the source your patch actually touches, so the reader is warned if that monster changes underneath your patch.
 
-## The authoring loop
+**3. Send it.** It is a text file. Paste it in Discord, put it in a gist, commit it to a repo. **Export graft**, beside **Copy graft**, saves it as a file instead of copying it.
 
-1. Make a module declaring your packs; `examples/graft-example/` is a working one. Restart the world so Foundry reads the manifest.
-2. Build your content in the world, the ordinary way: import, edit, drag items on.
-3. Right-click a document or folder for **Copy graft**. It copies a whole `grafts.json`: keep it as your file, or lift its `entries` into the one you have.
-4. Build, from the prompt on world load or from **Build grafts** in a pack window's header, and read the report.
-5. Test what a reader without your sources gets: disable a module you graft onto and build again.
+**4. They import it.** To test it yourself, delete the object you created from your world. Then, on the Settings tab click **Import grafts**, paste the text or choose the file, then click **Build**.
+
+Graft resolves the source against the compendiums they have enabled in the world, applies your patch, and creates the object in their world.
+
+A few things to know about grafts:
+
+1. If a source cannot be resolved (i.e., because they don't own it), the corresponding entry will be skipped and a warning included in the report. Everything else still will still build normally.
+2. Grafts can point at each other. An entry is allowed to graft onto another entry in the same file.
+
+## Art and other files
+
+An `assets` block names files to fetch before anything builds, and graft's built-in `http` handler downloads them, with optional bearer auth and zip batching. See [Assets](docs/format.md#assets).
+
+## Shipping it as a module
+
+Past a certain size, you may want the reader to install something rather than paste something. A graft module carries the same `grafts.json` and offers to build it the first time they load a world with it enabled.
+
+What the module path adds is a `module.json` declaring the packs your results get put in, and a `pack` on each entry naming one. Whether those entries arrive as browsable compendiums or as one importable Adventure is decided by the pack's declared type in the manifest.
 
 > [!WARNING]
-> **Do not distribute the `packs/` directory.** Building writes the resolved documents into your packs. A graft module is `module.json`, `grafts.json`, and whatever art and code are yours; add `packs/` to `.gitignore`.
+> **Do not distribute the `packs/` directory.** Building writes the resolved documents into your packs. A graft module is `module.json`, `grafts.json`, and whatever art and code are yours to distribute. Add `packs/` to `.gitignore`.
+
+[Authoring](docs/authoring.md) walks through how to build a grafts-compatible module more thoroughly. Also, see `examples/graft-example/` for a working module to start from.
 
 ## Documentation
 

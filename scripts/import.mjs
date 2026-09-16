@@ -51,7 +51,7 @@ export function localiseSources(entries) {
  *
  * @returns `{ built, skipped, warnings, removed }`.
  */
-export async function importGrafts(parsed, { redownload } = {}) {
+export async function importGrafts(parsed, { redownload, confirmOverwrite } = {}) {
   const file = readFile(parsed);
   if (file.error === "new-format") {
     throw new Error(t("GRAFT.ImportFormat", { format: file.format, reads: FORMAT }));
@@ -65,6 +65,6 @@ export async function importGrafts(parsed, { redownload } = {}) {
     assets: file.assets,
     entries: localiseSources(file.entries),
     redownload,
-    write: hydrateWorld,
+    write: (prepared, options) => hydrateWorld(prepared, { ...options, confirmOverwrite }),
   });
 }

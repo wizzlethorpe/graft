@@ -16,10 +16,13 @@ beforeEach(() => {
 });
 afterEach(uninstallWorld);
 
-async function run(entries) {
+async function run(entries, options = {}) {
   const { hydrateWorld } = await import("../scripts/hydrate.mjs");
-  return hydrateWorld(entries, {});
+  return hydrateWorld(entries, options);
 }
+/** A document of the reader's own, carrying `built` but never `imported`. */
+const mine = (id, name, type = "Actor") =>
+  collections.get(type).set(id, new WorldDoc({ _id: id, name, flags: { graft: { built: true } } }));
 const actor = (id) => collections.get("Actor").get(id)?.toObject();
 const folderNamed = (type, name) => folders.find((f) => f.type === type && f.name === name);
 
@@ -44,14 +47,44 @@ describe("hydrateWorld", () => {
     assert.equal(actor("actorChild000001").system.hp, 10);
   });
 
-  test("never overwrites a document no import wrote", async () => {
+  test("keeps a document no import wrote when the reader declines", async () => {
     // Dragged out of a graft pack with its id kept: it carries `built`, and
     // the reader may have edited it since.
-    collections.get("Actor").set("actorBase0000001", new WorldDoc({ _id: "actorBase0000001", name: "Mine", flags: { graft: { built: true } } }));
-    const { built, skipped } = await run([base]);
+    mine("actorBase0000001", "Mine");
+    const { built, skipped } = await run([base], { confirmOverwrite: async () => false });
     assert.deepEqual(built, []);
     assert.match(skipped[0].reason, /Mine already has this id.*not overwritten/);
     assert.equal(actor("actorBase0000001").name, "Mine");
+  });
+
+  test("refuses one when nobody is there to ask", async () => {
+    mine("actorBase0000001", "Mine");
+    const { built } = await run([base]);
+    assert.deepEqual(built, []);
+    assert.equal(actor("actorBase0000001").name, "Mine");
+  });
+
+  test("replaces it when the reader agrees, and says which", async () => {
+    mine("actorBase0000001", "Mine");
+    const { built, warnings } = await run([base], { confirmOverwrite: async () => true });
+    assert.deepEqual(built, ["Actor.actorBase0000001"]);
+    assert.equal(actor("actorBase0000001").name, "Guard");
+    assert.match(warnings.find((w) => w.id === "actorBase0000001").reason, /replaced Mine/);
+  });
+
+  test("asks once for the whole import, naming every document at stake", async () => {
+    mine("actorBase0000001", "Mine");
+    mine("journal000000001", "My notes", "JournalEntry");
+    const asked = [];
+    await run([base, note], { confirmOverwrite: async (existing) => { asked.push(existing); return true; } });
+    assert.equal(asked.length, 1, `asked ${asked.length} times`);
+    assert.deepEqual(asked[0].map((e) => e.name).sort(), ["Mine", "My notes"]);
+  });
+
+  test("asks nothing when every entry lands somewhere free", async () => {
+    let asked = 0;
+    await run([base], { confirmOverwrite: async () => { asked += 1; return true; } });
+    assert.equal(asked, 0);
   });
 
   test("refreshes a document an earlier import built, in the folders it made", async () => {
