@@ -51,19 +51,19 @@ Read it before you send it:
 
 - **`source`** is a reference to the document you built on.
 - **`patch`** is only what you changed, as an [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) merge patch. A key set to `null` removes it.
-- In **`items`**, a member carrying an `_id` patches the relevant item, so the scimitar's damage die moves and nothing else about it does. An array carrying `_delete` drops it, which is how we specify that the captain should lose his pistol. Notice that the aspects of the document that were not touched in our edits are not mentioned in the graft. 
+- In **`items`**, a member carrying an `_id` patches the relevant item, so the scimitar's damage die moves and nothing else about it does. An array carrying `_delete` drops it, which is how we specify that the captain should lose his pistol. Notice that the aspects of the document that were not touched in our edits are not mentioned in the graft.
 - **`folder`** specifies where the document should be put.
 - **`sourceHash`** digests the parts of the source your patch actually touches, so the reader is warned if that monster changes underneath your patch.
 
 **3. Send it.** It is a text file. Paste it in Discord, put it in a gist, commit it to a repo. **Export graft**, beside **Copy graft**, saves it as a file instead of copying it.
 
-**4. They import it.** To test it yourself, delete the object you created from your world. Then, on the Settings tab click **Import grafts**, paste the text or choose the file, then click **Build**.
+**4. They import it.** On the Settings tab click **Import grafts**, paste the text or choose the file, then click **Build**. To try it on yourself, import it into the world you built it in: graft asks whether to replace the document you copied it from.
 
 Graft resolves the source against the compendiums they have enabled in the world, applies your patch, and creates the object in their world.
 
 A few things to know about grafts:
 
-1. If a source cannot be resolved (i.e., because they don't own it), the corresponding entry will be skipped and a warning included in the report. Everything else still will still build normally.
+1. If a source cannot be resolved (i.e., because they don't own it), the corresponding entry will be skipped and a warning included in the report. Everything else will still build normally.
 2. Grafts can point at each other. An entry is allowed to graft onto another entry in the same file.
 
 ## Art and other files
