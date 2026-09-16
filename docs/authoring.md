@@ -2,11 +2,11 @@
 
 **1. Make the module.** A directory in `Data/modules/` with a `module.json` declaring your packs, `requires` for graft and your system, and either `requires` or `recommends` for each source you graft onto. `examples/graft-example/` is a working one.
 
-**2. Restart the world.** Foundry reads manifests when a world launches. A browser reload is not enough; the symptom is a build error saying your module declares no such pack.
+**2. Restart the world.** Foundry reads manifests when a world launches, so a browser reload may not be enough.
 
 **3. Build in your world, the ordinary way.** Import a monster and edit it, drag items onto it, create your own documents. Nothing in this step is graft-specific.
 
-**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Either copies a whole `grafts.json`: keep it as the file beside your `module.json`, or lift its `entries` into the one you already have.
+**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Either copies a whole `grafts.json`: keep it as the file beside your `module.json`, or lift only its `entries` into an existing `grafts.json` that you already have.
 
 **5. Build**, from the prompt on world load or from **Build grafts** in your pack's window header, and read the report.
 
@@ -16,20 +16,6 @@
 > **Do not distribute the `packs/` directory.** Building writes the resolved documents into your packs, including descriptions, stat blocks and maps. Publishing the module directory after a test build would distribute everything this format exists to avoid.
 >
 > A graft module is `module.json`, `grafts.json`, and whatever art and code are yours. Add `packs/` to `.gitignore`.
-
-## Copying runs one way
-
-**Copy graft** works on documents in the world, not in compendiums. You build in the world and graft writes to compendiums.
-
-What you get depends on where the document is:
-
-| Document | Result |
-|---|---|
-| In a pack anyone can install | A reference with an empty patch: include this, unchanged |
-| In a world pack, or the world, with a recorded source | A diff against that source |
-| Yours, with no recorded source | The whole document |
-
-Graft checks the installable-pack case first. That is what makes chaining work: **Copy graft** on a document that graft built produces a reference to it, not a replay of the patch that produced it.
 
 ## How the source is recovered
 
@@ -68,13 +54,3 @@ Optional, in your `module.json`:
 `entries` defaults to `grafts.json`. `packs` only affects **Copy graft**. Without it, Copy graft picks the one pack of the entry's type, or the one Adventure pack if there is no typed pack, and leaves `pack` blank when there are two candidates.
 
 A pack declared as `Adventure` collects every entry that names it into one Adventure. See [Packaging](format.md#packaging).
-
-A grafts file is an object, not a bare list:
-
-```json
-{ "format": 4, "entries": [ … ] }
-```
-
-`format` is the entry format version. Absent means 1. Format 1 files still read; only their `type: "Adventure"` entries are refused. A file with a newer format than this graft understands is skipped, with a log line saying graft needs updating.
-
-`assets` is reserved: an object keyed by handler, naming files a build fetches first. Everything else in the object is left alone, so a module or a graft extension can keep its own data beside the entries.
