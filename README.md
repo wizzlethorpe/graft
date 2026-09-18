@@ -83,9 +83,8 @@ What the module path adds is a `module.json` declaring the packs your results ge
 
 ## Documentation
 
-- [The format](docs/format.md): every field, source fallbacks, patch rules, drift detection, chaining, limits
+- [The format](docs/format.md): every field, sources, patch rules, drift warnings, packs, assets
 - [Authoring](docs/authoring.md): module setup, Copy graft, source recovery, dependencies, manifest options
-- [Using it](docs/using.md): building, rebuilding, the report, importing grafts somebody sent you
 - [Hooks and API](docs/hooks.md): pre-build transforms, export rewriters, `game.modules.get("graft").api`
 
 ## Support

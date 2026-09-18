@@ -1,75 +1,88 @@
 # The format
 
-A graft module declares its entries in `grafts.json`, an object holding the format it was written for and an `entries` list, always a list even for one document:
+A `grafts.json` holds the format version, a list of entries, and optionally the files to fetch before building:
 
 ```json
 { "format": 4, "entries": [ … ], "assets": { … } }
 ```
 
-Each entry is an `id` and `type` of your own, a `source` to graft onto, and a `patch`. `id` is a Foundry document id, sixteen characters of `[a-zA-Z0-9]`; `pack` names which of your module's packs the result lands in.
+`entries` is always a list, even for one document. Graft reads files written in an older format, and refuses a newer one with a message asking you to update graft.
+
+## Entries
 
 ```json
 {
   "id": "banditCaptain001",
   "type": "Actor",
-  "pack": "my-actors",
+  "folder": "Harbor Raiders",
   "source": "Compendium.dnd-monster-manual.actors.Actor.mmBanditCaptain0",
   "patch": {
     "name": "The Enforcer",
-    "system": {
-      "attributes": { "hp": { "value": 65 } },
-      "details": { "cr": 4 }
-    },
-    "items": [
-      { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } },
-      { "_id": "2TB9ZSIbtbi4UtSv", "_delete": true }
-    ]
+    "system": { "attributes": { "hp": { "value": 65 } } }
   }
 }
 ```
 
-In the patch, an array member carrying an `_id` patches the item it names and leaves the rest alone, and one carrying `_delete` drops it: here the captain's scimitar goes up a damage die, the pistol goes, and the armor rides along untouched. [Patches](#patches) below has the full rules.
+| Field | |
+|---|---|
+| `id` | A Foundry document id, sixteen letters and digits. The built document gets this id. |
+| `type` | The document type: `Actor`, `Item`, `Scene`, `JournalEntry`, and so on. |
+| `source` | Optional. What to graft onto; see [Sources](#sources). Without one, the patch is the whole document. |
+| `patch` | What to change; see [Patches](#patches). |
+| `folder` | Optional. A path of folder names, such as `"Magic Items/Bags"`. Graft creates missing folders and matches existing ones by name. |
+| `pack` | Modules only. Which of the module's packs the result goes in; see [Packs](#packs). |
+| `sourceHash` | Written by **Copy graft**, so graft can warn when the source changes; see [Drift](#drift). |
 
-Building resolves the source, applies the patch, and creates the result under your id in your pack. If a source cannot be resolved, graft skips that entry and lists it in the report; every other entry still builds.
+## Sources
 
-**`folder`** is optional and is a path of names, not an id:
+A source takes one of four forms:
+
+- **A compendium UUID**, such as `"Compendium.dnd5e.actors24.Actor.mmBanditCaptain0"`.
+- **Another entry's `id`** in the same file, to graft onto what that entry builds. Graft builds that entry first, whatever order they appear in, and refuses two entries that graft onto each other. Ids must be unique within a file.
+- **A path to a `.json` file** in the Foundry data folder, such as `"graft/my-vault/bandit-captain.json"`, often one an asset handler placed. The file is the base document.
+- **A list** of any of these, tried in order; graft uses the first that resolves. **Copy graft** on the result names only the one that resolved, so re-add the list by hand.
+
+If no source resolves, graft skips that entry and names it in the report. Every other entry still builds.
+
+## Patches
+
+A patch is a [JSON merge patch](https://www.rfc-editor.org/rfc/rfc7386): it has the shape of the document and holds only what changes. A key set to `null` is removed.
+
+Arrays are replaced whole, with one exception: when every member has an `_id`, as items and effects do, members merge by `_id` instead.
 
 ```json
-"folder": "Magic Items/Bags"
-```
-
-Folder ids do not survive to another machine, but the folder structure does. Graft creates folders during the build and matches them by name and parent, so renaming one by hand survives the next build.
-
-**`source`** is optional. Without one, the patch is the whole document, so a graft module can also carry original content. A `source` that is present but empty is an error.
-
-A `source` may also be a path to a JSON file that an asset handler placed, recognised by its `.json` ending: no document type or id ends that way, and a UUID has no path. The file is the base document the patch applies over, so content that lives outside a compendium is a source like any other.
-
-```json
-"source": "graft/my-vault/bandit-captain.json"
-```
-
-A `source` that is a bare document id names another entry in the same graft set. The form is unambiguous: no document type name is sixteen characters, and a bare id is not a UUID. It does not encode the module id or the pack, so it survives a module rename and works when the file is imported into another world. Two entries with the same id make a bare id ambiguous, and graft reports that as an error.
-
-```json
-"source": "banditCaptain001"
-```
-
-`source` may also be a list of fallbacks, tried in order:
-
-```json
-"source": [
-  "Compendium.dnd-monster-manual.actors.Actor.mmBanditCaptain0",
-  "Compendium.dnd5e.actors24.Actor.mmBanditCaptain0"
+"items": [
+  { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } },
+  { "_id": "2TB9ZSIbtbi4UtSv", "_delete": true },
+  { "_id": "IP7kWWdq5km8SZad", "source": "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt", "patch": { "system": { "equipped": true } } }
 ]
 ```
 
-Graft uses the first source that resolves, so an author can prefer better content without requiring it. The entry fails only if none of them resolve. A list source records no `sourceHash`, because a hash is taken against the specific document the author diffed and a list does not say which one that was.
+- A member with an `_id` patches the item with that id.
+- A member with `"_delete": true` removes it.
+- A member with its own `source` and `patch` is a graft inside the graft: the item is built from its source, then patched. If that source does not resolve, the whole entry is skipped. **Copy graft** writes items this way when Foundry recorded where they came from.
+- Members the patch does not mention are left alone. `[]` removes every member.
+- If any member lacks an `_id`, the whole array is replaced instead.
 
-**Copy graft** on the result names the one source that resolved, not the list. The built document came from one place and cannot say what the alternatives were, so an author re-copying an entry restores the fallbacks by hand.
+**Limits:**
 
-## Packaging
+- `null` resets rather than removes. Foundry fills a missing field with its default, so only keys under `flags` are truly deleted.
+- Foundry's unordered fields compare as lists, so reordering one counts as a change.
+- A document from an older Foundry is migrated by Foundry's own import, which drops some fields rather than converting them. For example, a Foundry 13 tile set to fade as a roof stops fading.
 
-The pack an entry names, as declared in `module.json`, decides where it ends up. A pack declared with the entry's own `type` gets the entry as a document. A pack declared as `Adventure` gets one Adventure holding every entry that names it, whatever their types. Changing the manifest alone switches the same entries between browsable compendiums and a single import.
+**Copy graft** leaves out what only makes sense in your own world: `_stats`, the folder id (the `folder` path replaces it), a Scene's `active`, `navOrder` and `thumb`, per-user `ownership` (`default` is kept), and graft's own flags. Other modules' flags are copied, so check for any you do not want to share.
+
+## Drift
+
+Graft warns, but still builds, when a source:
+
+- was made for a different game system;
+- was made for an older major version of Foundry or of the system;
+- has changed since you copied it, in the fields your patch touches. **Copy graft** records this as `sourceHash`. An entry without one, or with a list as its source, is not checked.
+
+## Packs
+
+This applies to modules only. An entry's `pack` names a pack declared in the module's `module.json`. If the pack's type matches the entry's, the entry becomes a document in it. If the pack's type is `Adventure`, every entry naming it goes into one Adventure. The manifest alone decides between browsable compendiums and a single import.
 
 ```json
 "packs": [
@@ -90,112 +103,15 @@ The pack an entry names, as declared in `module.json`, decides where it ends up.
 ]
 ```
 
-The Adventure's name is the pack's `label`; `img`, `caption` and `description` come from `flags.graft` and are optional. Its id is derived from the module and pack names, so re-importing an updated Adventure updates the world in place. Each entry's `folder` path becomes a folder inside the Adventure, one tree per document type. A member that does not build this run keeps its previous copy, like an unbuilt entry in an ordinary pack. An entry no longer declared is dropped. An Adventure pack needs a `system`: Foundry empties the actors and items out of an Adventure read from a systemless pack.
+The Adventure is named by the pack's `label`, and takes `img`, `caption` and `description` from `flags.graft`. It needs a `system`, or Foundry empties the actors and items out of it. Each entry's `folder` becomes a folder inside it, and re-importing an updated Adventure updates the world in place.
 
-An entry assembled into an Adventure is addressed as `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>`. Grafting onto it works the same as onto a pack document.
+Built documents have ordinary UUIDs, so other authors can graft onto them: `Compendium.<module>.<pack>.<Type>.<id>`, or `Compendium.<module>.<pack>.Adventure.<advId>.<Type>.<id>` inside an Adventure.
 
-`Adventure` is not an entry type; graft refuses such an entry.
-
-## Patches
-
-Patches use [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) (JSON Merge Patch), because a patch that mirrors the shape of the document is readable, and `null` already means "delete this key". [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902) is more expressive, and its `test` op would give drift detection for free, but it addresses array members by position.
-
-**The one departure: arrays whose members all carry `_id` merge by that key. Everything else replaces.** Foundry's arrays are collections of embedded documents with no meaningful order, so changing one item's damage should not require restating forty, and should not break when the source reorders them.
-
-Merging by key makes an omitted member mean "leave it alone", so a removal is written explicitly:
-
-```json
-"items": [
-  { "_id": "2TB9ZSIbtbi4UtSv", "_delete": true }
-]
-```
-
-`_delete` is an instruction rather than data: the merge acts on it and drops it. Removing every member of a collection can also be written as an empty array, which replaces rather than merges.
-
-### Embedded content is a graft too
-
-An embedded document can be somebody else's content as well, so an entry in a keyed array takes one of two shapes: a patch on an item already in the source, or a graft inside the graft, with a `source` and `patch` of its own.
-
-```json
-"items": [
-  { "_id": "w3cX0piuU875Hc2M", "system": { "damage": { "base": { "denomination": 8 } } } },
-  {
-    "_id": "IP7kWWdq5km8SZad",
-    "source": "Compendium.dnd5e.equipment24.Item.dmgAmuletOfHealt",
-    "patch": { "system": { "equipped": true } }
-  }
-]
-```
-
-**Copy graft** produces the second shape for you: Foundry records where the item came from, so the entry references the item rather than copying it. An embedded source that will not resolve fails the whole entry, because a stat block silently missing the item it was built around is worse than a skipped entry that names the dependency.
-
-An embedded source naming a sibling is an ordering edge like a top-level one, so an item can be declared as its own entry and put on an actor in the same file whichever order the two appear in. Graft reports a loop through an inserted item the same way as any other.
-
-### What is stripped
-
-- **`_stats`**, whose timestamps differ between identical documents and would report every embedded item as changed.
-- **`folder`**, at the root only. A folder id is world-local; the entry's `folder` path carries the structure instead.
-- **`active`, `navOrder` and `thumb`**, at the root, which say where a Scene sat in the world it was copied from rather than what the scene is: which scene that world is looking at, where it sits in the navigation bar, and a path into that world's own generated thumbnails. `sort` is kept, since a graft may reasonably want to say where its output sits in a pack.
-- **`ownership`** is thinned rather than dropped. Per-user entries are world-local, so graft removes them; `default` stays, since it is how you say "players can see this".
-- **`flags.graft`**, graft's own record of where a copy came from, which would be a lie on the other end. A `flags` holding nothing else is dropped with it, so a built document does not read as having gained one.
-
-Nothing else is stripped, and in particular **no other module's flags**. Those are that module's data, and graft leaves them alone. A patch is a diff against a live document, so it carries whatever other modules have written on it: a flag one of them stamps in your world is a fact about your world, and it travels unless you take it out.
-
-### Drift warnings
-
-A patch is written against a source at a moment in time. Graft checks for three kinds of drift. All three **warn** rather than refuse, because a changed source usually still patches correctly, and refusing would strand a reader over an upstream typo fix.
-
-- **A different system.** `_stats.systemId` records which system a document was authored for. A pf2e actor grafted into a dnd5e world is incompatible rather than merely drifted, and without this check it would build without any warning.
-- **An older generation.** Foundry or system majors only. Systems release minors constantly and most break nothing, so warning on each would train readers to ignore the section.
-- **The source itself changed.** An entry records `sourceHash`, a digest of the source **projected onto the patch's shape**, so only the fields the patch touches:
-
-```json
-{
-  "source": "Compendium.dnd-monster-manual.actors.Actor.mmBanditCaptain0",
-  "sourceHash": "a5bc24cd72abd37f",
-  "patch": {
-    "system": { "attributes": { "hp": { "value": 65 } } }
-  }
-}
-```
-
-Hashing only the patched fields keeps the warning useful: an upstream fix to a description you never touched does not warn. Reordering a keyed array is not drift, and neither is key order in the source.
-
-A missing `sourceHash` means the hash was never recorded, so no drift check runs.
-
-### Old documents are migrated
-
-Graft creates everything through `Document.fromImport`, Foundry's own migration path. Creating directly would store old data unchanged against the current schema, and the failure is quiet: a Foundry 13 scene arrives with v13 tile coordinates read under v14 anchor semantics, so every tile sits half its own size out of place.
-
-Graft still reports a source older than the running generation, since migration handles fields that moved but not fields that were removed.
-
-An assembled Adventure is constructed from members already migrated this way. `Adventure.fromImport` cannot be used: it migrates through a world collection, and Adventures have none.
-
-Import-time migration is also less complete than the migration Foundry runs when a world is upgraded. `fromImport` and `importFromJSON` alike drop a Foundry 13 tile's `occlusion.mode` rather than converting it to the `occlusion.modes` that replaced it, so a roof set to fade stops fading. Graft does not migrate fields by hand; the set of moved fields is open-ended.
-
-### Limits
-
-- **`null` resets, it does not remove.** The key does leave the patched data, but Foundry then loads it against a schema, and an absent field takes its declared initial value. True deletion only works where the schema does not describe the key, in practice `flags`.
-- **Sets serialise as ordered arrays.** `SetField` has no meaningful order but compares as a list, so a reordering reads as a change. Not handled, because guessing which arrays are Sets could silently drop a genuine reorder of a list that is ordered.
-- **Pruning removes only what graft built.** Deleting an entry from `grafts.json` removes the flagged document it built on the next build; documents an author placed in the pack by hand are never touched. An entry a transform skipped this run, a lapsed subscription say, still counts as declared, and graft leaves it alone.
-
-## Chaining
-
-`id` is a Foundry document id, not a slug, so your output has a normal UUID:
-
-```
-Compendium.<module>.<pack>.<Type>.<id>
-```
-
-Grafting onto a graft is not a special case. Another author names your output the way they would name any document, and your module becomes an ordinary dependency of theirs.
-
-Order does matter. `planOrder` sorts entries so that anything grafted onto a sibling in the same module is built after it, and refuses two entries that graft onto each other rather than half-building them. Sources outside the module need no sequencing; Foundry already reports a missing dependency.
-
-The open risk is drift: if the base you built on is rebuilt against a new source, your patch may still apply and produce something different.
+Removing an entry from `grafts.json` removes what it built on the next build. Documents you put in the pack by hand are not touched.
 
 ## Assets
 
-`assets` names files that have to be on disk before anything builds: art an entry points at, and JSON files an entry uses as its `source`. It is an object keyed by handler, and each key holds whatever that handler needs.
+`assets` names files to download before anything builds (e.g, art the entries point at, JSON files used as sources, etc.). It is keyed by handler. Graft incldues the `http` handler by default. Advanced modules can add others with [`graftAssets`](hooks.md).
 
 ```json
 "assets": {
@@ -208,23 +124,11 @@ The open risk is drift: if the base you built on is rebuilt against a new source
 }
 ```
 
-Graft ships the `http` handler; a module registers its own with [`graftAssets`](hooks.md). A key no installed handler claims is one line in the report, and the entries that needed those files then fail on their own with the source they could not resolve.
+Each file has a `source` URL, a `destination` in the Foundry data folder, and its `size` in bytes. `auth` optionally maps an origin to a bearer token. An entry refers to a downloaded file by its `destination`, not its URL: `"img": "graft/my-vault/harbor.webp"`.
 
-A handler only places files. It never rewrites entries, so an entry naming a placed file has to name the path the handler will put it at.
+`source` may be a list of URLs tried in order, and a URL may point into a zip with `#path/in/zip`. Graft downloads a zip whole when at least half its files are needed, and otherwise fetches files one at a time. Zips must be stored or deflated; zip64 is not supported.
 
-**`http`** takes `files`, each `{ source, destination, size }`, and an optional `auth` mapping an origin to a bearer token. Versioning belongs in the source URL, as a query parameter or any other scheme; graft treats the URL as opaque and only compares it for equality. `size` is the file's byte length, used as a fallback when nothing is known about a file already on disk.
+A file is downloaded again only when it is missing, its URL has changed, or the server reports a new version. Put a version in the URL, such as `?v=3`, to force an update. Graft keeps its record in `graft/placed.json`. Deleting it makes the next build check every file again. When some files are already on disk, graft asks whether to keep them.
 
-`source` may be a list of alternatives, and an alternative may name a file inside a zip with a fragment:
+A key no installed handler recognises is reported, and everything still builds: a missing image shows as missing in Foundry. Only an entry whose source is a `.json` file that never arrived is skipped, since that file is its base document.
 
-```json
-{ "source": ["https://example.com/art.zip?v=3#maps/harbor.webp", "https://example.com/maps/harbor.webp"],
-  "destination": "graft/my-module/maps/harbor.webp", "size": 812004 }
-```
-
-A fragment never reaches the server, so it cannot collide with the query a version lives in. Graft fetches a zip whole when at least half the files naming it need fetching, so a first import takes the zip and a rebuild with one changed file takes that file's own URL instead. A file whose only sources are zip members takes its zip regardless. Whatever a zip cannot supply, missing or unreadable, falls back to the file's own URL. Zips must be stored or deflated; zip64 is refused.
-
-A file is fetched when it is not on disk, when the record says it was placed from a URL the file no longer lists, or when its ETag has moved since graft wrote it. Otherwise it is left alone. The record lives at `graft/placed.json` and holds every source a destination listed when it was written, and its ETag. A file is current when any source it lists now is one it listed then, so one that moved between zips is not fetched again. Deleting the record makes the next build re-check everything against `size` alone.
-
-This record is the one place graft keeps state rather than reading reality, because a data directory cannot say which URL a file came from. Every check still goes to the file on disk as well.
-
-When some files are already on disk, graft asks once whether to keep them and fetch only what changed, or download everything again.

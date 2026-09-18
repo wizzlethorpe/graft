@@ -53,4 +53,4 @@ Optional, in your `module.json`:
 
 `entries` defaults to `grafts.json`. `packs` only affects **Copy graft**. Without it, Copy graft picks the one pack of the entry's type, or the one Adventure pack if there is no typed pack, and leaves `pack` blank when there are two candidates.
 
-A pack declared as `Adventure` collects every entry that names it into one Adventure. See [Packaging](format.md#packaging).
+A pack declared as `Adventure` collects every entry that names it into one Adventure. See [Packs](format.md#packs).

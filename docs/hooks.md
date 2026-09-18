@@ -1,14 +1,18 @@
 # Hooks and API
 
-A source is a compendium document the reader already has, so most of a build touches nothing outside the world. What has to come from elsewhere arrives two ways: a file's `assets` block, fetched by a handler (graft ships `http`), and content a module of its own resolves. Graft gives both their moments to act.
+> [!WARNING]
+> **Most module authors do not need to read this page.** It is for modules that extend graft itself: fetching sources from another service, generating entries at build time, or placing files the built-in `http` handler cannot.
 
-**`graftPreBuild`** fires whenever graft needs the transform list: as a build starts, and again just to name transforms in the build prompt. Registering must therefore be cheap and free of side effects. Foundry hooks are synchronous, so the hook only collects; when a build follows, graft awaits each transform once. `moduleId` names the module being built, or `"world"` when a `grafts.json` file is being built into the world.
+Sources refer to compendium document that the reader should already have, so most of a build touches nothing outside of the world that graft is building into. What has to come from elsewhere arrives two ways: a file's `assets` block, fetched by a handler (graft ships `http`), and content a module of its own resolves.
+
+**`graftPreBuild`** lets a module rewrite entries before graft builds them. Your handler calls `register` with a transform, and graft runs each transform once per build. The hook also fires when graft asks the reader whether to build a module, only to list your transform's name in that prompt, and the reader may decline. So the handler should do nothing but call `register`; the real work belongs inside `transform`. `moduleId` names the module being built, or `"world"` for **Import grafts**.
 
 ```js
 Hooks.on("graftPreBuild", (moduleId, register) => {
   register({
     id: "my-module",
     label: "My Module",
+    phase: "entries",
     async transform(entries) {
       return { entries, skipped: [], warnings: [] };
     },
@@ -16,7 +20,9 @@ Hooks.on("graftPreBuild", (moduleId, register) => {
 });
 ```
 
-`transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `phase` is `"entries"` (the default) for a transform that produces or rewrites entries, or `"sources"` for one that makes the documents their sources name resolvable. Every entries transform runs before any sources one, registration order deciding within a phase, so a materialiser sees the entries after every marker has been expanded. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. Build as much as possible and report the rest: graft reports a failing transform and builds on without it. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
+`transform` receives every entry the module declares, from every file, and returns an array, or `{ entries, skipped, warnings }`, or nothing. `skipped` and `warnings` use the builder's `{ id, reason }` shape and appear in the same report, sectioned under the transform's label. A transform that throws is one report line and the build goes on without it, so build what you can and report the rest. The usual shape is marker expansion: a module's `grafts.json` holds a line naming what to fetch, and the transform replaces it with the real entries.
+
+`phase` decides when it runs, and defaults to `"entries"`. Use `"entries"` for a transform that produces or rewrites entries, and `"sources"` for one that makes the documents their sources name resolvable. Every entries transform runs before any sources one, registration order deciding within a phase, so a materialiser sees the entries after every marker has been expanded.
 
 **`graftAssets`** fires before a build, to collect the handlers for the `assets` block. `register` takes `{ id, place }`, where `id` matches the key in the file and `place(config, { onPhase, onFile, redownload })` fetches whatever that block names. `redownload(already, total)` asks the reader once whether to fetch files that are already on disk; resolving true means fetch everything. Registering replaces a handler already under that id, including the built-in `http` one.
 
