@@ -38,7 +38,7 @@ export function localiseSources(entries) {
     const mine = (source) => map(source, entry.id);
     const next = { ...entry };
     if (entry.source !== undefined) {
-      next.source = Array.isArray(entry.source) ? entry.source.map(mine) : mine(entry.source);
+      next.source = mine(entry.source);
     }
     if (entry.patch !== undefined) next.patch = rewriteSources(entry.patch, mine);
     return next;

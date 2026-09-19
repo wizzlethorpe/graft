@@ -8,12 +8,12 @@
 import {
   applyPatch, authoredGeneration, currentWorld, diff, driftFromSource, driftWarnings,
   expandSources, folderPath, folderSegments, isPlainObject, project, referenceSources,
-  sourceHash, stripVolatile,
+  sourceHash, stripVolatile, unmatchedMembers,
 } from "./patch.mjs";
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
 } from "./origin.mjs";
-import { planOrder, entryUuid, adventureId, sourcesOf } from "./plan.mjs";
+import { planOrder, entryUuid, adventureId } from "./plan.mjs";
 import { readDataJson } from "./paths.mjs";
 import { rewriteEntry } from "./extend.mjs";
 import { adventurePacks } from "./modules.mjs";
@@ -305,39 +305,28 @@ function isFileSource(source) {
 async function hydrateOne(entry, target, { warnings, resolve, produced }) {
   // No source means the entry carries its own content: the patch is the document.
   let base = {};
-  let source = null;
-  const candidates = sourcesOf(entry);
-  if (candidates.length > 0) {
-    // First that resolves. A list lets an author prefer better content without
-    // requiring it, so exhausting the list is the failure, not missing the
-    // first one.
-    for (const candidate of candidates) {
-      const data = await resolve(candidate);
-      if (data) { base = data; source = candidate; break; }
+  const source = entry.source;
+  const cls = getDocumentClass(entry.type);
+  if (source) {
+    base = await resolve(source);
+    if (!base) {
+      throw new Error(isFileSource(source)
+        ? `source ${source} is not on disk, or holds no document; did its asset handler run?`
+        : `source ${source} did not resolve; is its module installed and enabled?`);
     }
-    if (!source) {
-      throw new Error(candidates.length === 1
-        ? isFileSource(candidates[0])
-          ? `source ${candidates[0]} is not on disk, or holds no document; did its asset handler run?`
-          : `source ${candidates[0]} did not resolve; is its module installed and enabled?`
-        : `none of ${candidates.length} sources resolved: ${candidates.join(", ")}`);
-    }
+    refuseStrays(cls, [], source, base, entry.patch ?? {});
     warnings.push(...driftWarnings(entry.id, base, currentWorld()));
-    // Only when one source was named. A hash is recorded against the document
-    // an author diffed, and a list does not say which of them that was.
-    if (candidates.length === 1) {
-      const changed = driftFromSource(entry.id, entry.sourceHash, stripVolatile(base), entry.patch ?? {});
-      if (changed) warnings.push(changed);
-    }
+    const changed = driftFromSource(entry.id, entry.sourceHash, stripVolatile(base), entry.patch ?? {});
+    if (changed) warnings.push(changed);
   }
 
   const at = await target.place(entry);
-  const patch = await expandSources(entry.patch ?? {}, resolve, recordSource);
+  const patch = await expandSources(entry.patch ?? {}, resolve, recordSource,
+    (nested) => refuseStrays(cls, nested.path, nested.source, nested.base, nested.patch));
   const data = applyPatch(base, patch);
   data._id = entry.id;
   recordSource(data, source);
 
-  const cls = getDocumentClass(entry.type);
   // fromImport is Foundry's own migration path; skipping it lands v13 data
   // under v14 semantics.
   let prepared;
@@ -360,6 +349,44 @@ async function hydrateOne(entry, target, { warnings, resolve, produced }) {
   // After the write, so a sibling never builds on a document Foundry rejected.
   produced.set(uuid, prepared);
   return written ? uuid : null;
+}
+
+/**
+ * Throws when `patch` changes a member that `base` does not have. `at` is the keys leading to the document `base` is: none for the entry itself.
+ * Merged as written, such a change becomes a member of its own, and Foundry rejects the whole document without saying which.
+ */
+function refuseStrays(cls, at, source, base, patch) {
+  const strays = unmatchedMembers(base, patch)
+    .filter(({ path, member }) => !isWholeMember(embeddedModel(cls, [...at, ...path]), member));
+  if (strays.length === 0) return;
+  throw new Error(`the patch changes ${strays.map(({ path, member }) => `${path.join(".")} ${member._id}`).join(", ")}, which ${source} does not have; `
+    + `check the ids against the source, or state each as a whole document`);
+}
+
+/** The document class of the embedded collection at `path`, or undefined when the array there is not one. */
+export function embeddedModel(cls, path) {
+  let model = cls;
+  for (const key of path) model = model?.hierarchy?.[key]?.model;
+  return model;
+}
+
+/**
+ * Whether a member is a document in its own right: it states every field Foundry can neither fill in nor accept empty.
+ * An array that is not an embedded collection has no model to ask, and its members are kept.
+ */
+export function isWholeMember(model, member) {
+  // A tombstone is how an actor delta records a deleted member, and is whole as it stands.
+  if (!model || member._tombstone === true) return true;
+  return Object.entries(model.schema.fields).every(([key, field]) => member[key] !== undefined || fillsItself(field));
+}
+
+function fillsItself(field) {
+  try {
+    return field.validate(field.clean(undefined, {}), {}) === undefined;
+  } catch {
+    // `system` picks its model from the document's type and cannot be asked alone.
+    return true;
+  }
 }
 
 /**

@@ -3,6 +3,7 @@
 
 import { placeAssets } from "./assets.mjs";
 import { collectTransforms, runTransforms } from "./extend.mjs";
+import { refuseInvalid } from "./plan.mjs";
 import * as progress from "./progress.mjs";
 import { t } from "./i18n.mjs";
 
@@ -15,11 +16,13 @@ import { t } from "./i18n.mjs";
 export async function runBuild({ moduleId, title, assets, entries, redownload, write }) {
   progress.begin(`Graft: ${title}`);
   let placed, prepared, result;
+  // Before any transform sees them: a transform may fetch for an entry, and one graft will not build must not cost a download.
+  const { sound, refused } = refuseInvalid(entries);
   try {
     // Before transforms: an entry whose source is a file has nothing to
     // resolve until the handler that fetches it has run.
     placed = await placeAssets(assets, { onPhase: progress.phase, onFile: progress.step, redownload });
-    prepared = await runTransforms(collectTransforms(moduleId), entries, {
+    prepared = await runTransforms(collectTransforms(moduleId), sound, {
       onTransform: (tr) => progress.phase(tr.label),
     });
     result = await write(prepared.entries, {
@@ -34,7 +37,7 @@ export async function runBuild({ moduleId, title, assets, entries, redownload, w
   }
   const report = {
     built: result.built,
-    skipped: [...placed.skipped, ...prepared.skipped, ...result.skipped],
+    skipped: [...refused, ...placed.skipped, ...prepared.skipped, ...result.skipped],
     warnings: [...placed.warnings, ...prepared.warnings, ...result.warnings],
     removed: result.removed ?? [],
   };

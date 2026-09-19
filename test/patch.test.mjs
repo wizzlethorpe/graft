@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { applyPatch, authoredGeneration, diff, driftFromSource, driftWarnings, expandSources, folderPath, folderSegments, isKeyedArray, project, referenceSources, sourceHash, stripVolatile } from "../scripts/patch.mjs";
+import { applyPatch, authoredGeneration, diff, driftFromSource, driftWarnings, expandSources, folderPath, folderSegments, isKeyedArray, project, referenceSources, sourceHash, stripVolatile, unmatchedMembers } from "../scripts/patch.mjs";
 
 // These tests are about expansion, not about where a member came from; the
 // build supplies the recorder that answers that.
@@ -631,3 +631,62 @@ test("an embedded graft answers for itself", async () => {
   assert.deepEqual(project(source, patch), {});
 });
 
+// ── members the source does not have ────────────────────────────────────────
+
+const WIGHT = { name: "Wight", items: [
+  { _id: "sword00000000001", name: "Sword", effects: [{ _id: "fx00000000000001", name: "Chill" }] },
+] };
+const found = (base, patch) => unmatchedMembers(base, patch).map(({ path, member }) => [path.join("."), member._id]);
+
+test("unmatchedMembers finds nothing in a patch whose members the source has", () => {
+  assert.deepEqual(unmatchedMembers(WIGHT, { items: [{ _id: "sword00000000001", flags: { hidden: true } }] }), []);
+});
+
+test("unmatchedMembers hands back the member the source does not have, and where it sits", () => {
+  const bow = { _id: "bow0000000000001", flags: { hidden: true } };
+  const patch = { name: "Merchant", items: [{ _id: "sword00000000001", flags: { hidden: true } }, bow] };
+  assert.deepEqual(unmatchedMembers(WIGHT, patch), [{ path: ["items"], member: bow }]);
+});
+
+test("unmatchedMembers passes over a removal and a sourced member, even one whose id the source has", () => {
+  assert.deepEqual(unmatchedMembers(WIGHT, { items: [
+    { _id: "gone000000000001", _delete: true },
+    { _id: "sourced000000001", source: "Compendium.x.y.Item.dmgAmuletOfHealt" },
+    { _id: "sword00000000001", source: "Compendium.x.y.Item.better0000000001", patch: { effects: [{ _id: "fx00000000000009", disabled: true }] } },
+  ] }), []);
+});
+
+test("unmatchedMembers reaches a collection inside a matched member", () => {
+  const patch = { items: [{ _id: "sword00000000001", effects: [
+    { _id: "fx00000000000001", disabled: true }, { _id: "fx00000000000002", disabled: true },
+  ] }] };
+  assert.deepEqual(found(WIGHT, patch), [["items.effects", "fx00000000000002"]]);
+});
+
+test("unmatchedMembers reaches a collection under a plain object, as a token's delta holds one", () => {
+  const scene = { tokens: [{ _id: "token00000000001", delta: { items: [{ _id: "sword00000000001", name: "Sword" }] } }] };
+  const patch = { tokens: [{ _id: "token00000000001", delta: { items: [
+    { _id: "sword00000000001", flags: { hidden: true } }, { _id: "bow0000000000001", flags: { hidden: true } },
+  ] } }] };
+  assert.deepEqual(found(scene, patch), [["tokens.delta.items", "bow0000000000001"]]);
+});
+
+test("unmatchedMembers matches nothing against a base that holds something other than a keyed array there", () => {
+  // The last is the one applyPatch also treats as empty: an id is there, but not every member has one.
+  for (const held of [undefined, ["a", "b"], "text", [{ _id: "bow0000000000001", name: "Bow" }, { name: "no id" }]]) {
+    assert.deepEqual(found({ items: held }, { items: [{ _id: "bow0000000000001", flags: {} }] }), [["items", "bow0000000000001"]], JSON.stringify(held));
+  }
+});
+
+test("unmatchedMembers finds nothing in a patch that is not an object", () => {
+  assert.deepEqual(unmatchedMembers(WIGHT, "not a patch"), []);
+});
+
+test("expandSources shows each sourced entry to the check with its resolved base and where it sits", async () => {
+  const seen = [];
+  const amulet = { _id: "dmgAmuletOfHealt", name: "Amulet", effects: [] };
+  await expandSources(
+    { items: [{ _id: "mine000000000001", source: "Compendium.x.y.Item.dmgAmuletOfHealt", patch: { name: "Mine" } }] },
+    async () => amulet, () => {}, (nested) => seen.push(nested));
+  assert.deepEqual(seen, [{ path: ["items"], source: "Compendium.x.y.Item.dmgAmuletOfHealt", base: amulet, patch: { name: "Mine" } }]);
+});

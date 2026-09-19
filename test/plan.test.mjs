@@ -122,31 +122,31 @@ test("sourceless entries do not disturb the ordering of the rest", () => {
   assert.ok(ids.includes("myOwnCreation001"));
 });
 
-// ── a source that lists fallbacks ───────────────────────────────────────────
+// ── a source is one document ────────────────────────────────────────────────
 
-test("a list of sources is valid, and any of them can be an edge", async () => {
-  // "The bestiary copy if that module is installed, otherwise the reference
-  // one." Whichever resolves, a candidate naming a sibling still has to be
-  // built first.
-  const { sourcesOf } = await import("../scripts/plan.mjs");
-  const base = entry("banditCaptain001", MM);
-  const derived = { id: "banditWarlord001", type: "Actor", pack: "my-actors", patch: {},
-                    source: ["Compendium.premium.actors.Actor.aaaaaaaaaaaaaaaa", entryUuid(base, MOD)] };
-
-  assert.deepEqual(sourcesOf(derived).length, 2);
-  const { order, invalid } = planOrder([derived, base], MOD);
-  assert.deepEqual(invalid, []);
-  assert.deepEqual(order.map((e) => e.id), ["banditCaptain001", "banditWarlord001"]);
+test("a list of sources is refused, with the reason a patch has one source", () => {
+  const listed = { id: "banditWarlord001", type: "Actor", pack: "my-actors", patch: {},
+                   source: ["Compendium.premium.actors.Actor.aaaaaaaaaaaaaaaa", MM] };
+  const { order, invalid } = planOrder([listed], MOD);
+  assert.deepEqual(order, []);
+  assert.match(invalid[0].reason, /must name one document, not a list/);
 });
 
-test("an empty list is a source somebody meant to fill in", async () => {
-  const { sourcesOf } = await import("../scripts/plan.mjs");
-  assert.deepEqual(sourcesOf({ source: [] }), []);
-  assert.deepEqual(sourcesOf({ source: [42, ""] }), []);
-  assert.deepEqual(sourcesOf({}), [], "absent is not empty: it means the content is the author's");
+test("refuseInvalid splits off what graft cannot address, before anything else looks at it", async () => {
+  const { refuseInvalid } = await import("../scripts/plan.mjs");
+  const good = entry("banditCaptain001", MM);
+  const listed = { id: "banditWarlord001", type: "Actor", pack: "my-actors", source: [MM, MM] };
+  const { sound, refused } = refuseInvalid([good, listed, { type: "Actor" }]);
+  assert.deepEqual(sound, [good]);
+  assert.deepEqual(refused.map((r) => r.id), ["banditWarlord001", "(no id)"]);
+  assert.match(refused[0].reason, /not a list/);
+});
 
-  const { invalid } = planOrder([{ id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", source: [] }], MOD);
-  assert.match(invalid[0].reason, /list documents to try in order/);
+test("a source that is present and names nothing is somebody's unfinished entry", () => {
+  for (const source of ["", 42, null]) {
+    const { invalid } = planOrder([{ id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", source }], MOD);
+    assert.match(invalid[0].reason, /must name the document this grafts onto/, JSON.stringify(source));
+  }
 });
 
 test("two entries sharing an id in one pack are reported, not silently collapsed", () => {

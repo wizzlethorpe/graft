@@ -35,14 +35,13 @@ A `grafts.json` holds the format version, a list of entries, and optionally the 
 
 ## Sources
 
-A source takes one of four forms:
+A source names one document, in one of three forms:
 
 - **A compendium UUID**, such as `"Compendium.dnd5e.actors24.Actor.mmBanditCaptain0"`.
 - **Another entry's `id`** in the same file, to graft onto what that entry builds. Graft builds that entry first, whatever order they appear in, and refuses two entries that graft onto each other. Ids must be unique within a file.
 - **A path to a `.json` file** in the Foundry data folder, such as `"graft/my-vault/bandit-captain.json"`, often one an asset handler placed. The file is the base document.
-- **A list** of any of these, tried in order; graft uses the first that resolves. **Copy graft** on the result names only the one that resolved, so re-add the list by hand.
 
-If no source resolves, graft skips that entry and names it in the report. Every other entry still builds.
+A patch is written against one document, so a source is never a list of documents to try. If the source does not resolve, graft skips that entry and names it in the report. Every other entry still builds.
 
 ## Patches
 
@@ -59,6 +58,8 @@ Arrays are replaced whole, with one exception: when every member has an `_id`, a
 ```
 
 - A member with an `_id` patches the item with that id.
+- A member whose `_id` the source does not have is a new member, and is added as written. It has to state whatever Foundry cannot fill in for that document type: for example, an Item needs a `name` and a `type`.
+- A member whose `_id` the source does not have, and which leaves one of those out, is a mistake: `{ "_id": "...", "flags": { ... } }` is a change to an Item, not an Item, and there is nothing to apply it to. Graft skips the whole entry and the report names the member and the source. The usual causes are a mistyped `_id`, or a source whose members changed since the patch was written. The same goes for the `patch` of a member with its own `source`. A type Foundry can fill in entirely, such as a Token or a light, is never caught this way.
 - A member with `"_delete": true` removes it.
 - A member with its own `source` and `patch` is a graft inside the graft: the item is built from its source, then patched. If that source does not resolve, the whole entry is skipped. **Copy graft** writes items this way when Foundry recorded where they came from.
 - Members the patch does not mention are left alone. `[]` removes every member.
@@ -78,7 +79,7 @@ Graft warns, but still builds, when a source:
 
 - was made for a different game system;
 - was made for an older major version of Foundry or of the system;
-- has changed since you copied it, in the fields your patch touches. **Copy graft** records this as `sourceHash`. An entry without one, or with a list as its source, is not checked.
+- has changed since you copied it, in the fields your patch touches. **Copy graft** records this as `sourceHash`. An entry without one is not checked.
 
 ## Packs
 

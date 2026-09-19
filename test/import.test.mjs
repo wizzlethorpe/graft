@@ -111,15 +111,13 @@ describe("localiseSources", () => {
     assert.equal(entries[1].patch.items[0].source, "aaaaaaaaaaaaaaaa");
   });
 
-  test("a list of fallbacks is translated member by member", () => {
+  test("hands a source list on untouched, for the plan to refuse", () => {
+    const listed = ["Compendium.kerra.kit-items.Item.aaaaaaaaaaaaaaaa", "Compendium.dnd5e.items.Item.abcdefghijklmnop"];
     const entries = localiseSources([
       { id: "aaaaaaaaaaaaaaaa", type: "Item", pack: "kit-items" },
-      {
-        id: "bbbbbbbbbbbbbbbb", type: "Actor", pack: "kit-actors",
-        source: ["Compendium.kerra.kit-items.Item.aaaaaaaaaaaaaaaa", "Compendium.dnd5e.items.Item.abcdefghijklmnop"],
-      },
+      { id: "bbbbbbbbbbbbbbbb", type: "Actor", pack: "kit-actors", source: listed },
     ]);
-    assert.deepEqual(entries[1].source, ["aaaaaaaaaaaaaaaa", "Compendium.dnd5e.items.Item.abcdefghijklmnop"]);
+    assert.deepEqual(entries[1].source, listed);
   });
 
   test("does not alter the file it was given", () => {

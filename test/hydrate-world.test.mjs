@@ -2,6 +2,7 @@ import test, { describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { installWorld, uninstallWorld } from "./foundry-stub.mjs";
+import { filled, required } from "./fake-schema.mjs";
 
 const base = { id: "actorBase0000001", type: "Actor", pack: "kit-actors", folder: "NPCs", patch: { name: "Guard", system: { hp: 10 } } };
 const child = { id: "actorChild000001", type: "Actor", pack: "kit-actors", source: "actorBase0000001", patch: { name: "Captain" } };
@@ -39,6 +40,54 @@ describe("hydrateWorld", () => {
     assert.notEqual(journalNpcs.id, npcs.id, "one folder per type, as Foundry files them");
     assert.equal(collections.get("JournalEntry").get("journal000000001").toObject().folder, journalNpcs.id);
     assert.equal(actor("actorBase0000001").flags.graft.imported, true);
+  });
+
+  /** An Actor whose items are Items that need a name, each with effects that need one too. */
+  function needNames() {
+    const Effect = { schema: { fields: { name: required } } };
+    const Item = { schema: { fields: { name: required, flags: filled } }, hierarchy: { effects: { model: Effect } } };
+    const stub = globalThis.getDocumentClass;
+    globalThis.getDocumentClass = (type) => Object.assign(stub(type), { hierarchy: { items: { model: Item } } });
+  }
+  const wight = { ...base, patch: { name: "Wight", items: [{ _id: "sword00000000001", name: "Sword", effects: [{ _id: "fx00000000000001", name: "Chill" }] }] } };
+  const merchant = (items) => ({ id: "actorChild000001", type: "Actor", source: "actorBase0000001",
+    patch: { name: "Merchant", items, system: { advancement: [{ _id: "adv0000000000001", level: 1 }] } } });
+  const sword = { _id: "sword00000000001", flags: { hidden: true } };
+  const dagger = { _id: "dagger0000000001", name: "Dagger" };
+
+  test("skips an entry whose patch changes a member its source does not have, naming the member and the source", async () => {
+    needNames();
+    const broken = await run([wight, merchant([sword, { _id: "bow0000000000001", flags: { hidden: true } }, dagger])]);
+    assert.equal(broken.skipped.length, 1);
+    assert.match(broken.skipped[0].reason, /items bow0000000000001, which Actor\.actorBase0000001 does not have/);
+    assert.equal(actor("actorChild000001"), undefined);
+
+    const fine = await run([wight, merchant([sword, dagger])]);
+    assert.deepEqual(fine.skipped, []);
+    assert.deepEqual(actor("actorChild000001").items.map((i) => i._id), ["sword00000000001", "dagger0000000001"]);
+    assert.deepEqual(actor("actorChild000001").system.advancement, [{ _id: "adv0000000000001", level: 1 }]);
+  });
+
+  test("names a stray change inside a matched member by the path to it", async () => {
+    needNames();
+    const { skipped } = await run([wight, merchant([{ _id: "sword00000000001", effects: [{ _id: "fx00000000000002", disabled: true }] }])]);
+    assert.match(skipped[0].reason, /items\.effects fx00000000000002/);
+  });
+
+  test("checks a nested graft's own patch against the document it names", async () => {
+    needNames();
+    const nested = (patch) => merchant([{ _id: "mine000000000001", source: "actorBase0000001", patch }]);
+    // The wight stands in for an item source: what matters is that it has no such effect.
+    const broken = await run([wight, nested({ effects: [{ _id: "fx00000000000009", disabled: true }] })]);
+    assert.match(broken.skipped[0].reason, /effects fx00000000000009, which Actor\.actorBase0000001 does not have/);
+    const fine = await run([wight, nested({ name: "Mine" })]);
+    assert.deepEqual(fine.skipped, []);
+  });
+
+  test("an entry with no source is not checked: the patch is the document", async () => {
+    needNames();
+    const { skipped } = await run([{ ...base, patch: { name: "Guard", items: [{ _id: "bow0000000000001", flags: {} }] } }]);
+    assert.deepEqual(skipped, []);
   });
 
   test("a sibling by bare id resolves", async () => {

@@ -2,12 +2,14 @@
 // block is keyed by handler, and a handler only places files, never entries.
 
 import { dataUrl, readDataJson } from "./paths.mjs";
-import { sourcesOf } from "./plan.mjs";
 import { validRegistration } from "./extend.mjs";
 import { centralDirectory, readMember } from "./zip.mjs";
 import { t } from "./i18n.mjs";
 
 const HOOK = "graftAssets";
+
+/** Where a file can be fetched from, in the order to try: one URL, or mirrors of the same bytes. */
+const sourcesOf = (file) => [file?.source].flat();
 
 const fp = () => foundry.applications.apps.FilePicker.implementation;
 
@@ -293,7 +295,7 @@ export const httpHandler = {
  * and becomes an upload path, so it has to stay inside the data directory.
  */
 export function unusable(file) {
-  const sources = Array.isArray(file?.source) ? file.source : [file?.source];
+  const sources = sourcesOf(file);
   if (sources.length === 0 || !sources.every((s) => typeof s === "string" && s)) return "no source to fetch from";
   const destination = file.destination;
   if (typeof destination !== "string" || !destination) return "no destination to write to";

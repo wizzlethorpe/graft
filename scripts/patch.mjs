@@ -74,6 +74,31 @@ function mergeById(target, patch) {
 }
 
 /**
+ * The keyed-array members of `patch` that name nothing in `base`, as `[{ path, member }]`, where `path` is the keys leading to the array.
+ * Each is a whole new member or a change to one that is not there. The format cannot say which, so the caller does.
+ */
+export function unmatchedMembers(base, patch, path = []) {
+  if (!isPlainObject(patch)) return [];
+  const found = [];
+  for (const [key, value] of Object.entries(patch)) {
+    const at = [...path, key];
+    const before = base?.[key];
+    if (isKeyedArray(value)) {
+      const byId = new Map((isKeyedArray(before) ? before : []).map((e) => [e._id, e]));
+      for (const member of value) {
+        if (isRemoval(member) || isSourcedEntry(member)) continue;
+        const prior = byId.get(member._id);
+        if (prior) found.push(...unmatchedMembers(prior, member, at));
+        else found.push({ path: at, member });
+      }
+    } else if (isPlainObject(value)) {
+      found.push(...unmatchedMembers(before, value, at));
+    }
+  }
+  return found;
+}
+
+/**
  * The merge patch that turns `source` into `result`, or `undefined` if nothing
  * differs.
  *
@@ -196,9 +221,10 @@ export function stripVolatile(value, root = true) {
 //
 // An embedded document can be somebody else's content too: adding a magic item
 // to a statblock would otherwise put that item's whole body in the patch. So an
-// entry in a keyed array takes one of two shapes:
+// entry in a keyed array takes one of three shapes:
 //
-//   { _id }               patch an entry already there
+//   { _id, ... }           patch an entry already there
+//   { _id, ...whole }      a new entry, stated in full
 //   { _id, source, patch } resolve `source`, patch it, insert it
 //
 // Resolution is injected rather than imported, so the walk stays testable
@@ -215,17 +241,20 @@ function isSourcedEntry(v) {
  * source throws: a statblock silently missing the item it was built around is
  * worse than one that refuses to build and names the dependency.
  *
+ * `check({ path, source, base, patch })` sees each sourced entry once its source has resolved, with `path` the keys leading to its array, and may throw.
+ *
  * `record(member, source)` notes on the member where it came from. Without it
  * the merge leaves nothing saying an item is somebody else's, and the next
  * **Copy graft** ships its whole body instead of a reference.
  */
-export async function expandSources(patch, resolve, record) {
+export async function expandSources(patch, resolve, record, check = () => {}, path = []) {
   if (Array.isArray(patch)) {
     return Promise.all(patch.map(async (entry) => {
-      if (!isSourcedEntry(entry)) return expandSources(entry, resolve, record);
+      if (!isSourcedEntry(entry)) return expandSources(entry, resolve, record, check, path);
       const base = await resolve(entry.source);
       if (!base) throw new Error(`embedded source ${entry.source} did not resolve`);
-      const inner = await expandSources(entry.patch ?? {}, resolve, record);
+      check({ path, source: entry.source, base, patch: entry.patch ?? {} });
+      const inner = await expandSources(entry.patch ?? {}, resolve, record, check, path);
       const member = { ...applyPatch(base, inner), _id: entry._id };
       record(member, entry.source);
       return member;
@@ -233,7 +262,7 @@ export async function expandSources(patch, resolve, record) {
   }
   if (!isPlainObject(patch)) return patch;
   const out = {};
-  for (const [k, v] of Object.entries(patch)) out[k] = await expandSources(v, resolve, record);
+  for (const [k, v] of Object.entries(patch)) out[k] = await expandSources(v, resolve, record, check, [...path, k]);
   return out;
 }
 

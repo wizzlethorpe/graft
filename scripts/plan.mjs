@@ -15,20 +15,6 @@ import { digest, embeddedSources, rewriteSources } from "./patch.mjs";
 const DOCUMENT_ID = /^[a-zA-Z0-9]{16}$/;
 const NO_ADVENTURES = new Set();
 
-/**
- * The sources an entry or an asset file names, in the order to try them.
- *
- * A list is a fallback: "the bestiary copy if that module is installed,
- * otherwise the reference one". The first that resolves wins, so an author can
- * target better content without requiring it.
- */
-export function sourcesOf(entry) {
-  const source = entry?.source;
-  if (typeof source === "string") return source ? [source] : [];
-  if (Array.isArray(source)) return source.filter((s) => typeof s === "string" && s);
-  return [];
-}
-
 /** Foundry's own rule, from `isValidId`. */
 export function isDocumentId(id) {
   return typeof id === "string" && DOCUMENT_ID.test(id);
@@ -73,7 +59,7 @@ function resolveSiblingIds(entries, target) {
   for (const entry of entries) {
     const problems = [];
     const map = (source) => {
-      if (typeof source !== "string" || !DOCUMENT_ID.test(source)) return source;
+      if (!DOCUMENT_ID.test(source)) return source;
       if (ambiguous.has(source)) {
         problems.push(`source "${source}" names more than one entry; say which pack with a full UUID`);
         return source;
@@ -87,7 +73,7 @@ function resolveSiblingIds(entries, target) {
 
     const next = { ...entry };
     if (entry.source !== undefined) {
-      next.source = Array.isArray(entry.source) ? entry.source.map(map) : map(entry.source);
+      next.source = map(entry.source);
     }
     if (entry.patch !== undefined) next.patch = rewriteSources(entry.patch, map);
 
@@ -146,12 +132,10 @@ export function planOrder(entries, target) {
       return;
     }
     chain.add(uuid);
-    // Any candidate naming a sibling is an edge: the parent has to be built
-    // before this entry, whichever of them ends up resolving. An item a patch
-    // inserts counts too — it is resolved out of the pack at build time, so it
-    // has to be in there already.
-    for (const candidate of [...sourcesOf(entry), ...embeddedSources(entry.patch ?? {})]) {
-      const parent = byUuid.get(candidate);
+    // A source naming a sibling is an edge: the parent has to be built before this entry.
+    // An item a patch inserts counts too: it is resolved out of the pack at build time, so it has to be in there already.
+    for (const named of [entry.source, ...embeddedSources(entry.patch ?? {})]) {
+      const parent = byUuid.get(named);
       if (parent) visit(parent, chain);
     }
     chain.delete(uuid);
@@ -171,6 +155,18 @@ export function planOrder(entries, target) {
   };
 }
 
+/** Entries split into the ones graft can address and `{ id, reason }` for the ones it cannot. */
+export function refuseInvalid(entries) {
+  const sound = [];
+  const refused = [];
+  for (const entry of entries) {
+    const reason = describeInvalid(entry);
+    if (reason) refused.push({ id: entry?.id ?? "(no id)", reason });
+    else sound.push(entry);
+  }
+  return { sound, refused };
+}
+
 function describeInvalid(entry) {
   if (!isDocumentId(entry?.id)) {
     return `id must be 16 characters of [a-zA-Z0-9] so the result has a real UUID, got ${JSON.stringify(entry?.id)}`;
@@ -178,10 +174,11 @@ function describeInvalid(entry) {
   if (entry.type === "Adventure") {
     return "Adventure is a packaging, not an entry type: point entries at an Adventure pack and graft assembles them into one";
   }
+  if (Array.isArray(entry.source)) return "source must name one document, not a list";
   // Optional: an entry with no source is the author's own content, carried
   // whole, and belongs in the same pack as the things it borrows.
-  if ("source" in entry && sourcesOf(entry).length === 0) {
-    return "source, when given, must name the document this grafts onto, or list documents to try in order";
+  if ("source" in entry && (typeof entry.source !== "string" || !entry.source)) {
+    return "source, when given, must name the document this grafts onto";
   }
   if (typeof entry.type !== "string" || !entry.type) {
     return "type must name a document type, since it decides the UUID and the pack";
