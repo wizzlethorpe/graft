@@ -7,7 +7,6 @@
 import { hydrate, exportDiff } from "./hydrate.mjs";
 import { FORMAT, graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
 import { parseAdventureSource, resolveAdventureSource } from "./origin.mjs";
-import { collectTransforms } from "./extend.mjs";
 import { collectAssets } from "./assets.mjs";
 import { runBuild } from "./build.mjs";
 import { toYaml } from "./yaml.mjs";
@@ -54,7 +53,7 @@ export async function promptForUnbuilt() {
     const build = await foundry.applications.api.DialogV2.confirm({
       window: { title: t("GRAFT.PromptTitle", { module: module.title }) },
       content: t("GRAFT.PromptBody", { module: module.title, count: missing.length })
-        + downloadNotice(module.id, assets),
+        + downloadNotice(assets),
       yes: { label: t("GRAFT.PromptBuild") },
       no: { label: t("GRAFT.PromptLater") },
       modal: false,
@@ -78,10 +77,8 @@ export async function buildAndReport(moduleId) {
 
   const title = game.modules.get(moduleId)?.title ?? moduleId;
   const { built, skipped, warnings, removed } = await runBuild({
-    moduleId, title, assets, entries, redownload: askRedownload,
-    // A transform that skipped an entry drops it from its output; the entry
-    // still exists, and what was built for it last time is not stale.
-    write: (prepared, options) => hydrate(moduleId, prepared, { ...options, declared: entries }),
+    moduleId, title, assets, redownload: askRedownload,
+    write: (options) => hydrate(moduleId, entries, options),
   });
 
   // Building answers the prompt, so stop suppressing it: if entries go missing
@@ -149,7 +146,7 @@ export async function askOverwrite(existing) {
   return all === true;
 }
 
-/** Build failures first, then each transform's, each under its own heading. */
+/** Build failures first, then each asset handler's, each under its own heading. */
 function groupByReporter(skipped) {
   const groups = new Map();
   for (const item of skipped) {
@@ -162,14 +159,9 @@ function groupByReporter(skipped) {
   return [...groups].sort((a, b) => (a[0] === null ? -1 : b[0] === null ? 1 : 0));
 }
 
-/** What the build will reach outside the world for: the file's assets, the transforms that run, or both. */
-export function downloadNotice(moduleId, assets) {
-  const names = collectTransforms(moduleId).map((tr) => tr.label);
-  const notices = [
-    ...(Object.keys(assets ?? {}).length > 0 ? [t("GRAFT.PromptAssets")] : []),
-    ...(names.length > 0 ? [t("GRAFT.PromptTransforms", { transforms: names.join(", ") })] : []),
-  ];
-  return notices.length > 0 ? notices.join("") : t("GRAFT.PromptNoDownload");
+/** Whether the build will reach outside the world, which it does only for a file's assets. */
+export function downloadNotice(assets) {
+  return t(Object.keys(assets ?? {}).length > 0 ? "GRAFT.PromptAssets" : "GRAFT.PromptNoDownload");
 }
 
 /**
@@ -194,15 +186,13 @@ async function reportBuild(title, built, skipped, warnings = [], removed = []) {
     parts.push(`<p><strong>${t("GRAFT.SectionRemoved")}</strong></p><ul>${rows}</ul>`);
   }
 
-  // Sectioned by whoever reported it. A transform failing to reach a service
-  // and an entry that was never valid want different responses from the reader,
-  // and one undifferentiated list hides which is which.
+  // Sectioned by reporter: a handler's failed download and an invalid entry need different responses.
   for (const [by, items] of groupByReporter(skipped)) {
     const rows = items.map(({ id, reason }) =>
       `<li><code>${foundry.utils.escapeHTML(id)}</code><br>`
       + `<span class="notes">${foundry.utils.escapeHTML(reason)}</span></li>`).join("");
     const heading = by
-      ? t("GRAFT.SectionNotBuiltBy", { transform: foundry.utils.escapeHTML(by) })
+      ? t("GRAFT.SectionNotPlacedBy", { by: foundry.utils.escapeHTML(by) })
       : t("GRAFT.SectionNotBuilt");
     parts.push(`<p><strong>${heading}</strong></p><ul>${rows}</ul>`);
   }
@@ -264,7 +254,7 @@ export const graftsFile = (entries, assets) =>
   JSON.stringify({ format: FORMAT, ...(assets ? { assets } : {}), entries }, null, 2);
 
 /** The grafts.json for `entries`, or null once the reader has been told why a handler could not list their files. */
-async function fileFor(entries) {
+export async function fileFor(entries) {
   try {
     return graftsFile(entries, await collectAssets(entries));
   } catch (err) {

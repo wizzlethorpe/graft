@@ -132,16 +132,6 @@ test("a list of sources is refused, with the reason a patch has one source", () 
   assert.match(invalid[0].reason, /must name one document, not a list/);
 });
 
-test("refuseInvalid splits off what graft cannot address, before anything else looks at it", async () => {
-  const { refuseInvalid } = await import("../scripts/plan.mjs");
-  const good = entry("banditCaptain001", MM);
-  const listed = { id: "banditWarlord001", type: "Actor", pack: "my-actors", source: [MM, MM] };
-  const { sound, refused } = refuseInvalid([good, listed, { type: "Actor" }]);
-  assert.deepEqual(sound, [good]);
-  assert.deepEqual(refused.map((r) => r.id), ["banditWarlord001", "(no id)"]);
-  assert.match(refused[0].reason, /not a list/);
-});
-
 test("a source that is present and names nothing is somebody's unfinished entry", () => {
   for (const source of ["", 42, null]) {
     const { invalid } = planOrder([{ id: "aaaaaaaaaaaaaaaa", type: "Actor", pack: "p", source }], MOD);

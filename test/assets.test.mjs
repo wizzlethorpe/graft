@@ -78,11 +78,13 @@ describe("placeAssets", () => {
     let ran = false;
     globalThis.Hooks = { callAll: (_hook, register) => {
       register({ id: "broken" });
+      register({ place() {} });
       register({ id: "good", place: () => { ran = true; } });
     } };
     const { skipped } = await placeAssets({ good: {} });
     assert.ok(ran, "a working handler did not run after a broken one registered");
     assert.match(skipped[0].reason, /"broken" needs a place function/);
+    assert.match(skipped[1].reason, /needs an id/);
   });
 
   test("no assets block is not an error", async () => {

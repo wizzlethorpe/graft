@@ -1,7 +1,4 @@
-// One progress notification for the length of a build. Module-level state:
-// one build runs at a time, and the code that knows what is happening sits
-// frames below the loop that knows how far along it is. Everything degrades
-// to a no-op — this must not be why a build fails.
+// One progress notification for the length of a build. Every call is a no-op when the notification API is absent.
 
 let bar = null;
 let title = "";
@@ -58,11 +55,6 @@ export function phase(name, count = 0) {
 /** Advance one item. `message` names what is being worked on. */
 export function step(message) {
   done++;
-  paint(message);
-}
-
-/** Change the message without advancing, for work nested inside one item. */
-export function note(message) {
   paint(message);
 }
 

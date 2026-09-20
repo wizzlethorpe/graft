@@ -8,7 +8,7 @@
 import test, { describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { begin, phase, step, note, end } from "../scripts/progress.mjs";
+import { begin, phase, step, end } from "../scripts/progress.mjs";
 
 let updates;
 
@@ -43,14 +43,5 @@ describe("progress", () => {
   test("a phase starts at zero, not below it", () => {
     phase("Downloading", 5);
     assert.equal(updates.at(-1).pct, 0);
-  });
-
-  test("note repaints without advancing", () => {
-    phase("Building", 2);
-    step("one");
-    const before = updates.at(-1).pct;
-    note("still one, deeper in");
-    assert.equal(updates.at(-1).pct, before);
-    assert.match(updates.at(-1).message, /deeper/);
   });
 });

@@ -46,8 +46,7 @@ export function localiseSources(entries) {
 }
 
 /**
- * Build a pasted grafts file into the world. Transforms run under `"world"` as
- * the module id.
+ * Build a pasted grafts file into the world. `graftBuilt` reports it under `"world"` as the module id.
  *
  * @returns `{ built, skipped, warnings, removed }`.
  */
@@ -59,12 +58,12 @@ export async function importGrafts(parsed, { redownload, confirmOverwrite } = {}
   if (file.error === "bad-assets") throw new Error(t("GRAFT.ImportBadAssets"));
   if (file.error) throw new Error(t("GRAFT.ImportNotEntries"));
   if (file.entries.length === 0) throw new Error(t("GRAFT.ImportEmpty"));
+  const entries = localiseSources(file.entries);
   return runBuild({
     moduleId: WORLD,
     title: t("GRAFT.ImportTitle"),
     assets: file.assets,
-    entries: localiseSources(file.entries),
     redownload,
-    write: (prepared, options) => hydrateWorld(prepared, { ...options, confirmOverwrite }),
+    write: (options) => hydrateWorld(entries, { ...options, confirmOverwrite }),
   });
 }

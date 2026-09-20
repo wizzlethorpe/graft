@@ -85,7 +85,7 @@ What the module path adds is a `module.json` declaring the packs your results ge
 
 - [The format](docs/format.md): every field, sources, patch rules, drift warnings, packs, assets
 - [Authoring](docs/authoring.md): module setup, Copy graft, source recovery, dependencies, manifest options
-- [Hooks and API](docs/hooks.md): pre-build transforms, export rewriters, `game.modules.get("graft").api`
+- [Hooks and API](docs/hooks.md): asset handlers, the `graftBuilt` hook, `game.modules.get("graft").api`
 
 ## Support
 
@@ -97,7 +97,6 @@ Graft is free and open source, from Wizzlethorpe Labs. If it is useful to you, [
 scripts/patch.mjs      the format: applyPatch, diff, stripVolatile. Pure.
 scripts/plan.mjs       ids, UUIDs, and build order for chains.
 scripts/assemble.mjs   folds entries aimed at an Adventure pack into one Adventure. Pure.
-scripts/extend.mjs     collects and runs pre-build transforms and export rewriters.
 scripts/assets.mjs     asset handlers, and the built-in http one.
 scripts/zip.mjs        reads a zip in the browser, for the http handler. Pure.
 scripts/paths.mjs      reading a file out of the Foundry data directory.
@@ -106,7 +105,7 @@ scripts/i18n.mjs       localised text.
 scripts/hydrate.mjs    everything that needs Foundry: resolve, migrate, unlock, write.
 scripts/modules.mjs    reads what a module declares.
 scripts/import.mjs     building grafts somebody sent you into the world.
-scripts/build.mjs      one build, from a module or an import: assets, transforms, documents.
+scripts/build.mjs      one build, from a module or an import: assets, then documents.
 scripts/origin.mjs     recovers a document's true source.
 scripts/progress.mjs   the build's progress bar.
 scripts/ui.mjs         controls, menus, dialogs.

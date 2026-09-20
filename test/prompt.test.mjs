@@ -4,39 +4,22 @@
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { downloadNotice, graftsFile } from "../scripts/ui.mjs";
+import { downloadNotice, graftsFile, fileFor } from "../scripts/ui.mjs";
 
 describe("downloadNotice", () => {
-  const saved = { game: globalThis.game, Hooks: globalThis.Hooks };
-  afterEach(() => { globalThis.game = saved.game; globalThis.Hooks = saved.Hooks; });
-
-  const install = (...transforms) => {
-    globalThis.game = { i18n: { localize: (key) => key, format: (key) => key } };
-    globalThis.Hooks = { callAll: (_hook, _id, register) => transforms.forEach(register) };
-  };
-  const transform = (id) => ({ id, transform: () => {} });
+  const saved = globalThis.game;
+  afterEach(() => { globalThis.game = saved; });
+  const install = () => { globalThis.game = { i18n: { localize: (key) => key, format: (key) => key } }; };
 
   test("promises nothing is downloaded only when nothing is", () => {
     install();
-    assert.equal(downloadNotice("m", {}), "GRAFT.PromptNoDownload");
-    assert.equal(downloadNotice("m", undefined), "GRAFT.PromptNoDownload");
+    assert.equal(downloadNotice({}), "GRAFT.PromptNoDownload");
+    assert.equal(downloadNotice(undefined), "GRAFT.PromptNoDownload");
   });
 
   test("says so when the file carries assets, whoever fetches them", () => {
     install();
-    assert.equal(downloadNotice("m", { http: { files: [{}] } }), "GRAFT.PromptAssets");
-  });
-
-  test("names both when the file carries assets and transforms run", () => {
-    install(transform("moulinette"));
-    const notice = downloadNotice("m", { http: { files: [{}] } });
-    assert.match(notice, /GRAFT\.PromptAssets/);
-    assert.match(notice, /GRAFT\.PromptTransforms/);
-  });
-
-  test("names the transforms when there are any", () => {
-    install(transform("moulinette"));
-    assert.equal(downloadNotice("m", {}), "GRAFT.PromptTransforms");
+    assert.equal(downloadNotice({ moulinette: { files: [{}] } }), "GRAFT.PromptAssets");
   });
 });
 
@@ -51,5 +34,19 @@ describe("graftsFile", () => {
 
   test("has no assets key when no handler listed anything", () => {
     assert.equal("assets" in JSON.parse(graftsFile(entries, undefined)), false);
+  });
+});
+
+describe("fileFor", () => {
+  const saved = { game: globalThis.game, ui: globalThis.ui, Hooks: globalThis.Hooks };
+  afterEach(() => Object.assign(globalThis, saved));
+
+  test("tells the reader why, and copies nothing, when a handler cannot list its files", async () => {
+    const errors = [];
+    globalThis.game = { i18n: { localize: (key) => key, format: (key, data) => `${key} ${data.reason}` } };
+    globalThis.ui = { notifications: { error: (message) => errors.push(message) } };
+    globalThis.Hooks = { callAll: (_hook, register) => register({ id: "lib", place() {}, collect: () => { throw new Error("signed out"); } }) };
+    assert.equal(await fileFor([{ id: "a", type: "Actor", patch: {} }]), null);
+    assert.deepEqual(errors, ["GRAFT.CopyFailed signed out"]);
   });
 });

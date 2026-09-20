@@ -2,9 +2,8 @@
 
 import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff, recordFileSource, resolveData } from "./hydrate.mjs";
-import { readGrafts, unbuilt, anyBuilt } from "./modules.mjs";
+import { readGrafts, unbuilt } from "./modules.mjs";
 import { placeFile } from "./assets.mjs";
-import * as progress from "./progress.mjs";
 import {
   registerSettings, promptForUnbuilt, addPackControl, copyOne,
   buildAndReport, addCopyGraftContext, addCopyFolderGrafts, addImportControl, CONTEXT_TYPES,
@@ -15,8 +14,7 @@ const MODULE_ID = "graft";
 Hooks.once("init", () => {
   registerSettings();
   game.modules.get(MODULE_ID).api = {
-    hydrate, exportDiff, recordFileSource, placeFile, resolve: resolveData, readGrafts, unbuilt, anyBuilt, buildPacks: buildAndReport,
-    progress: { phase: progress.phase, step: progress.step, note: progress.note },
+    hydrate, exportDiff, recordFileSource, placeFile, resolve: resolveData, readGrafts, unbuilt, buildPacks: buildAndReport,
   };
 });
 
@@ -44,7 +42,7 @@ Hooks.on("getHeaderControlsDocumentSheetV2", (app, controls) => {
   controls.push({
     icon: "fa-solid fa-code-branch",
     label: "Copy graft",
-    action: "graftExport",
+    action: "copyGraft",
     onClick: () => copyOne(doc),
   });
 });

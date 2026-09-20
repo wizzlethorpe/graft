@@ -2,7 +2,6 @@
 // block is keyed by handler, and a handler only places files, never entries.
 
 import { dataUrl, readDataJson } from "./paths.mjs";
-import { validRegistration } from "./extend.mjs";
 import { centralDirectory, readMember } from "./zip.mjs";
 import { t } from "./i18n.mjs";
 
@@ -16,11 +15,18 @@ const fp = () => foundry.applications.apps.FilePicker.implementation;
 /** The record of what this world has placed: destination -> `{ sources, etag }`. */
 const RECORD = "graft/placed.json";
 
+/** `handler`, once it has an id and a `place` function. */
+function validRegistration(handler) {
+  if (typeof handler?.id !== "string" || !handler.id) throw new Error("a graft asset handler needs an id");
+  if (typeof handler.place !== "function") throw new Error(`graft asset handler "${handler.id}" needs a place function`);
+  return handler;
+}
+
 /** Every asset handler, `http` first so a module can replace it. A registration that fails goes to `refuse`. */
 export function collectHandlers(refuse) {
   const handlers = new Map();
   const register = (h) => {
-    try { handlers.set(h.id, validRegistration("asset handler", "place", h)); }
+    try { handlers.set(h.id, validRegistration(h)); }
     catch (err) { refuse(err.message); }
   };
   register(httpHandler);
@@ -58,7 +64,7 @@ export async function placeAssets(assets, { onPhase, onFile, redownload, handler
 
 /**
  * The `assets` block that would place what `entries` name, or undefined when no handler claims anything.
- * Not caught: a copy missing the files it needs is worse than a copy that failed, and pressing it again is free.
+ * Not caught: a copy that lacks its files is worse than one that failed.
  */
 export async function collectAssets(entries, handlers) {
   const refused = [];

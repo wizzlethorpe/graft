@@ -1,13 +1,9 @@
-// Answering "has this module built anything?" from the pack index alone.
-//
-// The question `unbuilt` cannot answer for a transform-backed module: its
-// grafts.json names a source to fetch rather than the entries themselves, so
-// there are no ids to look up until a build has already happened.
+// Reading a module's grafts, guessing an exported entry's pack, and what is still unbuilt.
 
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { FORMAT, anyBuilt, formatOf, readFile, readGrafts, unbuilt, withPack } from "../scripts/modules.mjs";
+import { FORMAT, formatOf, readFile, readGrafts, unbuilt, withPack } from "../scripts/modules.mjs";
 import { adventureId } from "../scripts/plan.mjs";
 
 describe("the grafts file shape", () => {
@@ -118,40 +114,6 @@ function installWorld(packs) {
   };
 }
 
-const built = (id) => ({ _id: id, flags: { graft: { built: true } } });
-const byHand = (id) => ({ _id: id, flags: {} });
-
-describe("anyBuilt", () => {
-  test("a freshly installed module has built nothing", async () => {
-    installWorld({ "southaven.southaven-actors": [], "southaven.southaven-items": [] });
-    assert.equal(await anyBuilt("southaven"), false);
-  });
-
-  test("one document in one pack is enough", async () => {
-    installWorld({ "southaven.southaven-actors": [], "southaven.southaven-items": [built("a")] });
-    assert.equal(await anyBuilt("southaven"), true);
-  });
-
-  test("a document the reader added by hand is not a build", async () => {
-    // Without the flag check a single hand-placed actor would suppress the
-    // first-build offer for good.
-    installWorld({ "southaven.southaven-actors": [byHand("a")], "southaven.southaven-items": [] });
-    assert.equal(await anyBuilt("southaven"), false);
-  });
-
-  test("a pack declared since the last server start is not yet readable", async () => {
-    // module.json is read at server start, so a newly declared pack is absent
-    // from game.packs until a restart. Absent is not the same as empty.
-    installWorld({});
-    assert.equal(await anyBuilt("southaven"), false);
-  });
-
-  test("a module that is not installed has built nothing", async () => {
-    installWorld({ "southaven.southaven-actors": [built("a")] });
-    assert.equal(await anyBuilt("not-here"), false);
-  });
-});
-
 describe("withPack", () => {
   afterEach(() => { globalThis.game = saved; });
 
@@ -166,10 +128,10 @@ describe("withPack", () => {
   });
 
   test("a module that declares no entries lends no pack to the guess", () => {
-    // A companion module keeps packs of its own; with them counted, every Scene
-    // in the author's module would have two candidates and get none.
+    // A module that only registers an asset handler may keep packs of its own.
+    // With them counted, every Scene in the author's module would have two candidates and get none.
     install(mod("my-mod", [{ name: "my-scenes", type: "Scene" }]),
-      mod("graft-moulinette", [{ name: "scenes", type: "Scene" }], { graft: { entries: [] } }));
+      mod("handler-only", [{ name: "scenes", type: "Scene" }], { graft: { entries: [] } }));
     assert.equal(withPack({ type: "Scene" }).pack, "my-scenes");
   });
 

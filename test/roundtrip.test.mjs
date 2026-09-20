@@ -143,6 +143,10 @@ test("what Foundry fills in on import is not a change to the file", async () => 
   serveFiles({ "graft/kit/guard.json": { name: "Guard", type: "npc" } });
   const entry = { id: "aBuiltActor00002", type: "Actor", pack: "kit", source: "graft/kit/guard.json", patch: { name: "Captain" } };
   assert.deepEqual(comparable(await roundTrip(entry)), comparable(entry));
+
+  // A patch that touches only what import filled in touches nothing of the file, so there is nothing to have drifted.
+  const filled = await roundTrip({ ...entry, patch: { prototypeToken: { sight: true } } });
+  assert.equal("sourceHash" in filled, false);
 });
 
 test("a copied file entry rebuilds without a drift warning, though the patch touches what import filled in", async () => {

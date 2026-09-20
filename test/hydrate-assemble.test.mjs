@@ -87,9 +87,9 @@ afterEach(() => {
   for (const k of ["game", "getDocumentClass", "foundry", "fromUuid", "ui"]) delete globalThis[k];
 });
 
-async function run(entries, options = {}) {
+async function run(entries) {
   const { hydrate } = await import("../scripts/hydrate.mjs");
-  return hydrate("mod", entries, options);
+  return hydrate("mod", entries);
 }
 const adventure = () => packs["mod.adv"].docs.get(ADV)?.toObject();
 
@@ -166,14 +166,6 @@ describe("hydrate into an Adventure pack", () => {
 });
 
 describe("a member that did not build this run", () => {
-  test("keeps its place when a transform dropped it from the entries", async () => {
-    await run([child, base]);
-    const { skipped } = await run([base], { declared: [child, base] });
-    assert.deepEqual(skipped, []);
-    assert.deepEqual(adventure().actors.map((a) => a._id), ["actorBase0000001", "actorChild000001"]);
-    assert.equal(updates.length, 0, "nothing moved, so nothing was written");
-  });
-
   test("keeps its place when its source is missing this run", async () => {
     await run([child, base]);
     const gone = { ...child, source: "Compendium.gone.pack.Actor.zzzzzzzzzzzzzzzz" };
@@ -183,13 +175,13 @@ describe("a member that did not build this run", () => {
     assert.equal(captain?.name, "Captain", "the previous build's copy survives");
   });
 
-  test("survives a run that produced nothing for its pack", async () => {
-    // A transform failing to reach its source drops every entry; the
-    // Adventure it built last time is not stale for it.
-    await run([child, base]);
-    const { removed } = await run([], { declared: [child, base] });
+  test("is not stale when graft will not build its entry this run, in an Adventure or an ordinary pack", async () => {
+    await run([child, loose, base]);
+    const { skipped, removed } = await run([{ ...child, source: ["a", "b"] }, { ...loose, source: ["a", "b"] }, base]);
+    assert.deepEqual(skipped.map((s) => s.id).sort(), ["actorChild000001", "actorLoose000001"]);
     assert.deepEqual(removed, []);
     assert.deepEqual(adventure().actors.map((a) => a._id), ["actorBase0000001", "actorChild000001"]);
+    assert.ok(packs["mod.actors"].docs.has("actorLoose000001"));
   });
 
   test("is dropped once it is no longer declared", async () => {

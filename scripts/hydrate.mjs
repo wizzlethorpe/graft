@@ -13,9 +13,8 @@ import {
 import {
   originOf, adventureSourceUuid, resolveAdventureSource, parseAdventureSource,
 } from "./origin.mjs";
-import { planOrder, entryUuid, adventureId } from "./plan.mjs";
+import { planOrder, describeInvalid, entryUuid, adventureId } from "./plan.mjs";
 import { readDataJson } from "./paths.mjs";
-import { rewriteEntry } from "./extend.mjs";
 import { adventurePacks } from "./modules.mjs";
 import { MEMBER_FIELDS, assembleAdventure, adventureFolderOf, membersOf } from "./assemble.mjs";
 
@@ -33,9 +32,9 @@ import { MEMBER_FIELDS, assembleAdventure, adventureFolderOf, membersOf } from "
  *
  * @returns `{ built, skipped, warnings, removed }`, all reportable.
  */
-export async function hydrate(moduleId, entries, { onProgress, declared = entries } = {}) {
+export async function hydrate(moduleId, entries, { onProgress } = {}) {
   const adventures = adventurePacks(moduleId, entries);
-  const declaredIds = idsByPack([...declared, ...entries]);
+  const declaredIds = idsByPack(entries);
   const touched = new Map();   // collection -> its whole prior config entry
   const members = new Map([...adventures].map((pack) => [pack, []]));
   let result;
@@ -82,6 +81,7 @@ export async function hydrateWorld(entries, { onProgress, confirmOverwrite } = {
 export function worldCollisions(entries) {
   const found = [];
   for (const entry of entries) {
+    if (describeInvalid(entry)) continue;   // never built, so nothing is at stake
     const existing = game.collections.get(entry.type)?.get(entry.id);
     if (existing && !existing.flags?.graft?.imported) found.push({ id: entry.id, type: entry.type, name: existing.name });
   }
@@ -242,8 +242,7 @@ async function pruneStale(moduleId, declaredIds, touched) {
   for (const [name, ids] of declaredIds) {
     const pack = game.packs.get(`${moduleId}.${name}`);
     if (!pack) continue;
-    // From the pack, not from this run's entries: a transform that dropped
-    // every entry of an Adventure pack must not make its Adventure stale.
+    // An Adventure pack's index holds the one Adventure, never its members' ids.
     const wanted = pack.documentName === "Adventure" ? new Set([adventureId(moduleId, name)]) : ids;
     let index;
     try {
@@ -646,14 +645,8 @@ export function recordFileSource(document, path) {
  * The authoring half, and the reason nobody types a UUID: Foundry records where
  * a document was imported from, so importing a monster, editing it in the
  * ordinary sheet, and pressing Copy graft recovers what changed.
- *
- * A module that fetched the source gets the last word on how it is named.
  */
 export async function exportDiff(document) {
-  return rewriteEntry(await diffEntry(document), document);
-}
-
-async function diffEntry(document) {
   const raw = document.toObject();
   // Read before stripping, which removes both places a source is remembered: `_stats` and `flags.graft`.
   const sources = embeddedSources(raw);

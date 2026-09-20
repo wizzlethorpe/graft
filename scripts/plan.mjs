@@ -155,19 +155,8 @@ export function planOrder(entries, target) {
   };
 }
 
-/** Entries split into the ones graft can address and `{ id, reason }` for the ones it cannot. */
-export function refuseInvalid(entries) {
-  const sound = [];
-  const refused = [];
-  for (const entry of entries) {
-    const reason = describeInvalid(entry);
-    if (reason) refused.push({ id: entry?.id ?? "(no id)", reason });
-    else sound.push(entry);
-  }
-  return { sound, refused };
-}
-
-function describeInvalid(entry) {
+/** Why graft will not build an entry, or null. */
+export function describeInvalid(entry) {
   if (!isDocumentId(entry?.id)) {
     return `id must be 16 characters of [a-zA-Z0-9] so the result has a real UUID, got ${JSON.stringify(entry?.id)}`;
   }

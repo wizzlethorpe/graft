@@ -130,6 +130,15 @@ describe("hydrateWorld", () => {
     assert.deepEqual(asked[0].map((e) => e.name).sort(), ["Mine", "My notes"]);
   });
 
+  test("asks nothing about a document only an entry graft will not build would have landed on", async () => {
+    mine("actorBase0000001", "Mine");
+    let asked = 0;
+    const { skipped } = await run([{ ...base, source: ["a", "b"] }], { confirmOverwrite: async () => { asked += 1; return true; } });
+    assert.equal(asked, 0);
+    assert.equal(skipped.length, 1);
+    assert.equal(actor("actorBase0000001").name, "Mine");
+  });
+
   test("asks nothing when every entry lands somewhere free", async () => {
     let asked = 0;
     await run([base], { confirmOverwrite: async () => { asked += 1; return true; } });

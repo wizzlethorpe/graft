@@ -24,9 +24,6 @@ export function installFoundry({ uuids = {}, packs = {}, modules = {}, world = {
     modules: { get: (id) => modules[id] ?? null },
     packs: { get: (c) => (packs[c] ? { metadata: { packageType: packs[c].packageType } } : null) },
   };
-  // The export path collects rewriters on every call. A test wanting one
-  // replaces this after installing.
-  globalThis.Hooks = { callAll: () => {} };
   globalThis.fromUuid = async (uuid) => {
     const data = uuids[uuid];
     return data ? asDocument(data) : null;
@@ -43,7 +40,6 @@ function setProperty(obj, path, value) {
 
 export function uninstallFoundry() {
   delete globalThis.game;
-  delete globalThis.Hooks;
   delete globalThis.fromUuid;
   delete globalThis.foundry;
 }
@@ -98,7 +94,6 @@ export function installWorld({ types, sources = {}, defaults = {}, refuseImport 
     system: { id: "dnd5e", version: "5.3.3" },
     modules: { get: () => null },
   };
-  globalThis.Hooks = { callAll: () => {} };
   globalThis.Folder = { create: async ({ name, type, folder }) => {
     const made = { id: `f${folders.length}`.padEnd(16, "0"), name, type, folder: folder ? { id: folder } : null };
     folders.push(made);
