@@ -88,26 +88,6 @@ export async function buildAndReport(moduleId) {
     await game.settings.set(MODULE_ID, SUPPRESSED, [...suppressed]);
   }
 
-  // Logged as well as shown, because a console line can go into a bug report.
-  if (removed.length > 0) {
-    console.group(`Graft | ${removed.length} removed`);
-    for (const { id, name, pack } of removed) console.log(`${name} (${id}) from ${pack}`);
-    console.groupEnd();
-  }
-  if (warnings.length > 0) {
-    console.group(`Graft | ${warnings.length} built with warnings`);
-    for (const { by, id, reason } of warnings) {
-      console.warn(`${by ? `[${by}] ` : ""}${id}: ${reason}`);
-    }
-    console.groupEnd();
-  }
-  if (skipped.length > 0) {
-    console.group(`Graft | ${skipped.length} skipped`);
-    for (const { by, id, reason } of skipped) {
-      console.warn(`${by ? `[${by}] ` : ""}${id}: ${reason}`);
-    }
-    console.groupEnd();
-  }
   await reportBuild(title, built, skipped, warnings, removed);
   return { built, skipped, warnings, removed };
 }
@@ -162,6 +142,26 @@ function groupByReporter(skipped) {
 /** Whether the build will reach outside the world, which it does only for a file's assets. */
 export function downloadNotice(assets) {
   return t(Object.keys(assets ?? {}).length > 0 ? "GRAFT.PromptAssets" : "GRAFT.PromptNoDownload");
+}
+
+/**
+ * A build's report as plain text, for a bug report, leading with the versions a maintainer asks for.
+ * Headings are in English whatever the reader's language, as every reason already is.
+ */
+export function reportText(title, { built, skipped, warnings, removed }) {
+  const lines = [
+    `Graft: ${title}`,
+    `Foundry ${game.version}, ${game.system.id} ${game.system.version}, graft ${game.modules.get(MODULE_ID).version}`,
+    `${built.length} built, ${skipped.length} not built, ${warnings.length} warnings, ${removed.length} removed`,
+  ];
+  const section = (heading, rows) => { if (rows.length > 0) lines.push("", heading, ...rows.map((row) => `  ${row}`)); };
+  section("Removed, no longer declared", removed.map(({ id, name, pack }) => `${name} (${id}) from ${pack}`));
+  for (const [by, items] of groupByReporter(skipped)) {
+    section(by ? `Not placed by ${by}` : "Not built", items.map(({ id, reason }) => `${id}: ${reason}`));
+  }
+  section("Built, with warnings", warnings.map(({ by, id, reason }) => `${by ? `[${by}] ` : ""}${id}: ${reason}`));
+  section("Built", built);
+  return lines.join("\n");
 }
 
 /**
@@ -220,11 +220,21 @@ async function reportBuild(title, built, skipped, warnings = [], removed = []) {
     parts.push(`<details><summary>${t("GRAFT.SectionSuccess", { count: built.length })}</summary><ul>${rows.join("")}</ul></details>`);
   }
 
+  const text = reportText(title, { built, skipped, warnings, removed });
+  console.log(text);
+  const copy = `<button type="button" data-graft-copy><i class="fa-solid fa-copy"></i> ${t("GRAFT.CopyReport")}</button>`;
   await foundry.applications.api.DialogV2.prompt({
     window: { title: `Graft: ${title}` },
-    content: `<div style="max-height:24rem;overflow:auto">${parts.join("")}</div>`,
+    // Foundry sets user-select:none on body.
+    content: `<div style="max-height:24rem;overflow:auto;user-select:text">${parts.join("")}</div>${copy}`,
     ok: { label: t("GRAFT.Close") },
     position: { width: 520 },
+    render: (_event, dialog) => {
+      dialog.element.querySelector("[data-graft-copy]").addEventListener("click", async () => {
+        await game.clipboard.copyPlainText(text);
+        ui.notifications.info(t("GRAFT.ReportCopied"));
+      });
+    },
   }).catch(() => {});
 }
 
