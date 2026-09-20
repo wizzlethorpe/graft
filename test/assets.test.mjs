@@ -4,7 +4,7 @@ import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { placeAssets, collectAssets, placeFile, needsFetch, unusable, httpHandler, planZips, pool, zipMember } from "../scripts/assets.mjs";
+import { placeAssets, collectAssets, placeFile, retrying, downloadReason, needsFetch, unusable, httpHandler, planZips, pool, zipMember } from "../scripts/assets.mjs";
 
 const saved = { fetch: globalThis.fetch, foundry: globalThis.foundry, CONST: globalThis.CONST, Hooks: globalThis.Hooks };
 afterEach(() => Object.assign(globalThis, saved));
@@ -216,6 +216,52 @@ describe("placing files out of a zip", () => {
     throw new Error(`fetched ${u}, which the zip should have supplied`);
   };
 
+  test("a zip the host refuses for a while is asked for again, not abandoned for its files' own URLs", async () => {
+    let refusals = 1;
+    const serve = network(null);
+    const did = stubFoundry({ fetch: async (url, init = {}) => {
+      if (String(url).startsWith("https://x/pack.zip") && refusals-- > 0) throw new TypeError("Failed to fetch");
+      return serve(url, init);
+    } });
+    const { skipped, warnings } = await httpHandler.place({ files }, { pause: async () => {} });
+    assert.deepEqual([skipped, warnings], [[], []]);
+    assert.equal(did.uploads.filter((u) => !u.path.endsWith("placed.json")).length, 3);
+  });
+
+  test("a zip the host never serves is named the way a file is, in the warning and for a file with no URL of its own", async () => {
+    const only = [{ source: "https://x/pack.zip#maps/stored.txt", destination: "d/stored.txt", size: 1 }];
+    stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+      throw new TypeError("Failed to fetch");
+    } });
+    const { skipped, warnings } = await httpHandler.place({ files: only }, { pause: async () => {} });
+    assert.match(warnings[0].reason, /^could not use it \(x refused the request or the connection dropped\)/);
+    assert.deepEqual(skipped, [{ id: "d/stored.txt", reason: "x refused the request or the connection dropped" }]);
+  });
+
+  test("a member graft cannot decompress is left to its own URL, and nothing is written for it from the zip", async () => {
+    // The same zip, with one member's central directory entry claiming a compression method graft does not read.
+    const odd = Buffer.from(pack);
+    const entry = odd.lastIndexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]), odd.lastIndexOf("maps/stored.txt"));
+    assert.ok(entry >= 0, "the fixture no longer holds maps/stored.txt");
+    odd.writeUInt16LE(12, entry + 10);
+    const serve = network(null);
+    const did = stubFoundry({ fetch: async (url, init = {}) => {
+      if (String(url).startsWith("https://x/pack.zip")) return { ok: true, status: 200, arrayBuffer: async () => odd.buffer.slice(odd.byteOffset, odd.byteOffset + odd.byteLength) };
+      return serve(url, init);
+    } });
+    const { skipped } = await httpHandler.place({ files });
+    assert.deepEqual(skipped.map((s) => s.id), ["d/stored.txt"]);
+    assert.equal(did.uploads.some((u) => u.path === "d/stored.txt"), false, "something was written for a member that could not be read");
+    assert.equal(did.uploads.filter((u) => !u.path.endsWith("placed.json")).length, 2);
+  });
+
+  test("a member that cannot be written is not fetched again from its own URL", async () => {
+    stubFoundry({ fetch: network(null), refuseUpload: (dir) => (dir === "d" ? "disk full" : null) });
+    const { skipped } = await httpHandler.place({ files });
+    assert.deepEqual(skipped.map((s) => s.reason), Array(2).fill("downloaded, but could not be written to your Foundry data folder: disk full"));
+  });
+
   test("writes each member where its file says, typed by its destination, and records where it came from", async () => {
     const did = stubFoundry({ fetch: network(null), browse: async () => { throw new Error("no such directory"); } });
     const { skipped, warnings } = await httpHandler.place({ files });
@@ -277,6 +323,149 @@ describe("a fetch the server refuses", () => {
     assert.deepEqual(offered, [false], "a bearer was sent to an origin it was not for");
     assert.doesNotMatch(skipped[0].reason, /expired/);
     assert.match(skipped[0].reason, /no token for https:\/\/x/);
+  });
+});
+
+describe("a download that fails for a while", () => {
+  const blocked = () => new TypeError("Failed to fetch");   // what a browser makes of a 429 sent without CORS headers
+  const file = (n) => ({ source: `https://x/${n}.png`, destination: `d/${n}.png`, size: 1 });
+  const image = { ok: true, status: 200, headers: new Map(), blob: async () => new Blob(["png"], { type: "image/png" }) };
+
+  test("is tried again after a pause", async () => {
+    let allowance = 2;
+    let pauses = 0;
+    const did = stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+      if (allowance-- <= 0) throw blocked();
+      return image;
+    } });
+    const { skipped = [] } = await httpHandler.place({ files: [1, 2, 3, 4, 5].map(file) }, { pause: async () => { pauses += 1; allowance = 8; } });
+    assert.deepEqual(skipped, []);
+    assert.ok(pauses > 0, "nothing was ever refused, so this pins nothing");
+    assert.equal(did.uploads.filter((u) => u.path.endsWith(".png")).length, 5);
+  });
+
+  test("gives up after three tries, names the host, and says once what a reader can do about it", async () => {
+    const tries = new Map();
+    stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+      tries.set(String(url), (tries.get(String(url)) ?? 0) + 1);
+      throw blocked();
+    } });
+    const { skipped, warnings } = await httpHandler.place({ files: [1, 2, 3].map(file) }, { pause: async () => {} });
+    assert.deepEqual(skipped.map((s) => s.reason), Array(3).fill("x refused the request or the connection dropped"));
+    assert.deepEqual(warnings.map((w) => w.reason),
+      ["a download that kept failing was tried 3 times, 15 seconds apart. Build again and graft fetches only what is missing"]);
+    assert.equal(Math.max(...tries.values()), 3);
+  });
+
+  test("stops waiting on a host that is down, so every later file from it costs one try and no pause", async () => {
+    let pauses = 0;
+    let requests = 0;
+    stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+      requests += 1;
+      throw blocked();
+    } });
+    const files = Array.from({ length: 40 }, (_, n) => file(n));
+    const { skipped } = await httpHandler.place({ files }, { pause: async () => { pauses += 1; } });
+    assert.equal(skipped.length, 40);
+    assert.equal(requests, 40 + pauses, "a file costs one request, plus one for each pause it sat through");
+    assert.ok(pauses > 0 && pauses < 40, `${pauses} pauses: only the downloads already running when the host was given up on may pause`);
+  });
+
+  test("a host that is down does not cost another host its tries", async () => {
+    const tries = new Map();
+    const did = stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+      const u = String(url);
+      tries.set(u, (tries.get(u) ?? 0) + 1);
+      if (u.startsWith("https://dead/")) throw blocked();
+      if (tries.get(u) < 2) throw blocked();   // the healthy host is rate-limiting, and relents after a pause
+      return image;
+    } });
+    const mirrored = [1, 2, 3].map((n) => ({ source: [`https://dead/${n}.png`, `https://x/${n}.png`], destination: `d/${n}.png`, size: 1 }));
+    const { skipped = [], warnings = [] } = await httpHandler.place({ files: mirrored }, { pause: async () => {} });
+    assert.deepEqual(skipped, []);
+    assert.equal(did.uploads.filter((u) => u.path.endsWith(".png")).length, 3);
+    assert.deepEqual(warnings, [], "nothing is missing, so there is nothing to build again for");
+  });
+
+  test("a connection that drops while the body is read is tried again too", async () => {
+    let reads = 0;
+    const did = stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+      return { ...image, blob: async () => { if (reads++ === 0) throw new TypeError("network error"); return image.blob(); } };
+    } });
+    const { skipped = [] } = await httpHandler.place({ files: [file(1)] }, { pause: async () => {} });
+    assert.deepEqual([skipped, reads], [[], 2]);
+    assert.equal(did.uploads.some((u) => u.path === "d/1.png"), true);
+  });
+
+  test("is not tried again when waiting cannot help", async () => {
+    let tries = 0;
+    stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+      tries += 1;
+      return { ok: false, status: 404 };
+    } });
+    const { skipped } = await httpHandler.place({ files: [file(1)] }, { pause: async () => assert.fail("paused for a 404") });
+    assert.equal(tries, 1);
+    assert.equal(skipped[0].reason, "404 fetching https://x/1.png");
+  });
+
+  test("a 429 or a 503 the page can read is waited out the same way", async () => {
+    for (const status of [429, 503]) {
+      let tries = 0;
+      const did = stubFoundry({ fetch: async (url, init = {}) => {
+        if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+        tries += 1;
+        return tries < 3 ? { ok: false, status } : image;
+      } });
+      const { skipped = [] } = await httpHandler.place({ files: [file(1)] }, { pause: async () => {} });
+      assert.deepEqual([skipped, tries], [[], 3], String(status));
+      assert.equal(did.uploads.some((u) => u.path === "d/1.png"), true);
+    }
+  });
+
+  test("a 429 that never relents is reported with its status, and as worth building again for", async () => {
+    stubFoundry({ fetch: async (url, init = {}) => {
+      if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+      return { ok: false, status: 429 };
+    } });
+    const { skipped, warnings } = await httpHandler.place({ files: [file(1), file(2)] }, { pause: async () => {} });
+    assert.deepEqual(skipped.map((s) => s.reason), ["429 fetching https://x/1.png", "429 fetching https://x/2.png"]);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0].reason, /Build again and graft fetches only what is missing/);
+  });
+
+  test("a source with no host is named as written", () => {
+    assert.equal(downloadReason("modules/x/a.png", new TypeError("Failed to fetch")), "modules/x/a.png refused the request or the connection dropped");
+  });
+
+  test("retrying tries exactly as often as it is told, and never for an error waiting cannot fix", async () => {
+    const failing = (err) => { let calls = 0; return [async () => { calls += 1; throw err; }, () => calls]; };
+    const [blockedTask, blockedCalls] = failing(blocked());
+    await assert.rejects(retrying(blockedTask, async () => {}, 1), TypeError);
+    assert.equal(blockedCalls(), 1);
+    const [brokenTask, brokenCalls] = failing(new Error("404"));
+    await assert.rejects(retrying(brokenTask, async () => assert.fail("paused"), 3), /404/);
+    assert.equal(brokenCalls(), 1);
+  });
+
+  test("a file that downloads and cannot be written says the data folder is the problem, and does not try a mirror", async () => {
+    const fetched = [];
+    stubFoundry({
+      fetch: async (url, init = {}) => {
+        if (init.method === "HEAD" || String(url).includes("placed.json")) return missing;
+        fetched.push(String(url));
+        return image;
+      },
+      refuseUpload: (dir) => (dir === "d" ? "disk full" : null),
+    });
+    const { skipped } = await httpHandler.place({ files: [{ source: ["https://x/1.png", "https://mirror/1.png"], destination: "d/1.png", size: 1 }] });
+    assert.deepEqual(fetched, ["https://x/1.png"]);
+    assert.equal(skipped[0].reason, "downloaded, but could not be written to your Foundry data folder: disk full");
   });
 });
 

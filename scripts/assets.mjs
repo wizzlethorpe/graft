@@ -197,6 +197,37 @@ export async function pool(items, limit, task) {
 
 const CONCURRENCY = 8;
 
+/** How long a rate limit is given to pass. A browser hides a blocked 429, its Retry-After included, so the wait is fixed. */
+const RETRY_PAUSE_MS = 15_000;
+const ATTEMPTS = 3;
+const wait = () => new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS));
+
+/** Whether waiting could fix a failed download: a dropped or CORS-blocked request, which fetch reports as a TypeError, or a server asking for a pause. */
+const transient = (err) => err instanceof TypeError || Boolean(err.transient);
+
+/** `url` parsed, or null for a relative or malformed one. */
+function parsed(url) {
+  try { return new URL(url); } catch { return null; }
+}
+
+/** `task()`, tried up to `attempts` times, after `pause()` each time it fails in a way waiting can fix. */
+export async function retrying(task, pause, attempts) {
+  for (let left = attempts; ; left--) {
+    try { return await task(); }
+    catch (err) { if (left <= 1 || !transient(err)) throw err; }
+    await pause();
+  }
+}
+
+/** Why a download failed, for the report. A browser gives a blocked or dropped request no status to show. */
+export function downloadReason(url, err) {
+  if (!(err instanceof TypeError)) return err.message;
+  return `${parsed(url)?.host ?? url} refused the request or the connection dropped`;
+}
+
+/** A write failure is the data folder's, not the source's, so no other source is tried after one. */
+const unwritten = (err) => `downloaded, but could not be written to your Foundry data folder: ${err.message}`;
+
 /** Fetch a zip whole when at least this share of the files naming it need fetching. */
 const ZIP_THRESHOLD = 0.5;
 
@@ -206,7 +237,7 @@ const ZIP_THRESHOLD = 0.5;
  */
 export const httpHandler = {
   id: "http",
-  async place(config, { onPhase, onFile, redownload } = {}) {
+  async place(config, { onPhase, onFile, redownload, pause = wait } = {}) {
     if (!Array.isArray(config?.files)) {
       return config?.files === undefined
         ? {}
@@ -254,31 +285,49 @@ export const httpHandler = {
       onFile?.(file.destination.split("/").pop());
     };
     const { zips, direct } = planZips(usable, needed, ZIP_THRESHOLD);
-    // What a zip could not supply falls back to the file's own URL, if it has one.
+    // What a zip could not supply falls back to the file's own URL, if it has one. `waitable` marks a reason building again could fix.
     const reasons = new Map();
+
+    // A host that has used up one download's tries gives every later download from it a single try.
+    const down = new Set();
+    let buildAgain = false;
+    const download = async (url, read) => {
+      const host = parsed(url)?.host ?? "";
+      try {
+        return await retrying(async () => read(await authorizedFetch(url, auth)), pause, down.has(host) ? 1 : ATTEMPTS);
+      } catch (err) {
+        if (transient(err)) down.add(host);
+        throw err;
+      }
+    };
 
     for (const [zip, members] of zips) {
       const name = zip.split("?")[0].split("/").pop();
       onPhase?.(name, members.length);
       let bytes, directory;
       try {
-        bytes = new Uint8Array(await (await authorizedFetch(zip, auth)).arrayBuffer());
+        bytes = new Uint8Array(await download(zip, (res) => res.arrayBuffer()));
         directory = centralDirectory(bytes);
       } catch (err) {
         // A warning, not a skip: the files still arrive from their own URLs.
-        warnings.push({ id: name, reason: `could not use it (${err.message}); its ${members.length} files came from their own URLs` });
-        for (const { file } of members) { reasons.set(file, err.message); direct.push(file); }
+        const why = downloadReason(zip, err);
+        warnings.push({ id: name, reason: `could not use it (${why}); its ${members.length} files came from their own URLs` });
+        for (const { file } of members) { reasons.set(file, { reason: why, waitable: transient(err) }); direct.push(file); }
         continue;
       }
       const missing = [];
       await pool(members, CONCURRENCY, async ({ file, path }) => {
         const entry = directory.get(path);
-        if (!entry) { missing.push(path); reasons.set(file, `${zip} holds no ${path}`); direct.push(file); return; }
+        if (!entry) { missing.push(path); reasons.set(file, { reason: `${zip} holds no ${path}` }); direct.push(file); return; }
+        let data;
         try {
-          placed(file, await upload(file.destination, await readMember(bytes, entry), typeFor(file.destination)));
+          data = await readMember(bytes, entry);
         } catch (err) {
-          reasons.set(file, err.message); direct.push(file);
+          reasons.set(file, { reason: err.message }); direct.push(file);
+          return;
         }
+        try { placed(file, await upload(file.destination, data, typeFor(file.destination))); }
+        catch (err) { skipped.push({ id: file.destination, reason: unwritten(err) }); }
       });
       if (missing.length > 0) {
         warnings.push({ id: name, reason: `holds none of ${missing.length} files it was named for; they came from their own URLs` });
@@ -289,17 +338,29 @@ export const httpHandler = {
     await pool(direct, CONCURRENCY, async (file) => {
       const urls = sourcesOf(file).filter((s) => !zipMember(s));
       for (const url of urls) {
+        let blob;
         try {
-          const res = await authorizedFetch(url, auth);
-          const blob = await res.blob();
+          blob = await download(url, (res) => res.blob());
+        } catch (err) {
+          reasons.set(file, { reason: downloadReason(url, err), waitable: transient(err) });
+          continue;
+        }
+        try {
           placed(file, await upload(file.destination, blob, typeFor(file.destination, blob.type)));
           return;
         } catch (err) {
-          reasons.set(file, err.message);
+          reasons.set(file, { reason: unwritten(err) });
+          break;
         }
       }
-      skipped.push({ id: file.destination, reason: reasons.get(file) ?? "no source it could fetch" });
+      const { reason = "no source it could fetch", waitable = false } = reasons.get(file) ?? {};
+      skipped.push({ id: file.destination, reason });
+      if (waitable) buildAgain = true;
     });
+
+    if (buildAgain) {
+      warnings.push({ id: "(downloads)", reason: `a download that kept failing was tried ${ATTEMPTS} times, ${RETRY_PAUSE_MS / 1000} seconds apart. Build again and graft fetches only what is missing` });
+    }
 
     if (changed) {
       try { await writeRecord(record); }
@@ -332,8 +393,7 @@ function outside(destination) {
 /** A response for `url`, with the bearer its origin is owed. */
 async function authorizedFetch(url, auth) {
   const headers = {};
-  let origin = null;
-  try { origin = new URL(url).origin; } catch { /* relative or malformed */ }
+  const origin = parsed(url)?.origin ?? null;
   const sent = Boolean(origin && auth[origin]);
   if (sent) headers.Authorization = `Bearer ${auth[origin]}`;
   const res = await fetch(url, { headers });
@@ -343,7 +403,7 @@ async function authorizedFetch(url, auth) {
       ? `${res.status} from ${origin}; the token in this grafts file has expired, download it again`
       : `${res.status} fetching ${url}; this grafts file carries no token for ${origin ?? "that origin"}`);
   }
-  if (!res.ok) throw new Error(`${res.status} fetching ${url}`);
+  if (!res.ok) throw Object.assign(new Error(`${res.status} fetching ${url}`), { transient: res.status === 429 || res.status === 503 });
   return res;
 }
 

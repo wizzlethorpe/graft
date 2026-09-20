@@ -129,6 +129,8 @@ Each file has a `source` URL, a `destination` in the Foundry data folder, and it
 
 `source` may be a list of URLs tried in order, and a URL may point into a zip with `#path/in/zip`. Graft downloads a zip whole when at least half its files are needed, and otherwise fetches files one at a time. Zips must be stored or deflated; zip64 is not supported.
 
+A download the host refuses with 429 or 503, or that the browser reports as failed without a status, is tried three times with a fifteen second pause between tries. A host that rate-limits refuses the later files of a large import, so an `assets` block naming many files should offer them in zips. Once one download has used up its tries, every later download from the same host gets a single try.
+
 A file is downloaded again only when it is missing, its URL has changed, or the server reports a new version. Put a version in the URL, such as `?v=3`, to force an update. Graft keeps its record in `graft/placed.json`. Deleting it makes the next build check every file again. When some files are already on disk, graft asks whether to keep them.
 
 A key no installed handler recognises is reported, and everything still builds: a missing image shows as missing in Foundry. Only an entry whose source is a `.json` file that never arrived is skipped, since that file is its base document.
