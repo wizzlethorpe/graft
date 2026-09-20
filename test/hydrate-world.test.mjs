@@ -1,7 +1,7 @@
 import test, { describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { installWorld, uninstallWorld } from "./foundry-stub.mjs";
+import { installWorld, serveFiles, uninstallWorld } from "./foundry-stub.mjs";
 import { filled, required } from "./fake-schema.mjs";
 
 const base = { id: "actorBase0000001", type: "Actor", pack: "kit-actors", folder: "NPCs", patch: { name: "Guard", system: { hp: 10 } } };
@@ -187,20 +187,7 @@ describe("hydrateWorld", () => {
 });
 
 describe("a file source", () => {
-  const savedFetch = globalThis.fetch;
-  afterEach(() => { globalThis.fetch = savedFetch; });
-
-  /** Serve `files` at the routes an asset handler would have placed them at. */
-  const serve = (files) => {
-    globalThis.fetch = async (url) => {
-      // dataUrl encodes each segment and cache-busts, so undo both to look up.
-      const path = decodeURIComponent(String(url).split("?")[0]).replace(/^\//, "");
-      const body = files[path];
-      return body
-        ? { ok: true, json: async () => body }
-        : { ok: false, json: async () => null };
-    };
-  };
+  const serve = serveFiles;
 
   test("a source ending in .json is read off disk, not looked up as a uuid", async () => {
     serve({ "graft/vault/guard.json": { name: "Guard", system: { hp: 10 } } });
@@ -227,9 +214,6 @@ describe("a file source", () => {
 });
 
 describe("resolving sources", () => {
-  const savedFetch = globalThis.fetch;
-  afterEach(() => { globalThis.fetch = savedFetch; });
-
   test("reads each source once, however many entries graft onto it", async () => {
     const reads = [];
     const base = { name: "Commoner", type: "npc", system: { hp: 4 } };

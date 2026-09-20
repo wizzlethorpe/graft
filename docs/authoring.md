@@ -21,15 +21,15 @@
 
 Foundry stamps `compendiumSource` on anything imported from a pack. That is what lets **Copy graft** recover a diff without you typing a UUID. But it only records where a document was last imported from, by whoever imported it. Publishers often assemble content in a private work module, and that id survives into the published content, naming something nobody else can install.
 
-Graft records its own answer where it can. `preImportAdventure` stamps `flags.graft.origin` with the adventure's UUID, and that stamp is preferred when present. Ordinary imports need no help: `fromCompendium` writes an accurate source itself, regardless of `keepId`.
+Graft records its own answer where it can. `preImportAdventure` stamps `flags.graft.origin` with the adventure's UUID, and that stamp is preferred when present. A document built from a `.json` file gets `flags.graft.source`, since a path is not a UUID and `compendiumSource` cannot hold one. **Copy graft** on it names the file again and carries only what differs from it. When a document has both, `compendiumSource` is used: a drag out of a pack writes it, so it is the newer fact. A module that places such a file itself marks the document with `game.modules.get("graft").api.recordFileSource(document, path)`. Ordinary imports need no help: `fromCompendium` writes an accurate source itself, regardless of `keepId`.
 
-That stamp is also what makes adventure content referenceable. An adventure's contents are embedded data, not documents, so they have no UUID of their own. Graft resolves one form, written like the embedded UUIDs Foundry already uses:
+`flags.graft.origin` is also what makes adventure content referenceable. An adventure's contents are embedded data, not documents, so they have no UUID of their own. Graft resolves one form, written like the embedded UUIDs Foundry already uses:
 
 ```
 Compendium.<module>.<pack>.Adventure.<advId>.JournalEntry.<docId>
 ```
 
-Graft handles an unresolvable source one of two ways. If the source module is **installed but disabled**, the export refuses until you enable it. If it is **not installed at all**, graft treats the document as having no recorded source and copies it whole. Its full content then sits in your `grafts.json`, where you can see it and decide whether to publish it.
+Graft handles an unresolvable source one of three ways. If the source module is **installed but disabled**, the export refuses until you enable it. If the source is a **file that is not on disk**, the export refuses until the graft that places it has been built. If the module is **not installed at all**, graft treats the document as having no recorded source and copies it whole. Its full content then sits in your `grafts.json`, where you can see it and decide whether to publish it.
 
 ## Dependencies
 

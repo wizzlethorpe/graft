@@ -297,6 +297,12 @@ export async function resolveData(uuid) {
   return doc ? doc.toObject() : null;
 }
 
+/**
+ * The source a document remembers. Foundry's stamp first: a drag out of a pack rewrites it, so it is the newer fact.
+ * A document built from a file has no stamp, only the path graft recorded.
+ */
+const recordedSource = (data) => data._stats?.compendiumSource ?? data.flags?.graft?.source;
+
 /** A source naming a placed file: no document type or id ends in `.json`. */
 function isFileSource(source) {
   return typeof source === "string" && /\.json$/i.test(source);
@@ -540,6 +546,14 @@ export function summarizeValidation(err) {
  * which Foundry cannot resolve.
  */
 function recordSource(data, source) {
+  // What the base remembers is where the base came from, not this document.
+  delete data.flags?.graft;
+  // `_stats.compendiumSource` only takes a uuid, so a file is remembered in a flag of graft's own, and whatever stamp its JSON carried goes.
+  if (isFileSource(source)) {
+    delete data._stats?.compendiumSource;
+    foundry.utils.setProperty(data, "flags.graft.source", source);
+    return;
+  }
   // A world uuid names a sibling built into this world and resolves nowhere
   // else, so recording it would hand a reader a source they cannot have.
   if (!source?.startsWith("Compendium.")) return;
@@ -627,13 +641,21 @@ function refreshSidebar(touched) {
  *
  * A module that fetched the source gets the last word on how it is named.
  */
+/**
+ * Mark a world document as built from a `.json` file, for a module that places the file itself.
+ * Both fields, because a stamp left over from wherever the document was imported would otherwise win.
+ */
+export function recordFileSource(document, path) {
+  return document.update({ "flags.graft.source": path, "_stats.compendiumSource": null });
+}
+
 export async function exportDiff(document) {
   return rewriteEntry(await diffEntry(document), document);
 }
 
 async function diffEntry(document) {
   const raw = document.toObject();
-  // Read before stripping: `compendiumSource` lives in the `_stats` it removes.
+  // Read before stripping, which removes both places a source is remembered: `_stats` and `flags.graft`.
   const sources = embeddedSources(raw);
   const mine = stripVolatile(raw);
   delete mine._id;
@@ -660,15 +682,14 @@ async function diffEntry(document) {
   // be inherited from a publisher's private work module, where ours points at
   // an adventure the reader can own.
   const origin = originOf(document);
-  const sourceUuid = adventureSourceUuid(origin, document.documentName)
-    ?? document._stats?.compendiumSource;
+  const recorded = adventureSourceUuid(origin, document.documentName) ?? recordedSource(raw);
 
   // Content the author wrote is theirs, and travels whole.
-  if (!sourceUuid) return { ...base, patch: await withRefs(mine) };
+  if (!recorded) return { ...base, patch: await withRefs(mine) };
 
-  const source = await resolveData(sourceUuid);
+  const source = await resolveData(recorded);
   if (!source) {
-    reportUnresolvedSource(document, sourceUuid, origin);
+    reportUnresolvedSource(document, recorded, origin);
     return { ...base, patch: await withRefs(mine) };
   }
 
@@ -684,7 +705,7 @@ async function diffEntry(document) {
   // entry, and a constant compares equal forever.
   const touched = project(before, patch);
   const hash = Object.keys(touched).length > 0 ? { sourceHash: sourceHash(before, patch) } : {};
-  return { ...base, source: sourceUuid, ...hash, patch };
+  return { ...base, source: recorded, ...hash, patch };
 }
 
 /**
@@ -695,18 +716,22 @@ async function diffEntry(document) {
  * every document, and adventure import carries the stamp into your world. Then
  * the document travels whole, which puts the content in your grafts.json.
  */
-function reportUnresolvedSource(document, sourceUuid, origin) {
-  const pkg = sourceUuid.split(".")[1];
+function reportUnresolvedSource(document, recorded, origin) {
+  if (isFileSource(recorded)) {
+    throw new Error(`${document.name} was built from ${recorded}, which is not on disk, or holds no document. `
+      + `Build the graft that places it, then copy again.`);
+  }
+  const pkg = recorded.split(".")[1];
   const installed = game.modules.get(pkg) ?? (game.system.id === pkg ? game.system : null);
   if (installed) {
     throw new Error(
-      `${document.name} was imported from ${sourceUuid}. ${installed.title ?? pkg} is installed `
+      `${document.name} was imported from ${recorded}. ${installed.title ?? pkg} is installed `
       + `but not enabled, so the source cannot be read. Enable it and copy again.`,
     );
   }
   const from = origin ? game.packs.get(origin.adventure.split(".").slice(1, 3).join("."))?.title : null;
   console.warn(
-    `Graft | ${document.name} records ${sourceUuid} as its source, but ${pkg} is not installed`
+    `Graft | ${document.name} records ${recorded} as its source, but ${pkg} is not installed`
     + (from ? `. It came from ${from}, and ${pkg} is that publisher's own work module.` : "")
     + ` Exporting with no source, so this entry carries its content: check you may distribute it.`,
   );
@@ -715,13 +740,13 @@ function reportUnresolvedSource(document, sourceUuid, origin) {
 /**
  * Every embedded document's `_id` mapped to what it was imported from.
  *
- * Walks the raw object, since that is where `_stats.compendiumSource` still is.
+ * Walks the raw object, since stripping removes what each member remembers.
  */
 function embeddedSources(value, into = new Map()) {
   if (Array.isArray(value)) {
     for (const v of value) embeddedSources(v, into);
   } else if (value && typeof value === "object") {
-    const source = value._stats?.compendiumSource;
+    const source = recordedSource(value);
     if (typeof value._id === "string" && typeof source === "string") into.set(value._id, source);
     for (const v of Object.values(value)) embeddedSources(v, into);
   }

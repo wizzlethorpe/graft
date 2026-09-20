@@ -43,7 +43,7 @@ Short, and meant to stay short. Anything settled belongs in the README instead.
 - An embedded source in the adventure form still travels whole, and the build
   writes a record nothing reads. `recordSource` stamps `flags.graft.origin` on
   the member, matching what it does for a top-level source, but
-  `embeddedSources` on the export side reads only `_stats.compendiumSource` and
+  `embeddedSources` on the export side reads `_stats.compendiumSource` and the file in `flags.graft.source`, and
   `originOf` is only ever asked about the root, so **Copy graft** finds no
   origin and ships the body. `adventureSourceUuid` already rebuilds the UUID
   from an origin and a document type; what is missing is the type for an

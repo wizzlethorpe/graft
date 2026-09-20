@@ -126,7 +126,19 @@ export function installWorld({ types, sources = {} } = {}) {
   return { collections, folders, WorldDoc };
 }
 
+const realFetch = globalThis.fetch;
+
+/** Serve `files`, keyed by data path, at the routes an asset handler would have placed them at. `uninstallWorld` undoes it. */
+export function serveFiles(files) {
+  globalThis.fetch = async (url) => {
+    // dataUrl encodes each segment and cache-busts, so undo both to look up.
+    const body = files[decodeURIComponent(String(url).split("?")[0]).replace(/^\//, "")];
+    return body ? { ok: true, json: async () => structuredClone(body) } : { ok: false, json: async () => null };
+  };
+}
+
 export function uninstallWorld() {
+  globalThis.fetch = realFetch;
   uninstallFoundry();
   delete globalThis.Folder;
   delete globalThis.getDocumentClass;
