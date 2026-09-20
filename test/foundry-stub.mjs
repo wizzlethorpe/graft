@@ -69,9 +69,9 @@ export function asDocument(data, { pack = null, uuid = null } = {}) {
  * world, as a compendium does.
  *
  * `fromImport` hands back a different id, as Foundry's does, so a test can pin
- * that graft assigns its own afterwards.
+ * that graft assigns its own afterwards. `defaults` is what it fills in, as a schema does; `refuseImport` makes it throw.
  */
-export function installWorld({ types, sources = {} } = {}) {
+export function installWorld({ types, sources = {}, defaults = {}, refuseImport = false } = {}) {
   const collections = new Map(types.map((t) => [t, new Map()]));
   const folders = [];
 
@@ -105,7 +105,10 @@ export function installWorld({ types, sources = {} } = {}) {
     return made;
   } };
   globalThis.getDocumentClass = (name) => class extends WorldDoc {
-    static async fromImport(doc) { return new WorldDoc({ ...doc, _id: "reassigned0000ok", __type: name }); }
+    static async fromImport(doc) {
+      if (refuseImport) throw new Error("cannot migrate");
+      return new WorldDoc({ ...defaults, ...doc, _id: "reassigned0000ok", __type: name });
+    }
     static async create(data) { collections.get(name).set(data._id, new WorldDoc({ ...data, __type: name })); }
   };
   globalThis.foundry = { utils: {

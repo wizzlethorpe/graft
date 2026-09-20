@@ -24,7 +24,7 @@ Hooks.on("graftPreBuild", (moduleId, register) => {
 
 `phase` decides when it runs, and defaults to `"entries"`. Use `"entries"` for a transform that produces or rewrites entries, and `"sources"` for one that makes the documents their sources name resolvable. Every entries transform runs before any sources one, registration order deciding within a phase, so a materialiser sees the entries after every marker has been expanded.
 
-**`graftAssets`** fires before a build, to collect the handlers for the `assets` block. `register` takes `{ id, place }`, where `id` matches the key in the file and `place(config, { onPhase, onFile, redownload })` fetches whatever that block names. `redownload(already, total)` asks the reader once whether to fetch files that are already on disk; resolving true means fetch everything. Registering replaces a handler already under that id, including the built-in `http` one.
+**`graftAssets`** collects the handlers for the `assets` block. `register` takes `{ id, place, collect }`, where `id` matches the key in the file and `place(config, { onPhase, onFile, redownload })` fetches whatever that block names. `redownload(already, total)` asks the reader once whether to fetch files that are already on disk; resolving true means fetch everything. Registering replaces a handler already under that id, including the built-in `http` one.
 
 ```js
 Hooks.on("graftAssets", (register) => {
@@ -40,6 +40,15 @@ Hooks.on("graftAssets", (register) => {
 ```
 
 `place` returns `{ skipped, warnings }` in the builder's `{ id, reason }` shape, or nothing. A handler that throws is one report line and the remaining handlers still run. Its only job is to put bytes at a path; it never rewrites entries, so the paths it writes to must be derivable from what the entries already name.
+
+`collect(entries)` is optional, and is `place` in reverse. **Copy graft** and the grafts downloads hand it the entries they are about to write, and it returns the block that would place the files those entries name on somebody else's machine, or nothing when none are its own. Graft writes what it returns under the handler's id. It reads the entries and never changes them. A `collect` that throws fails the copy, which is reported: a copy that silently lacks its files is worse, and pressing **Copy graft** again is free.
+
+```js
+async collect(entries) {
+  const files = mine(entries);   // the paths in these entries that your service supplies
+  return files.length > 0 ? { files } : null;
+}
+```
 
 **`graftExport`** fires when **Copy graft** has an entry ready, so a module that fetched the source can name it the way its own users would. Graft collects these the same way; `document` is the one being copied.
 
@@ -67,9 +76,11 @@ Hooks.on("graftBuilt", (moduleId, { built, skipped, warnings, removed }) => {
 ## The API
 
 ```js
-game.modules.get("graft").api    // buildPacks, hydrate, readGrafts, unbuilt, anyBuilt,
-                                 // exportDiff, resolve, progress
+game.modules.get("graft").api    // buildPacks, hydrate, readGrafts, unbuilt, anyBuilt, exportDiff,
+                                 // resolve, recordFileSource, placeFile, progress
 ```
+
+`placeFile(destination, data, type)` writes a file into the data folder, making the folders on the way. It is for an asset handler whose files arrive as data. Foundry's upload rejects a generic content type, so when `type` is missing or `application/octet-stream` the destination's extension decides. `recordFileSource(document, path)` tells graft that a world document was made from the `.json` file at `path`, so **Copy graft** on it writes that path as the source and only the changes as the patch. It is for a module that imports such a document itself; a document graft builds is recorded already.
 
 `resolve(uuid)` returns a document's plain data, or null. It reads every form graft writes, including an entry inside an assembled Adventure.
 

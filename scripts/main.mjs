@@ -3,6 +3,7 @@
 import { stampOrigin } from "./origin.mjs";
 import { hydrate, exportDiff, recordFileSource, resolveData } from "./hydrate.mjs";
 import { readGrafts, unbuilt, anyBuilt } from "./modules.mjs";
+import { placeFile } from "./assets.mjs";
 import * as progress from "./progress.mjs";
 import {
   registerSettings, promptForUnbuilt, addPackControl, copyOne,
@@ -14,7 +15,7 @@ const MODULE_ID = "graft";
 Hooks.once("init", () => {
   registerSettings();
   game.modules.get(MODULE_ID).api = {
-    hydrate, exportDiff, recordFileSource, resolve: resolveData, readGrafts, unbuilt, anyBuilt, buildPacks: buildAndReport,
+    hydrate, exportDiff, recordFileSource, placeFile, resolve: resolveData, readGrafts, unbuilt, anyBuilt, buildPacks: buildAndReport,
     progress: { phase: progress.phase, step: progress.step, note: progress.note },
   };
 });

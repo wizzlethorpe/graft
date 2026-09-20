@@ -633,6 +633,14 @@ function refreshSidebar(touched) {
 }
 
 /**
+ * Mark a world document as built from a `.json` file, for a module that places the file itself.
+ * Both fields, because a stamp left over from wherever the document was imported would otherwise win.
+ */
+export function recordFileSource(document, path) {
+  return document.update({ "flags.graft.source": path, "_stats.compendiumSource": null });
+}
+
+/**
  * The graft entry describing a document as it is now.
  *
  * The authoring half, and the reason nobody types a UUID: Foundry records where
@@ -641,14 +649,6 @@ function refreshSidebar(touched) {
  *
  * A module that fetched the source gets the last word on how it is named.
  */
-/**
- * Mark a world document as built from a `.json` file, for a module that places the file itself.
- * Both fields, because a stamp left over from wherever the document was imported would otherwise win.
- */
-export function recordFileSource(document, path) {
-  return document.update({ "flags.graft.source": path, "_stats.compendiumSource": null });
-}
-
 export async function exportDiff(document) {
   return rewriteEntry(await diffEntry(document), document);
 }
@@ -693,7 +693,11 @@ async function diffEntry(document) {
     return { ...base, patch: await withRefs(mine) };
   }
 
-  const before = stripVolatile(source);
+  // The build hashes the source as it reads it, so the hash is of that and not of what is diffed.
+  const read = stripVolatile(source);
+  delete read._id;
+  // A file is its publisher's raw export. Diffed as read, every default Foundry filled on import would count as a change.
+  const before = isFileSource(recorded) ? stripVolatile(await imported(document.documentName, source)) : read;
   delete before._id;
   // Only entries with no prior are whole; referencing a delta would diff it
   // against the full source and null out every field it did not mention.
@@ -703,9 +707,16 @@ async function diffEntry(document) {
   // Only when there is something to have drifted. References and removals
   // project to nothing, so their hash would be the same constant on every
   // entry, and a constant compares equal forever.
-  const touched = project(before, patch);
-  const hash = Object.keys(touched).length > 0 ? { sourceHash: sourceHash(before, patch) } : {};
+  const touched = project(read, patch);
+  const hash = Object.keys(touched).length > 0 ? { sourceHash: sourceHash(read, patch) } : {};
   return { ...base, source: recorded, ...hash, patch };
+}
+
+/** `data` as Foundry holds it once imported: migrated, with its schema's defaults filled. */
+async function imported(type, data) {
+  const cls = getDocumentClass(type);
+  // The build falls back the same way, so a document it built without migrating can still be copied.
+  try { return (await cls.fromImport(data)).toObject(); } catch { return new cls(data).toObject(); }
 }
 
 /**

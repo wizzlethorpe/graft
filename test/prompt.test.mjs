@@ -4,7 +4,7 @@
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { downloadNotice } from "../scripts/ui.mjs";
+import { downloadNotice, graftsFile } from "../scripts/ui.mjs";
 
 describe("downloadNotice", () => {
   const saved = { game: globalThis.game, Hooks: globalThis.Hooks };
@@ -37,5 +37,19 @@ describe("downloadNotice", () => {
   test("names the transforms when there are any", () => {
     install(transform("moulinette"));
     assert.equal(downloadNotice("m", {}), "GRAFT.PromptTransforms");
+  });
+});
+
+describe("graftsFile", () => {
+  const entries = [{ id: "a", type: "Actor", patch: {} }];
+
+  test("carries the assets block a copy's handlers listed", () => {
+    const file = JSON.parse(graftsFile(entries, { lib: { files: ["a.png"] } }));
+    assert.deepEqual(file.assets, { lib: { files: ["a.png"] } });
+    assert.deepEqual(file.entries, entries);
+  });
+
+  test("has no assets key when no handler listed anything", () => {
+    assert.equal("assets" in JSON.parse(graftsFile(entries, undefined)), false);
   });
 });

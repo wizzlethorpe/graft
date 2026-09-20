@@ -57,6 +57,22 @@ export async function placeAssets(assets, { onPhase, onFile, redownload, handler
 }
 
 /**
+ * The `assets` block that would place what `entries` name, or undefined when no handler claims anything.
+ * Not caught: a copy missing the files it needs is worse than a copy that failed, and pressing it again is free.
+ */
+export async function collectAssets(entries, handlers) {
+  const refused = [];
+  const available = handlers ?? collectHandlers((reason) => refused.push(reason));
+  if (refused.length > 0) throw new Error(refused.join("; "));
+  const assets = {};
+  for (const [kind, handler] of available) {
+    const config = await handler.collect?.(entries);
+    if (config) assets[kind] = config;
+  }
+  return Object.keys(assets).length > 0 ? assets : undefined;
+}
+
+/**
  * Whether a file has to be fetched. It is current when a source it offers now
  * is one it offered when written and its ETag has not moved; with no record, size decides.
  */
@@ -148,8 +164,7 @@ async function head(path) {
 const readRecord = async () => (await readDataJson(RECORD)) ?? {};
 
 async function writeRecord(record) {
-  await ensureDirectory(dirOf(RECORD));
-  await upload(RECORD, JSON.stringify(record), "application/json");
+  await placeFile(RECORD, JSON.stringify(record), "application/json");
 }
 
 async function ensureDirectory(dir) {
@@ -297,7 +312,11 @@ export const httpHandler = {
 export function unusable(file) {
   const sources = sourcesOf(file);
   if (sources.length === 0 || !sources.every((s) => typeof s === "string" && s)) return "no source to fetch from";
-  const destination = file.destination;
+  return outside(file.destination);
+}
+
+/** Why a destination is not a path inside the data directory, or null. */
+function outside(destination) {
   if (typeof destination !== "string" || !destination) return "no destination to write to";
   if (destination.startsWith("/") || /^[a-z]+:/i.test(destination)) return `destination "${destination}" is not a relative path`;
   if (destination.split("/").includes("..")) return `destination "${destination}" climbs out of the data directory`;
@@ -320,6 +339,15 @@ async function authorizedFetch(url, auth) {
   }
   if (!res.ok) throw new Error(`${res.status} fetching ${url}`);
   return res;
+}
+
+/** Write `data` to `destination` in the data folder, making the folders on the way. For a handler whose files arrive as data. */
+export async function placeFile(destination, data, type) {
+  // Another module's handler takes its destinations from a pasted file too.
+  const refusal = outside(destination);
+  if (refusal) throw new Error(refusal);
+  await ensureDirectory(dirOf(destination));
+  return upload(destination, data, typeFor(destination, type));
 }
 
 /** Write `data` to `destination`, returning the ETag it landed with. */

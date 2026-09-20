@@ -4,7 +4,7 @@ import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { placeAssets, needsFetch, unusable, httpHandler, planZips, pool, zipMember } from "../scripts/assets.mjs";
+import { placeAssets, collectAssets, placeFile, needsFetch, unusable, httpHandler, planZips, pool, zipMember } from "../scripts/assets.mjs";
 
 const saved = { fetch: globalThis.fetch, foundry: globalThis.foundry, CONST: globalThis.CONST, Hooks: globalThis.Hooks };
 afterEach(() => Object.assign(globalThis, saved));
@@ -87,6 +87,55 @@ describe("placeAssets", () => {
 
   test("no assets block is not an error", async () => {
     assert.deepEqual(await placeAssets(undefined, { handlers: new Map() }), { skipped: [], warnings: [] });
+  });
+});
+
+describe("collectAssets", () => {
+  const entries = [{ id: "a", patch: { img: "lib/a.png" } }];
+
+  test("keys each handler's block by its id, and asks only a handler that collects", async () => {
+    const handlers = new Map([
+      ["http", { id: "http", place() {} }],
+      ["lib", { id: "lib", place() {}, collect: async (given) => ({ files: given.map((e) => e.patch.img) }) }],
+    ]);
+    assert.deepEqual(await collectAssets(entries, handlers), { lib: { files: ["lib/a.png"] } });
+  });
+
+  test("is nothing when no handler claims anything, so a copy gains no empty block", async () => {
+    const handlers = new Map([["lib", { id: "lib", place() {}, collect: () => null }]]);
+    assert.equal(await collectAssets(entries, handlers), undefined);
+  });
+
+  test("fails the copy when a handler's registration was refused, since its files would be silently missing", async () => {
+    globalThis.Hooks = { callAll: (_hook, register) => register({ id: "lib", collect: () => ({ files: [] }) }) };
+    await assert.rejects(collectAssets(entries), /asset handler "lib" needs a place function/);
+  });
+
+  test("fails the copy when a handler cannot say", async () => {
+    const handlers = new Map([["lib", { id: "lib", place() {}, collect: async () => { throw new Error("signed out"); } }]]);
+    await assert.rejects(collectAssets(entries, handlers), /signed out/);
+  });
+});
+
+describe("placeFile", () => {
+  test("makes the folders on the way, then writes", async () => {
+    const did = stubFoundry({ fetch: async () => ({ ok: false, headers: new Headers() }) });
+    await placeFile("graft/lib/12/a.json", "{}", "application/json");
+    assert.deepEqual(did.directories, ["graft", "graft/lib", "graft/lib/12"]);
+    assert.deepEqual(did.uploads, [{ path: "graft/lib/12/a.json", type: "application/json", text: "{}" }]);
+  });
+
+  test("refuses a destination outside the data directory, since a handler's destinations come from a pasted file", async () => {
+    const did = stubFoundry({ fetch: async () => ({ ok: false, headers: new Headers() }) });
+    await assert.rejects(placeFile("graft/lib/../../worlds/w/a.json", "{}"), /climbs out of the data directory/);
+    await assert.rejects(placeFile("/etc/a.json", "{}"), /not a relative path/);
+    assert.deepEqual(did, { directories: [], uploads: [] });
+  });
+
+  test("types a blob a host served generically by its extension, since Foundry's upload rejects a generic type", async () => {
+    const did = stubFoundry({ fetch: async () => ({ ok: false, headers: new Headers() }) });
+    await placeFile("graft/lib/12/a.png", new Blob(["x"], { type: "application/octet-stream" }));
+    assert.equal(did.uploads[0].type, "image/png");
   });
 });
 

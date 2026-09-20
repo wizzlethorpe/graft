@@ -138,6 +138,35 @@ test("a document built from a file comes back as that file and the changes to it
   assert.equal(JSON.stringify(back).includes("their text"), false, "the file's content does not travel");
 });
 
+test("what Foundry fills in on import is not a change to the file", async () => {
+  ({ collections, WorldDoc } = installWorld({ types: ["Actor", "Item"], sources: SOURCES, defaults: { prototypeToken: { sight: false } } }));
+  serveFiles({ "graft/kit/guard.json": { name: "Guard", type: "npc" } });
+  const entry = { id: "aBuiltActor00002", type: "Actor", pack: "kit", source: "graft/kit/guard.json", patch: { name: "Captain" } };
+  assert.deepEqual(comparable(await roundTrip(entry)), comparable(entry));
+});
+
+test("a copied file entry rebuilds without a drift warning, though the patch touches what import filled in", async () => {
+  ({ collections, WorldDoc } = installWorld({ types: ["Actor", "Item"], sources: SOURCES, defaults: { prototypeToken: { sight: false } } }));
+  serveFiles({ "graft/kit/guard.json": { name: "Guard", type: "npc", system: { hp: 10 } } });
+  const entry = { id: "aBuiltActor00002", type: "Actor", pack: "kit", source: "graft/kit/guard.json",
+    patch: { system: { hp: 12 }, prototypeToken: { sight: true } } };
+  const copied = await roundTrip(entry);
+  assert.ok(copied.sourceHash, "the patch touches the file, so there is something to have drifted");
+
+  const { hydrateWorld } = await import("../scripts/hydrate.mjs");
+  const again = await hydrateWorld([{ ...copied, pack: "kit" }], {});
+  assert.deepEqual(again.warnings, []);
+});
+
+test("a document Foundry could not import is still copied, built the way the build fell back to", async () => {
+  ({ collections, WorldDoc } = installWorld({ types: ["Actor", "Item"], sources: SOURCES, refuseImport: true }));
+  serveFiles({ "graft/kit/guard.json": { name: "Guard", type: "npc" } });
+  const { hydrateWorld, exportDiff } = await import("../scripts/hydrate.mjs");
+  await hydrateWorld([{ id: "aBuiltActor00002", type: "Actor", pack: "kit", source: "graft/kit/guard.json", patch: { name: "Captain" } }], {});
+  const back = await exportDiff(collections.get("Actor").get("aBuiltActor00002"));
+  assert.deepEqual(back.patch, { name: "Captain" });
+});
+
 test("a file's own stamp from wherever its publisher exported it does not become the source", async () => {
   serveFiles({ "graft/kit/guard.json": { name: "Guard", type: "npc", _stats: { ...STATS, compendiumSource: "Compendium.private.work.Actor.aaaaaaaaaaaaaaaa" } } });
   const entry = { id: "aBuiltActor00002", type: "Actor", pack: "kit", source: "graft/kit/guard.json", patch: { name: "Captain" } };

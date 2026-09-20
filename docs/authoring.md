@@ -6,7 +6,7 @@
 
 **3. Build in your world, the ordinary way.** Import a monster and edit it, drag items onto it, create your own documents. Nothing in this step is graft-specific.
 
-**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Either copies a whole `grafts.json`: keep it as the file beside your `module.json`, or lift only its `entries` into an existing `grafts.json` that you already have.
+**4. Copy the grafts.** Right-click a document in the sidebar for **Copy graft**, or right-click a folder for **Copy grafts** to copy everything in it and its subfolders. The sheet header has the same control for an open document. Either copies a whole `grafts.json`, with an `assets` block when an installed asset handler says the entries need one: keep it as the file beside your `module.json`, or lift only its `entries` into an existing `grafts.json` that you already have.
 
 **5. Build**, from the prompt on world load or from **Build grafts** in your pack's window header, and read the report.
 

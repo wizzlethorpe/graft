@@ -112,7 +112,7 @@ Removing an entry from `grafts.json` removes what it built on the next build. Do
 
 ## Assets
 
-`assets` names files to download before anything builds (e.g, art the entries point at, JSON files used as sources, etc.). It is keyed by handler. Graft incldues the `http` handler by default. Advanced modules can add others with [`graftAssets`](hooks.md).
+`assets` names files to download before anything builds (e.g., art the entries point at, JSON files used as sources, etc.). It is keyed by handler, and the shape of a block belongs to its handler. Graft includes the `http` handler by default. Advanced modules can add others with [`graftAssets`](hooks.md). **Copy graft** writes a block for each installed handler that says the copied entries need one.
 
 ```json
 "assets": {

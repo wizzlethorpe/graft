@@ -8,6 +8,7 @@ import { hydrate, exportDiff } from "./hydrate.mjs";
 import { FORMAT, graftModules, readGrafts, unbuilt, withPack } from "./modules.mjs";
 import { parseAdventureSource, resolveAdventureSource } from "./origin.mjs";
 import { collectTransforms } from "./extend.mjs";
+import { collectAssets } from "./assets.mjs";
 import { runBuild } from "./build.mjs";
 import { toYaml } from "./yaml.mjs";
 import { importGrafts } from "./import.mjs";
@@ -258,8 +259,19 @@ async function builtLink(uuid) {
 
 // ── copying ─────────────────────────────────────────────────────────────────
 
-/** Entries as the whole grafts.json that Copy and Export both produce. */
-const graftsFile = (entries) => JSON.stringify({ format: FORMAT, entries }, null, 2);
+/** Entries as the whole grafts.json that Copy and Export both produce, with the assets block their handlers say they need. */
+export const graftsFile = (entries, assets) =>
+  JSON.stringify({ format: FORMAT, ...(assets ? { assets } : {}), entries }, null, 2);
+
+/** The grafts.json for `entries`, or null once the reader has been told why a handler could not list their files. */
+async function fileFor(entries) {
+  try {
+    return graftsFile(entries, await collectAssets(entries));
+  } catch (err) {
+    ui.notifications.error(t("GRAFT.CopyFailed", { reason: err.message }));
+    return null;
+  }
+}
 
 /** One document to the clipboard, as a whole grafts file. */
 export async function copyOne(doc) {
@@ -267,7 +279,8 @@ export async function copyOne(doc) {
     const entry = withPack(await exportDiff(doc));
     // JSON, because grafts.json is JSON and what you copy should be what you
     // paste. YAML is for the other destination, a vault page's frontmatter.
-    const text = graftsFile([entry]);
+    const assets = await collectAssets([entry]);
+    const text = graftsFile([entry], assets);
     await game.clipboard.copyPlainText(text);
     ui.notifications.info(
       Object.keys(entry.patch).length > 0
@@ -275,7 +288,7 @@ export async function copyOne(doc) {
         : t("GRAFT.CopiedUnchanged", { name: doc.name }),
     );
     console.log(`Graft | ${doc.name}\n${text}`);
-    console.log(`Graft | as YAML, for a vault page:\n${toYaml(entry)}`);
+    console.log(`Graft | as YAML, for a vault page${assets ? ", without the assets block above, which a page cannot carry" : ""}:\n${toYaml(entry)}`);
     return entry;
   } catch (err) {
     ui.notifications.error(t("GRAFT.CopyFailed", { reason: err.message }));
@@ -311,7 +324,9 @@ export async function downloadGrafts(docs, label) {
     return null;
   }
   const { entries, failed } = await graftsFor(docs);
-  saveJson(graftsFile(entries), fileName(label));
+  const text = await fileFor(entries);
+  if (text === null) return null;
+  saveJson(text, fileName(label));
   reportExport(entries, failed, label, "GRAFT.Downloaded", "GRAFT.DownloadedSkipped");
   return entries;
 }
@@ -336,7 +351,9 @@ export async function copyMany(docs, label) {
   }
   const { entries, failed } = await graftsFor(docs);
 
-  await game.clipboard.copyPlainText(graftsFile(entries));
+  const text = await fileFor(entries);
+  if (text === null) return null;
+  await game.clipboard.copyPlainText(text);
   reportExport(entries, failed, label, "GRAFT.CopiedMany", "GRAFT.CopiedManySkipped");
   return entries;
 }
