@@ -320,7 +320,8 @@ async function hydrateOne(entry, target, { warnings, resolve, produced }) {
         : `source ${source} did not resolve; is its module installed and enabled?`);
     }
     refuseStrays(cls, [], source, base, entry.patch ?? {});
-    warnings.push(...driftWarnings(entry.id, base, currentWorld()));
+    // A compendium or world document is already migrated and loaded by this Foundry; only a file carries another world's stamp.
+    if (isFileSource(source)) warnings.push(...driftWarnings(entry.id, base, currentWorld()));
     const changed = driftFromSource(entry.id, entry.sourceHash, stripVolatile(base), entry.patch ?? {});
     if (changed) warnings.push(changed);
   }

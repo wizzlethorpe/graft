@@ -210,6 +210,18 @@ describe("a file source", () => {
     assert.equal(built.system.hp, 10, "the file supplied the base document");
   });
 
+  test("drift is reported for a file from another world, and not for a document this Foundry loaded", async () => {
+    const stale = { coreVersion: "13.346", systemId: "dnd5e", systemVersion: "4.1.0" };
+    serve({ "graft/vault/guard.json": { name: "Guard", _stats: stale } });
+    collections.get("Actor").set("actorPacked00001", new WorldDoc({ _id: "actorPacked00001", name: "Packed", _stats: stale, flags: { graft: { built: true, imported: true } } }));
+    const { warnings } = await run([
+      { id: "actorFile0000003", type: "Actor", source: "graft/vault/guard.json", patch: { name: "From file" } },
+      { id: "actorWorld000001", type: "Actor", source: "Actor.actorPacked00001", patch: { name: "From world" } },
+    ]);
+    assert.match(warnings.find((w) => w.id === "actorFile0000003")?.reason ?? "", /authored for Foundry 13/);
+    assert.equal(warnings.some((w) => w.id === "actorWorld000001" && /authored for/.test(w.reason)), false);
+  });
+
   test("a file a handler never placed skips that entry and says so", async () => {
     serve({});
     const { built, skipped } = await run([{

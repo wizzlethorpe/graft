@@ -77,8 +77,8 @@ Arrays are replaced whole, with one exception: when every member has an `_id`, a
 
 Graft warns, but still builds, when a source:
 
-- was made for a different game system;
-- was made for an older major version of Foundry or of the system;
+- is a file made for a different game system;
+- is a file made for an older major version of Foundry or of the system. A compendium or world document is already loaded by this Foundry, so its own stamp is not checked;
 - has changed since you copied it, in the fields your patch touches. **Copy graft** records this as `sourceHash`. An entry without one is not checked.
 
 ## Packs
